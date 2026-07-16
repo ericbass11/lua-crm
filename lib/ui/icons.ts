@@ -69,6 +69,7 @@ export {
   MusicNote,
   FileText,
   Lock,
+  Key,
   Receipt,
   Tag,
   Question,

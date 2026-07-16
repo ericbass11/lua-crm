@@ -262,7 +262,7 @@ export async function updateLeadHandler(
 ): Promise<Record<string, unknown>> {
   const { data: existing, error: selErr } = await supabase
     .from("crm_leads")
-    .select("id, organization_id")
+    .select("id, organization_id, custom_fields")
     .eq("id", leadId)
     .maybeSingle();
 
@@ -274,6 +274,17 @@ export async function updateLeadHandler(
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.custom_fields !== undefined) {
+    // Merge parcial: chave com null remove; demais sobrescrevem.
+    const current = ((existing as { custom_fields: Record<string, unknown> | null }).custom_fields ??
+      {}) as Record<string, unknown>;
+    const merged: Record<string, unknown> = { ...current };
+    for (const [k, v] of Object.entries(input.custom_fields)) {
+      if (v === null) delete merged[k];
+      else merged[k] = v;
+    }
+    patch.custom_fields = merged;
+  }
   if (input.title !== undefined) patch.title = input.title;
   if (input.description !== undefined) patch.description = input.description;
   if (input.contact_id !== undefined) patch.contact_id = input.contact_id;

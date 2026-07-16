@@ -13,6 +13,8 @@ interface Props {
   type: KnowledgeSourceType;
   onReindex?: () => void;
   isReindexing?: boolean;
+  /** Quando fornecido, o botão de configurar/editar fica ativo e chama isto. */
+  onConfigure?: () => void;
 }
 
 const TYPE_META: Record<
@@ -56,7 +58,7 @@ function formatRelative(iso: string | null): string {
   return new Date(iso).toLocaleDateString("pt-BR");
 }
 
-export function KnowledgeSourceCard({ source, type, onReindex, isReindexing }: Props) {
+export function KnowledgeSourceCard({ source, type, onReindex, isReindexing, onConfigure }: Props) {
   const meta = TYPE_META[type];
   const Icon = meta.Icon;
 
@@ -76,10 +78,10 @@ export function KnowledgeSourceCard({ source, type, onReindex, isReindexing }: P
         </CardContent>
         <CardFooter>
           <Button
-            variant="secondary"
+            variant={onConfigure ? "primary" : "secondary"}
             size="sm"
-            disabled
-            onClick={() => toast.info("Em breve.")}
+            disabled={!onConfigure}
+            onClick={onConfigure ?? (() => toast.info("Em breve."))}
           >
             Configurar {meta.label}
           </Button>
@@ -98,9 +100,9 @@ export function KnowledgeSourceCard({ source, type, onReindex, isReindexing }: P
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => toast.info("Editor de FAQ em breve.")}
+          onClick={onConfigure ?? (() => toast.info("Editor de FAQ em breve."))}
         >
-          Editar conteúdo
+          {onConfigure ? "Adicionar / editar" : "Editar conteúdo"}
         </Button>
       );
     }

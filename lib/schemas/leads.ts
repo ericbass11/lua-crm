@@ -95,6 +95,10 @@ export const updateLeadSchema = z.object({
     .nullable()
     .optional(),
   tags: z.array(z.string()).optional(),
+  // Campos estratégicos (Fase 2): merge feito no handler. Escalares apenas.
+  custom_fields: z
+    .record(z.string().min(1).max(40), z.union([z.string().max(2000), z.number(), z.boolean(), z.null()]))
+    .optional(),
 });
 export type UpdateLeadInput = z.infer<typeof updateLeadSchema>;
 

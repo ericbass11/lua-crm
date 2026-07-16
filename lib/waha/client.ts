@@ -71,6 +71,37 @@ export class WahaClient {
     }
   }
 
+  /**
+   * Remove a sessão do WAHA (logout + apaga do engine). Idempotente:
+   * 404/422/409 = já não existe. Faz stop antes por segurança.
+   */
+  async deleteSession(name: string): Promise<void> {
+    await this.stopSession(name).catch(() => undefined);
+    const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      headers: { "X-Api-Key": this.apiKey },
+    });
+    if (!res.ok && ![404, 422, 409].includes(res.status)) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`waha_delete_${res.status}: ${body.slice(0, 200)}`);
+    }
+  }
+
+  /** Lista todas as sessões com estado e engine (usado pelo cron channel-health). */
+  async listSessions(): Promise<
+    Array<{ name: string; status: string; engine?: { engine?: string } }>
+  > {
+    const res = await fetch(`${this.baseUrl}/api/sessions?all=true`, {
+      headers: { "X-Api-Key": this.apiKey },
+    });
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+    return (await res.json()) as Array<{
+      name: string;
+      status: string;
+      engine?: { engine?: string };
+    }>;
+  }
+
   async getSessionQr(name: string): Promise<{ qr?: string; status: string }> {
     const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
       headers: { "X-Api-Key": this.apiKey },

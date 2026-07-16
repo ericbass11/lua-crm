@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Tag, Receipt, Users, ArrowRight } from "@/lib/ui/icons";
-import { createClient } from "@/lib/supabase/browser";
+import { apiClient } from "@/lib/api/client";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 
 interface Props {
@@ -23,7 +23,18 @@ interface LeadRow {
   value_cents: number | null;
   currency: string | null;
   updated_at: string;
+  custom_fields: Record<string, unknown> | null;
+  crm_stages: { name: string } | { name: string }[] | null;
 }
+
+const FIELD_ORDER: Array<{ key: string; label: string }> = [
+  { key: "segmento", label: "Segmento" },
+  { key: "orcamento_declarado", label: "Orçamento" },
+  { key: "urgencia", label: "Urgência" },
+  { key: "dor_principal", label: "Dor" },
+  { key: "objecoes", label: "Objeções" },
+  { key: "proximo_passo", label: "Próximo passo" },
+];
 
 interface OrderRow {
   id: string;
@@ -74,39 +85,28 @@ export function CRMSidePanel({ conversation }: Props) {
       setActivities(null);
       return;
     }
-    const supabase = createClient();
     let cancelled = false;
     setLoading(true);
 
     async function load() {
-      const leadsP = supabase
-        .from("crm_leads")
-        .select("id, title, status, value_cents, currency, updated_at")
-        .eq("contact_id", contactId)
-        .order("updated_at", { ascending: false })
-        .limit(3);
-
-      const ordersP = supabase
-        .from("orders")
-        .select("id, external_id, status, total_cents, currency, created_at")
-        .eq("contact_id", contactId)
-        .order("created_at", { ascending: false })
-        .limit(3);
-
-      const actsP = supabase
-        .from("crm_lead_activities")
-        .select("id, type, source_module, performed_at, payload")
-        .eq("contact_id", contactId)
-        .order("performed_at", { ascending: false })
-        .limit(5);
-
-      const [lr, or, ar] = await Promise.all([leadsP, ordersP, actsP]);
-
-      if (cancelled) return;
-      setLeads(lr.error ? [] : ((lr.data ?? []) as LeadRow[]));
-      setOrders(or.error ? [] : ((or.data ?? []) as OrderRow[]));
-      setActivities(ar.error ? [] : ((ar.data ?? []) as ActivityRow[]));
-      setLoading(false);
+      try {
+        // Via API (server lê o cookie httpOnly). O client do browser não
+        // autentica no PostgREST, então RLS devolveria vazio.
+        const res = await apiClient.get<{
+          data: { leads: LeadRow[]; orders: OrderRow[]; activities: ActivityRow[] };
+        }>(`/api/v1/contacts/${contactId}/crm-context`);
+        if (cancelled) return;
+        setLeads(res.data.leads ?? []);
+        setOrders(res.data.orders ?? []);
+        setActivities(res.data.activities ?? []);
+      } catch {
+        if (cancelled) return;
+        setLeads([]);
+        setOrders([]);
+        setActivities([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
 
     void load();
@@ -175,6 +175,80 @@ export function CRMSidePanel({ conversation }: Props) {
       </section>
 
       <Separator />
+
+      {(() => {
+        const aiLead = leads?.find((l) => l.status === "open") ?? leads?.[0] ?? null;
+        const cf = (aiLead?.custom_fields ?? {}) as Record<string, unknown>;
+        const stage = Array.isArray(aiLead?.crm_stages)
+          ? aiLead?.crm_stages[0]?.name
+          : aiLead?.crm_stages?.name;
+        const resumo = typeof cf["resumo"] === "string" ? (cf["resumo"] as string) : null;
+        const score = cf["score"] != null ? Number(cf["score"]) : null;
+        const fields = FIELD_ORDER.filter(
+          (f) => cf[f.key] != null && String(cf[f.key]).trim() !== "",
+        );
+        const hasNote = Boolean(resumo || stage || Number.isFinite(score) || fields.length > 0);
+        if (sectionsLoading) {
+          return (
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Nota da IA
+              </h3>
+              <Skeleton className="mt-2 h-20 w-full" />
+            </section>
+          );
+        }
+        if (!hasNote) return null;
+        return (
+          <>
+            <section>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Nota da IA
+                </h3>
+                <div className="flex items-center gap-1.5">
+                  {stage && (
+                    <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+                      {stage}
+                    </Badge>
+                  )}
+                  {Number.isFinite(score) && (
+                    <span
+                      className={
+                        "text-[10px] font-semibold tabular-nums " +
+                        ((score as number) >= 70
+                          ? "text-green-600 dark:text-green-400"
+                          : (score as number) >= 40
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-muted-foreground")
+                      }
+                    >
+                      ★ {Math.round(score as number)}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Card className="mt-2 space-y-2 p-3 text-xs">
+                {resumo && <p className="leading-snug text-text">{resumo}</p>}
+                {fields.length > 0 && (
+                  <dl className="space-y-1">
+                    {fields.map((f) => (
+                      <div key={f.key} className="flex gap-1.5">
+                        <dt className="shrink-0 text-muted-foreground">{f.label}:</dt>
+                        <dd className="min-w-0 break-words">{String(cf[f.key])}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                <p className="pt-0.5 text-[10px] text-text-subtle">
+                  Preenchido automaticamente pela IA a partir da conversa.
+                </p>
+              </Card>
+            </section>
+            <Separator />
+          </>
+        );
+      })()}
 
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

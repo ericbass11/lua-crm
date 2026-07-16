@@ -3,10 +3,11 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Phone, ArrowRight } from "@/lib/ui/icons";
-import { useAuth } from "@/hooks/auth/AuthProvider";
+import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
+import { useClearHistory } from "@/hooks/inbox/useClearHistory";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 
 interface Props {
@@ -26,6 +27,8 @@ export function ConversationHeader({ conversation }: Props) {
   const claim = useClaimConversation();
   const release = useReleaseConversation();
   const close = useCloseConversation();
+  const clearHistory = useClearHistory();
+  const canClearHistory = usePermission("settings.write");
 
   const c = conversation.contacts ?? null;
   const displayName =
@@ -48,6 +51,15 @@ export function ConversationHeader({ conversation }: Props) {
           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             <Phone size={11} weight="regular" aria-hidden /> {phone}
           </p>
+        )}
+        {(conversation.tags?.length ?? 0) > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {conversation.tags?.map((t) => (
+              <Badge key={t} variant="secondary" className="h-4 px-1.5 text-[10px]">
+                {t}
+              </Badge>
+            ))}
+          </div>
         )}
       </div>
 
@@ -89,6 +101,25 @@ export function ConversationHeader({ conversation }: Props) {
             }}
           >
             Fechar
+          </Button>
+        )}
+        {canClearHistory && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-destructive hover:text-destructive"
+            disabled={clearHistory.isPending}
+            onClick={() => {
+              if (
+                confirm(
+                  "Apagar TODAS as mensagens desta conversa no CRM?\n\nA IA recomeça do zero (a memória dela é o histórico da conversa). O histórico no celular do cliente NÃO é afetado. Esta ação não pode ser desfeita.",
+                )
+              ) {
+                clearHistory.mutate({ conversation_id: conversation.id });
+              }
+            }}
+          >
+            {clearHistory.isPending ? "Limpando…" : "Limpar histórico"}
           </Button>
         )}
         {c?.id && (

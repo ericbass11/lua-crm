@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { createClient } from "@/lib/supabase/browser";
@@ -13,6 +13,7 @@ import {
   KnowledgeSourceCard,
   type KnowledgeSourceType,
 } from "@/components/ai/KnowledgeSourceCard";
+import { FaqEditorDialog } from "@/components/ai/FaqEditorDialog";
 
 interface Props {
   agentId: string;
@@ -33,6 +34,7 @@ export function KnowledgeSourcesClient({ agentId, initialSources }: Props) {
   const qc = useQueryClient();
   const { data: sources } = useKnowledgeSources(agentId, { initialData: initialSources });
   const reindex = useReindexSource(agentId);
+  const [faqOpen, setFaqOpen] = useState(false);
 
   // Realtime subscription.
   useEffect(() => {
@@ -75,21 +77,32 @@ export function KnowledgeSourcesClient({ agentId, initialSources }: Props) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      {SLOTS.map((slot) => {
-        const source = bySlot[slot];
-        const isReindexing =
-          reindex.isPending && reindex.variables === source?.id;
-        return (
-          <KnowledgeSourceCard
-            key={slot}
-            type={slot}
-            source={source ?? null}
-            isReindexing={isReindexing}
-            onReindex={source ? () => reindex.mutate(source.id) : undefined}
-          />
-        );
-      })}
-    </div>
+    <>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {SLOTS.map((slot) => {
+          const source = bySlot[slot];
+          const isReindexing =
+            reindex.isPending && reindex.variables === source?.id;
+          return (
+            <KnowledgeSourceCard
+              key={slot}
+              type={slot}
+              source={source ?? null}
+              isReindexing={isReindexing}
+              onReindex={source ? () => reindex.mutate(source.id) : undefined}
+              onConfigure={slot === "faq" ? () => setFaqOpen(true) : undefined}
+            />
+          );
+        })}
+      </div>
+
+      <FaqEditorDialog
+        agentId={agentId}
+        sourceId={bySlot.faq?.id ?? null}
+        open={faqOpen}
+        onOpenChange={setFaqOpen}
+        onSaved={() => qc.invalidateQueries({ queryKey: sourcesQueryKey(agentId) })}
+      />
+    </>
   );
 }

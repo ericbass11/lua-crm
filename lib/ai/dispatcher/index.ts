@@ -47,6 +47,7 @@ export type DispatchOutcome =
   | "rate_limited"
   | "skipped_invalid_payload"
   | "skipped_missing_message"
+  | "skipped_human_active"
   | "error";
 
 export interface DispatchSummary {
@@ -90,6 +91,7 @@ const EMPTY_OUTCOMES = (): Record<DispatchOutcome, number> => ({
   rate_limited: 0,
   skipped_invalid_payload: 0,
   skipped_missing_message: 0,
+  skipped_human_active: 0,
   error: 0,
 });
 
@@ -203,7 +205,9 @@ async function processEvent(event: EventRow): Promise<DispatchOutcome> {
 
   const { data: convRow } = await admin
     .from("conversations")
-    .select("id, organization_id, is_group, group_chat_id")
+    .select(
+      "id, organization_id, is_group, group_chat_id, assigned_to_user_id, bot_silenced_until, contacts:contact_id(force_human, is_blocked)",
+    )
     .eq("id", conversationId)
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -211,6 +215,27 @@ async function processEvent(event: EventRow): Promise<DispatchOutcome> {
   if (!convRow) {
     await markEventProcessed(event, "skipped_missing_message", { reason: "conv_missing" });
     return "skipped_missing_message";
+  }
+
+  // Portões de intervenção humana (paridade com IA-01..IA-08 do worker legado —
+  // sem eles o bot atropela o atendente: responde mesmo após handoff/Assumir).
+  const convContact = (Array.isArray(convRow.contacts) ? convRow.contacts[0] : convRow.contacts) as {
+    force_human: boolean | null;
+    is_blocked: boolean | null;
+  } | null;
+  const silencedUntil = convRow.bot_silenced_until as string | null;
+  const humanGate = convContact?.is_blocked
+    ? "contact_blocked"
+    : convContact?.force_human
+      ? "force_human"
+      : silencedUntil && new Date(silencedUntil).getTime() > Date.now()
+        ? "bot_silenced"
+        : convRow.assigned_to_user_id
+          ? "assigned_to_human"
+          : null;
+  if (humanGate) {
+    await markEventProcessed(event, "skipped_human_active", { reason: humanGate });
+    return "skipped_human_active";
   }
 
   const conversation: DispatchConversation = {

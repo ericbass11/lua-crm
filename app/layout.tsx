@@ -22,13 +22,13 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Deskcomm — CRM operacional para e-commerce",
-    template: "%s · Deskcomm",
+    default: "Lua CRM — CRM operacional para e-commerce",
+    template: "%s · Lua CRM",
   },
   description:
     "Centralize WhatsApp, e-mail e Instagram em um único atendimento. IA que resolve sozinha o que dá pra resolver, time humano focado no que importa. Multi-tenant, LGPD-nativo, sob medida pra operações brasileiras.",
-  applicationName: "Deskcomm",
-  authors: [{ name: "Deskcomm" }],
+  applicationName: "Lua CRM",
+  authors: [{ name: "Lua CRM" }],
   keywords: [
     "CRM",
     "atendimento",

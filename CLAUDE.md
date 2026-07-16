@@ -218,3 +218,25 @@ Antes de declarar uma task pronta:
 11. **Mudança de schema saiu como migration versionada + linha no MANIFEST** (ver Doutrina de Migrations) — clones conseguem atualizar
 
 Um staff engineer aprovaria? Se não, itera.
+
+---
+
+## GUARDRAIL DE MUDANÇAS DE CÓDIGO (instalação local — OBRIGATÓRIO)
+
+**Regra de ouro: nenhuma alteração de código pode afetar o pleno funcionamento do app.**
+
+1. **ANTES de editar**: avalie o impacto no app em funcionamento. O que este código
+   toca em runtime? Quais fluxos dependem dele (webhooks WhatsApp, runtime de agentes,
+   realtime, crons)? Se a resposta não estiver clara, leia o código consumidor primeiro.
+2. **Deploy SOMENTE via `bash scripts/safe-deploy.sh`** — nunca `docker compose up`
+   direto para o app (há hook do Claude Code bloqueando). O script: faz snapshot da
+   imagem atual → builda (typecheck+lint são o portão) → sobe → valida saúde e rotas
+   críticas → **rollback automático** se qualquer verificação falhar.
+3. **Se a verificação falhar**: o rollback é automático. NÃO tente de novo às cegas —
+   investigue a causa, planeje, e só então repita o ciclo.
+4. **Escalar para humano ANTES de agir** quando a mudança envolver: migração destrutiva
+   de schema (DROP/ALTER que perde dados), mudanças em auth/RLS/criptografia, qualquer
+   coisa que envie mensagens em massa no WhatsApp, ou exclusão de dados de clientes.
+5. Schema continua seguindo a Doutrina de Migrations acima (migration + baseline + MANIFEST).
+6. **TODA melhoria/correção DEVE ser registrada no README** (seção "Melhorias desta
+   instalação") na mesma sessão em que foi feita — data, o quê e por quê, curto.

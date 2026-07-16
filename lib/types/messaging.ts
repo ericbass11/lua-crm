@@ -21,6 +21,8 @@ export interface Conversation {
   is_group: boolean;
   group_chat_id: string | null;
   metadata: Record<string, unknown>;
+  /** Tags do catálogo aplicadas (pela IA via crm_tag_conversation ou manualmente). */
+  tags?: string[];
   created_at: string;
   updated_at: string;
 }

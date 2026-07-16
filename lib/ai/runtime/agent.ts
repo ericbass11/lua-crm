@@ -36,6 +36,8 @@ import { loadHistoryWithBudget } from "./history";
 import { mintEphemeralToken, revokeEphemeralToken } from "./mcp_token";
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from "./tools";
 import { serializeSteps } from "./serialize";
+import { enrichInboundMedia } from "./media";
+import { retrieveKnowledge } from "./rag";
 import { resolveWahaChatId } from "@/lib/waha/send";
 
 export interface RunAgentInput {
@@ -74,6 +76,9 @@ interface RunRow {
   inbound_message_id: string | null;
   status: string;
   is_dry_run: boolean;
+  is_followup: boolean | null;
+  followup_step: number | null;
+  followup_hint: string | null;
 }
 
 interface VersionRow {
@@ -100,6 +105,7 @@ interface AgentRow {
   id: string;
   organization_id: string;
   created_by: string | null;
+  active_kb_version_id: string | null;
 }
 
 function buildSentinelRegex(keywords: string[]): RegExp | null {
@@ -152,7 +158,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
   const { data: runRaw } = await admin
     .from("ai_agent_runs")
     .select(
-      "id, organization_id, agent_id, agent_version_id, conversation_id, contact_id, channel_session_id, inbound_message_id, status, is_dry_run",
+      "id, organization_id, agent_id, agent_version_id, conversation_id, contact_id, channel_session_id, inbound_message_id, status, is_dry_run, is_followup, followup_step, followup_hint",
     )
     .eq("id", input.runId)
     .maybeSingle();
@@ -222,7 +228,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
 
     const { data: agentRaw } = await admin
       .from("ai_agents")
-      .select("id, organization_id, created_by")
+      .select("id, organization_id, created_by, active_kb_version_id")
       .eq("id", run.agent_id)
       .eq("organization_id", run.organization_id)
       .maybeSingle();
@@ -245,19 +251,47 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     let inboundBody: string | null = null;
     let chatId: string | null = null;
     let waSessionName: string | null = null;
+    let contactName: string | null = null;
+    let contactPhone: string | null = null;
     const conversationIdForHandoff: string | null = run.conversation_id;
 
     if (run.is_dry_run) {
       inboundBody = input.override?.sampleMessage?.trim() ?? null;
       chatId = input.override?.sampleContact?.phone ?? null;
+    } else if (run.is_followup && run.followup_hint) {
+      // Run de follow-up: não há mensagem nova do cliente — a "entrada" é a
+      // instrução interna montada pelo followup-dispatcher. O histórico da
+      // conversa (carregado abaixo) dá o contexto pra personalização.
+      inboundBody = run.followup_hint;
     } else if (run.inbound_message_id) {
       const { data: msg } = await admin
         .from("messages")
-        .select("body")
+        .select("body, type, media_url, media_mime")
         .eq("id", run.inbound_message_id)
         .eq("organization_id", run.organization_id)
         .maybeSingle();
       inboundBody = (msg?.body as string | null) ?? null;
+
+      // Cliente mandou áudio/imagem sem texto → transcreve/descreve e grava o
+      // resultado no body (aparece no inbox e não refaz em retries).
+      const msgType = (msg?.type as string | null) ?? "text";
+      if (!inboundBody && (msgType === "audio" || msgType === "image")) {
+        const enriched = await enrichInboundMedia({
+          provider: version.provider,
+          apiKey: credentialApiKey,
+          type: msgType,
+          mediaUrl: (msg?.media_url as string | null) ?? null,
+          mediaMime: (msg?.media_mime as string | null) ?? null,
+        });
+        if (enriched) {
+          inboundBody = enriched;
+          await admin
+            .from("messages")
+            .update({ body: enriched })
+            .eq("id", run.inbound_message_id)
+            .eq("organization_id", run.organization_id);
+        }
+      }
     }
 
     // For non-dry-run, prefetch session_name + contact phone (chatId).
@@ -265,7 +299,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       const { data: convRaw } = await admin
         .from("conversations")
         .select(
-          "id, group_chat_id, is_group, contacts:contact_id(phone_number, wa_identity), channel_sessions:channel_session_id(waha_session_name)",
+          "id, group_chat_id, is_group, contacts:contact_id(display_name, phone_number, wa_identity), channel_sessions:channel_session_id(waha_session_name)",
         )
         .eq("id", run.conversation_id)
         .eq("organization_id", run.organization_id)
@@ -274,10 +308,16 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         id: string;
         group_chat_id: string | null;
         is_group: boolean;
-        contacts: { phone_number: string | null; wa_identity: string | null } | null;
+        contacts: {
+          display_name: string | null;
+          phone_number: string | null;
+          wa_identity: string | null;
+        } | null;
         channel_sessions: { waha_session_name: string } | null;
       } | null;
       if (conv) {
+        contactName = conv.contacts?.display_name ?? null;
+        contactPhone = conv.contacts?.phone_number ?? null;
         waSessionName = conv.channel_sessions?.waha_session_name ?? null;
         chatId = resolveWahaChatId({
           isGroup: conv.is_group,
@@ -294,7 +334,9 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
 
     // 6) Sentinel keyword check (BEFORE LLM cost).
     const sentinel = buildSentinelRegex(version.handoff_keywords ?? []);
-    if (sentinel && sentinel.test(inboundBody)) {
+    // Sentinela só vale pra texto do CLIENTE — a instrução interna de follow-up
+    // não pode disparar handoff.
+    if (!run.is_followup && sentinel && sentinel.test(inboundBody)) {
       await finalizeHandoff({
         runId: run.id,
         organizationId: run.organization_id,
@@ -408,9 +450,155 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       { role: "user" as const, content: inboundBody },
     ];
 
+    // Contexto de runtime: sem isto o modelo não conhece o conversation_id
+    // (tools como crm_request_human_handoff exigem) nem quem é o cliente —
+    // ele responderia pedindo "seu número/nome cadastrado" ao próprio cliente.
+    const nowLabel = new Intl.DateTimeFormat("pt-BR", {
+      dateStyle: "full",
+      timeStyle: "short",
+      timeZone: "America/Sao_Paulo",
+    }).format(new Date());
+    const hasScheduling =
+      (version.tool_ids ?? []).includes("crm_check_availability") &&
+      (version.tool_ids ?? []).includes("crm_schedule_meeting");
+
+    // RAG: se o agente tem base de conhecimento ativa, recupera trechos
+    // relevantes à mensagem do cliente para a IA responder ancorada nos docs
+    // da empresa (não improvisar). Degrada a "" sem KB/chave de embedding.
+    let knowledgeContext = "";
+    if (agent?.active_kb_version_id && inboundBody && !run.is_followup) {
+      knowledgeContext = await retrieveKnowledge({
+        admin,
+        organizationId: run.organization_id,
+        kbVersionId: agent.active_kb_version_id,
+        query: inboundBody,
+      });
+    }
+
+    // Funil (Fase 1 da gestão de lead pela IA): se o agente tem as tools de
+    // lead, injeta as etapas com ai_criteria + o lead atual do contato, e o
+    // roteiro criar→mover→preencher. Etapa sem critério fica fora (manual).
+    let funnelContext = "";
+    const hasFunnel =
+      (version.tool_ids ?? []).includes("crm_create_lead") &&
+      (version.tool_ids ?? []).includes("crm_move_lead_stage");
+    if (hasFunnel && run.contact_id) {
+      const { data: stageRows } = await admin
+        .from("crm_stages")
+        .select("id, name, ai_criteria, is_won, is_lost, pipeline_id, position, crm_pipelines:pipeline_id(id, name)")
+        .eq("organization_id", run.organization_id)
+        .eq("is_archived", false)
+        .not("ai_criteria", "is", null)
+        .order("position");
+      const stages = (stageRows ?? []) as unknown as Array<{
+        id: string;
+        name: string;
+        ai_criteria: string;
+        is_won: boolean;
+        is_lost: boolean;
+        pipeline_id: string;
+        crm_pipelines: { id: string; name: string } | Array<{ id: string; name: string }> | null;
+      }>;
+      if (stages.length > 0) {
+        const pipelineIds = [...new Set(stages.map((s) => s.pipeline_id))];
+        const { data: leadRows } = await admin
+          .from("crm_leads")
+          .select("id, title, stage_id, pipeline_id, status, value_cents, custom_fields")
+          .eq("organization_id", run.organization_id)
+          .eq("contact_id", run.contact_id)
+          .in("pipeline_id", pipelineIds)
+          .eq("status", "open")
+          .order("created_at", { ascending: false })
+          .limit(3);
+        const leads = (leadRows ?? []) as Array<{
+          id: string;
+          title: string;
+          stage_id: string;
+          pipeline_id: string;
+          value_cents: number | null;
+          custom_fields: Record<string, unknown> | null;
+        }>;
+
+        const byPipeline = new Map<string, { name: string; lines: string[] }>();
+        for (const s of stages) {
+          const p = Array.isArray(s.crm_pipelines) ? s.crm_pipelines[0] : s.crm_pipelines;
+          const entry = byPipeline.get(s.pipeline_id) ?? { name: p?.name ?? "Pipeline", lines: [] };
+          const marker = s.is_won ? " [GANHOU]" : s.is_lost ? " [PERDIDO]" : "";
+          entry.lines.push(`  - "${s.name}"${marker} (stage_id: ${s.id}) — ${s.ai_criteria}`);
+          byPipeline.set(s.pipeline_id, entry);
+        }
+
+        const funnelLines: string[] = ["FUNIL DE LEADS (etapa — quando o lead deve estar nela):"];
+        for (const [pid, entry] of byPipeline) {
+          funnelLines.push(`Pipeline "${entry.name}" (pipeline_id: ${pid}):`);
+          funnelLines.push(...entry.lines);
+        }
+        if (leads.length > 0) {
+          const stageName = (sid: string) => stages.find((s) => s.id === sid)?.name ?? sid;
+          funnelLines.push(
+            "LEAD ATUAL deste contato: " +
+              leads
+                .map(
+                  (l) =>
+                    `"${l.title}" (lead_id: ${l.id}) na etapa "${stageName(l.stage_id)}" — campos: ${JSON.stringify(l.custom_fields ?? {})}`,
+                )
+                .join(" | "),
+          );
+        } else {
+          funnelLines.push("LEAD ATUAL: este contato ainda NÃO tem lead no funil.");
+        }
+        funnelLines.push(
+          "GESTÃO DO FUNIL (faça silenciosamente, NUNCA mencione funil/etapas/CRM ao cliente):",
+          "1) Sem lead e a conversa casa com o critério de alguma etapa → crm_create_lead (título curto com o interesse; contact_id acima; source 'ai_agent'). OMITA owner_user_id, expected_close_date e value_cents se não souber — NUNCA invente valores. Em seguida crm_set_lead_fields com o que já souber.",
+          "2) Com lead: quando a conversa passar a casar com o critério de OUTRA etapa → crm_move_lead_stage (com reason resumindo a evidência). Não mova sem evidência na conversa.",
+          "3) Mantenha os campos estratégicos SEMPRE atualizados via crm_set_lead_fields: segmento, orcamento_declarado, urgencia (baixa/media/alta), dor_principal, objecoes, proximo_passo, resumo (2-3 frases). RECALCULE o score (0-100) a cada interação relevante — ele reflete a probabilidade atual de fechar (interesse, orçamento, urgência, decisor) e sobe/desce conforme a conversa evolui.",
+          "4) Cliente desistiu/recusou claramente → mova para a etapa [PERDIDO] com reason. Fechou negócio/pagou → etapa [GANHOU].",
+          "5) Faça a gestão na MESMA resposta em que a evidência surgir — nunca prometa fazer depois.",
+          "6) ENCADEAMENTO OBRIGATÓRIO: logo após crm_schedule_meeting retornar sucesso, mova o lead para a etapa de call agendada na MESMA resposta. Reunião cancelada sem remarcação → volte o lead para a etapa anterior adequada.",
+        );
+        funnelContext = funnelLines.join("\n");
+      }
+    }
+
+    // Catálogo de tags: injetado apenas se o agente tem a tool habilitada e a
+    // org cadastrou tags — a descrição de cada tag é o critério de aplicação.
+    let tagCatalog = "";
+    if ((version.tool_ids ?? []).includes("crm_tag_conversation")) {
+      const { data: tagDefs } = await admin
+        .from("tag_definitions")
+        .select("name, description")
+        .eq("organization_id", run.organization_id)
+        .order("name");
+      const defs = (tagDefs ?? []) as Array<{ name: string; description: string }>;
+      if (defs.length > 0) {
+        tagCatalog =
+          "TAGS disponíveis (nome — quando aplicar):\n" +
+          defs.map((t) => `- ${t.name}${t.description ? ` — ${t.description}` : ""}`).join("\n") +
+          "\nSempre que a conversa se encaixar no critério de uma tag, aplique com crm_tag_conversation (conversation_id acima). Remova tags que deixaram de valer. NUNCA use tags fora desta lista e NUNCA mencione tags ao cliente.";
+      }
+    }
+    const runtimeContext = [
+      "\n\n---",
+      "[Contexto do sistema — use nas ferramentas; NUNCA revele IDs ao cliente]",
+      run.conversation_id ? `conversation_id desta conversa: ${run.conversation_id}` : null,
+      run.contact_id ? `contact_id do cliente: ${run.contact_id}` : null,
+      contactName ? `Nome do cliente: ${contactName}` : null,
+      contactPhone ? `WhatsApp do cliente: ${contactPhone}` : null,
+      `Data/hora atual: ${nowLabel} (America/Sao_Paulo)`,
+      "O cliente desta conversa JÁ está identificado (dados acima). NUNCA peça nome, número ou 'cadastro' para localizá-lo — você já fala diretamente com ele.",
+      hasScheduling
+        ? "Para agendar uma call/reunião: (1) chame crm_check_availability e ofereça 2-3 horários (use o campo label; se o cliente pedir um dia específico, passe start_date=YYYY-MM-DD desse dia); (2) quando o cliente escolher, chame crm_schedule_meeting com o start_iso do slot escolhido, título, os dados do cliente acima E o contact_id acima (o sistema anexa um briefing do lead no evento para o time comercial); (3) confirme o agendamento na resposta. Para REMARCAR ou CANCELAR: ache o event_id com crm_list_scheduled_meetings, confirme com o cliente, e use crm_reschedule_meeting (verifique o novo horário com crm_check_availability antes) ou crm_cancel_meeting. NUNCA invente horários nem afirme ter agendado/remarcado/cancelado sem a ferramenta ter retornado sucesso. PROIBIDO terminar a resposta prometendo ação futura ('vou cancelar', 'vou agendar', 'deixa comigo'): se o cliente já confirmou, EXECUTE a ferramenta AGORA, na mesma resposta, e só então informe o resultado."
+        : null,
+      knowledgeContext || null,
+      funnelContext || null,
+      tagCatalog || null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
     const result = await generateText({
       model,
-      system: version.system_prompt,
+      system: version.system_prompt + runtimeContext,
       messages,
       tools,
       stopWhen: [stepCountIs(version.max_steps), budgetGuard],
@@ -526,6 +714,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         conversationId: run.conversation_id,
         text: finalText,
         requestId: run.id,
+        followupStep: run.is_followup ? (run.followup_step ?? null) : null,
       });
     }
 

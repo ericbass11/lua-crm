@@ -16,6 +16,7 @@ import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { publishAgentVersion } from "@/lib/ai/agents/publish";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -112,9 +113,53 @@ export async function unpauseAgentAction(id: string): Promise<ActionResult> {
   if (!existing) return { ok: false, error: "not_found" };
   if (existing.archived_at) return { ok: false, error: "state_conflict" };
 
-  // mcp_agent não pode ser despausado por aqui — precisa ir em /publish escolhendo versão.
+  // mcp_agent: pausar superseded a versão publicada — despausar republica a
+  // versão mais recente (o fn_publish valida credencial/sessão atomicamente).
   if (existing.kind === "mcp_agent") {
-    return { ok: false, error: "publish_required", message: "Publique uma versão para reativar." };
+    const { data: lastVersion } = await admin
+      .from("ai_agent_versions")
+      .select("id, version_number")
+      .eq("agent_id", id)
+      .eq("organization_id", activeOrg.orgId)
+      .in("status", ["superseded", "draft"])
+      .order("version_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!lastVersion) {
+      return { ok: false, error: "publish_required", message: "Sem versão para reativar — publique uma no editor." };
+    }
+    const published = await publishAgentVersion(admin, {
+      orgId: activeOrg.orgId,
+      agentId: id,
+      versionId: (lastVersion as { id: string }).id,
+    });
+    if (!published.ok) {
+      return {
+        ok: false,
+        error: published.code,
+        message:
+          published.code === "channel_session_offline"
+            ? "A sessão do WhatsApp vinculada está offline — reconecte em Conexões e tente de novo."
+            : `Não consegui republicar: ${published.message}`,
+      };
+    }
+    await admin
+      .from("ai_agents")
+      .update({ is_active: true, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("organization_id", activeOrg.orgId);
+
+    void audit({
+      action: "ai_agent.updated",
+      actorUserId: authUser.id,
+      organizationId: activeOrg.orgId,
+      resourceType: "ai_agent",
+      resourceId: id,
+      requestId: randomUUID(),
+      metadata: { unpaused: true, republished_version_id: published.version_id },
+    });
+    revalidatePath("/app/ai/agents");
+    return { ok: true };
   }
 
   const { error } = await admin
@@ -151,9 +196,11 @@ export async function archiveAgentAction(id: string): Promise<ActionResult> {
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (!existing) return { ok: false, error: "not_found" };
-  if (existing.is_default) return { ok: false, error: "cannot_archive_default" };
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  // Agente default pode ser arquivado — a marca de default é liberada junto
+  // (o unique parcial one_default_per_org volta a aceitar outro default).
+  if (existing.is_default) updates.is_default = false;
   if (existing.kind === "mcp_agent") {
     updates.archived_at = new Date().toISOString();
     updates.published_version_id = null;

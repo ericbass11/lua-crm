@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { sendMessageSchema } from "@/lib/schemas/messaging";
+import { toWhatsAppText } from "@/lib/waha/format";
 import type { McpToolDefinition } from "../types";
 
 const ENDPOINT_TAG = "mcp:crm_send_whatsapp_message";
@@ -47,7 +48,8 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
     const parsed = sendMessageSchema.parse({
       conversation_id: input.conversation_id,
       type: input.type,
-      body: input.body,
+      // Chamado por agentes (LLM): normaliza Markdown → sintaxe WhatsApp.
+      body: input.body && input.type === "text" ? toWhatsAppText(input.body) : input.body,
       media_url: input.media_url,
       media_mime: input.media_mime,
     });

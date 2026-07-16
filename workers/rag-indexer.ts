@@ -4,7 +4,8 @@
  *
  * Events handled:
  *   - nuvemshop.product_synced  → fetches product, embeds chunks, activates version
- *   - knowledge_source.updated  → stub (full reindex deferred to S-06.05..07)
+ *   - knowledge_source.updated  → FAQ reindex (1 chunk per Q&A). Policy/conversations/
+ *                                 catalog reindex still deferred (skipped, not errored).
  *
  * Service-role caveat (CLAUDE.md §multi-tenancy): every query filters
  * `organization_id` from the trusted event row, never from user input.
@@ -252,6 +253,160 @@ async function handleProductSynced(
   return { type: "ok", versionId, chunkCount: successCount };
 }
 
+/**
+ * Reindexes a knowledge source's content into a fresh KB version and activates it.
+ *
+ * Only `source_type = 'faq'` is implemented: each Q&A becomes one atomic chunk
+ * ("Pergunta: … / Resposta: …") so retrieval can surface a single relevant answer.
+ * Other source types (policy/conversations/catalog) are skipped (deferred), never
+ * errored, so the drain marks the event processed and moves on.
+ *
+ * On success the source row's counters are updated so the UI badge flips to
+ * "Pronto" (status='ready' + chunks_count>0).
+ */
+async function handleKnowledgeSourceUpdated(
+  row: EventRow,
+  agentId: string,
+): Promise<ProcessResult> {
+  const admin = createAdminClient();
+
+  // entity_id is the trusted source id; payload mirror is a fallback.
+  const sourceId = String(row.payload["knowledge_source_id"] ?? row.entity_id ?? "");
+  if (!sourceId) return skip("missing_knowledge_source_id");
+
+  // Load the source (tenant-filtered — never trust the body).
+  const { data: sourceRow, error: srcErr } = await admin
+    .from("ai_knowledge_sources")
+    .select("id, source_type, status")
+    .eq("id", sourceId)
+    .eq("organization_id", row.organization_id)
+    .maybeSingle();
+  if (srcErr) return { type: "error", detail: `source_fetch_failed: ${srcErr.message}` };
+  if (!sourceRow) return skip("source_not_found");
+
+  const sourceType = (sourceRow as { source_type: string }).source_type;
+  if (sourceType !== "faq") {
+    return skip(`source_type_deferred:${sourceType}`);
+  }
+
+  // Load FAQ items for this source.
+  const { data: itemsData, error: itemsErr } = await admin
+    .from("ai_faq_items")
+    .select("id, question, answer, tags, locale, position")
+    .eq("knowledge_source_id", sourceId)
+    .eq("organization_id", row.organization_id)
+    .order("position", { ascending: true });
+  if (itemsErr) return { type: "error", detail: `faq_items_fetch_failed: ${itemsErr.message}` };
+
+  const faqItems = (itemsData ?? []) as Array<{
+    id: string;
+    question: string | null;
+    answer: string | null;
+    tags: string[] | null;
+    locale: string | null;
+  }>;
+
+  const entries = faqItems
+    .map((it) => {
+      const q = (it.question ?? "").trim();
+      const a = (it.answer ?? "").trim();
+      if (!q || !a) return null;
+      return { item: it, text: `Pergunta: ${q}\nResposta: ${a}` };
+    })
+    .filter((v): v is { item: (typeof faqItems)[number]; text: string } => v !== null);
+
+  const nowIso = new Date().toISOString();
+
+  if (entries.length === 0) {
+    // No usable items — record an empty index state, don't create a version.
+    await admin
+      .from("ai_knowledge_sources")
+      .update({
+        last_index_status: "empty",
+        last_index_error: null,
+        chunks_count: 0,
+        last_indexed_at: nowIso,
+      })
+      .eq("id", sourceId)
+      .eq("organization_id", row.organization_id);
+    return skip("no_faq_items");
+  }
+
+  // New version in 'building'.
+  const { versionId } = await createKnowledgeVersion({
+    agentId,
+    organizationId: row.organization_id,
+    sourceType: "faq",
+  });
+
+  let successCount = 0;
+  let position = 0;
+  for (const entry of entries) {
+    const contentHash = computeContentHash(entry.text);
+
+    let embedding: number[];
+    try {
+      const result = await embedText(entry.text, { organizationId: row.organization_id });
+      embedding = result.embedding;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      await markVersionFailed(versionId, row.organization_id, detail).catch(() => {
+        // best-effort
+      });
+      await admin
+        .from("ai_knowledge_sources")
+        .update({ last_index_status: "failed", last_index_error: detail, last_indexed_at: nowIso })
+        .eq("id", sourceId)
+        .eq("organization_id", row.organization_id);
+      return { type: "error", detail: `embed_failed at item ${position}: ${detail}` };
+    }
+
+    const { error: upsertErr } = await admin.from("ai_chunks").upsert(
+      {
+        organization_id: row.organization_id,
+        kb_version_id: versionId,
+        knowledge_source_id: sourceId,
+        position,
+        content: entry.text,
+        content_hash: contentHash,
+        embedding: embedding as unknown as string,
+        metadata: {
+          source_type: "faq",
+          faq_item_id: entry.item.id,
+          tags: entry.item.tags ?? [],
+          locale: entry.item.locale ?? "pt-BR",
+        },
+      },
+      { onConflict: "organization_id,kb_version_id,content_hash", ignoreDuplicates: true },
+    );
+
+    if (upsertErr) {
+      console.warn(`[rag-indexer] faq chunk upsert error at position ${position}:`, upsertErr.message);
+    } else {
+      successCount++;
+    }
+    position++;
+  }
+
+  await markVersionReady(versionId, row.organization_id, successCount);
+  await activateVersion({ agentId, versionId, organizationId: row.organization_id });
+
+  // Flip the source row to "ready" so the UI badge reflects the indexed state.
+  await admin
+    .from("ai_knowledge_sources")
+    .update({
+      status: "ready",
+      last_index_status: successCount > 0 ? "done" : "empty",
+      last_index_error: null,
+      chunks_count: successCount,
+      last_indexed_at: new Date().toISOString(),
+    })
+    .eq("id", sourceId)
+    .eq("organization_id", row.organization_id);
+
+  return { type: "ok", versionId, chunkCount: successCount };
+}
+
 // ---------------------------------------------------------------------------
 // Main processor — exported for handler adapter + unit tests
 // ---------------------------------------------------------------------------
@@ -304,11 +459,8 @@ export async function processRagIndexer(row: EventRow): Promise<HandlerResult> {
         break;
 
       case "knowledge_source.updated":
-        // Wave 4 stub — full reindex deferred to S-06.05/06/07
-        console.warn(
-          "[rag-indexer] knowledge_source.updated reindex deferred to S-06.05/06/07",
-        );
-        return { consumer_key: consumerKey, status: "skipped", detail: "knowledge_source_reindex_deferred" };
+        result = await handleKnowledgeSourceUpdated(row, agentId);
+        break;
 
       default:
         return { consumer_key: consumerKey, status: "skipped", detail: `unhandled_event:${row.event_type}` };

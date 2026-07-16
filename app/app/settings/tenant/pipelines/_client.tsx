@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
+import { updateStageCriteria } from "@/app/actions/settings/updateStageCriteria";
 import type { PipelineConfigPatch } from "@/lib/schemas/settings";
 
 export interface PipelineRow {
@@ -15,6 +17,16 @@ export interface PipelineRow {
   slug: string;
   vocabulary: Record<string, string> | null;
   settings: Record<string, unknown> | null;
+}
+
+export interface StageRow {
+  id: string;
+  pipeline_id: string;
+  name: string;
+  position: number;
+  is_won: boolean;
+  is_lost: boolean;
+  ai_criteria: string | null;
 }
 
 interface CustomFieldDef {
@@ -36,7 +48,13 @@ function readLostReasons(settings: Record<string, unknown> | null): string[] {
   return Array.isArray(r) ? (r as string[]) : [];
 }
 
-export function PipelinesClient({ pipelines }: { pipelines: PipelineRow[] }) {
+export function PipelinesClient({
+  pipelines,
+  stages = [],
+}: {
+  pipelines: PipelineRow[];
+  stages?: StageRow[];
+}) {
   if (pipelines.length === 0) {
     return (
       <Card className="p-6 text-sm text-muted-foreground">
@@ -47,13 +65,58 @@ export function PipelinesClient({ pipelines }: { pipelines: PipelineRow[] }) {
   return (
     <div className="flex flex-col gap-4">
       {pipelines.map((p) => (
-        <PipelineEditor key={p.id} pipeline={p} />
+        <PipelineEditor
+          key={p.id}
+          pipeline={p}
+          stages={stages.filter((s) => s.pipeline_id === p.id)}
+        />
       ))}
     </div>
   );
 }
 
-function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
+function StageCriteriaEditor({ stage }: { stage: StageRow }) {
+  const [value, setValue] = useState(stage.ai_criteria ?? "");
+  const [pending, start] = useTransition();
+  const dirty = (stage.ai_criteria ?? "") !== value;
+  const marker = stage.is_won ? " · Ganhou" : stage.is_lost ? " · Perdido" : "";
+
+  return (
+    <div className="space-y-1.5 rounded-md border p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">
+          {stage.name}
+          <span className="text-muted-foreground">{marker}</span>
+        </span>
+        {dirty && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                const res = await updateStageCriteria(stage.id, value);
+                if (res.ok) toast.success(`Critério de "${stage.name}" salvo.`);
+                else toast.error(`Falha: ${res.error}`);
+              })
+            }
+          >
+            {pending ? "Salvando…" : "Salvar"}
+          </Button>
+        )}
+      </div>
+      <Textarea
+        rows={2}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Quando um lead deve estar nesta etapa? (ex: pediu orçamento ou aceitou falar com comercial). Vazio = a IA ignora esta etapa."
+        className="text-sm"
+      />
+    </div>
+  );
+}
+
+function PipelineEditor({ pipeline, stages = [] }: { pipeline: PipelineRow; stages?: StageRow[] }) {
   const v = pipeline.vocabulary ?? {};
   const [lead, setLead] = useState(v.lead ?? "Lead");
   const [deal, setDeal] = useState(v.deal ?? "Deal");
@@ -141,6 +204,21 @@ function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
           {isPending ? "Salvando…" : "Salvar"}
         </Button>
       </div>
+
+      {stages.length > 0 && (
+        <div className="space-y-2 border-t pt-4">
+          <div>
+            <Label className="text-sm font-medium">Critérios de IA por etapa</Label>
+            <p className="text-xs text-muted-foreground">
+              Descreva quando um lead deve estar em cada etapa. A IA usa isto para criar e mover
+              cards automaticamente. Etapa sem critério fica só na gestão manual.
+            </p>
+          </div>
+          {stages.map((s) => (
+            <StageCriteriaEditor key={s.id} stage={s} />
+          ))}
+        </div>
+      )}
     </Card>
   );
 }

@@ -4201,3 +4201,174 @@ revoke all on function public.fn_mark_conversation_message(uuid, text, text, tim
 grant execute on function public.fn_upsert_wa_contact(uuid, text, text, text, text, text) to service_role;
 grant execute on function public.fn_upsert_wa_conversation(uuid, uuid, uuid) to service_role;
 grant execute on function public.fn_mark_conversation_message(uuid, text, text, timestamptz) to service_role;
+
+-- ---- event_log.status aceita 'processed' (migration 0028) ----
+-- O agent-dispatcher grava status='processed'; o check original não incluía
+-- esse valor e todo evento de IA travava em 'processing'. Idempotente e
+-- auto-curativo (re-enfileira eventos presos pelo bug).
+alter table public.event_log
+  drop constraint if exists event_log_status_check;
+alter table public.event_log
+  add constraint event_log_status_check
+  check (status = any (array['pending'::text, 'processing'::text, 'processed'::text, 'done'::text, 'dead'::text]));
+update public.event_log
+   set status = 'pending', updated_at = now()
+ where status = 'processing'
+   and updated_at < now() - interval '10 minutes';
+
+-- ---- calendar_integrations (migration 0029) ----
+-- Integração Google Calendar por tenant (Service Account cifrada AES-GCM).
+-- Idempotente. Ver supabase/migrations/20260714210000_0029_calendar_integrations.sql
+create table if not exists public.calendar_integrations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  provider text not null default 'google',
+  label text not null default 'Agenda principal',
+  calendar_id text not null default 'primary',
+  service_account_email text not null,
+  sa_key_encrypted bytea not null,
+  sa_key_iv bytea not null,
+  sa_key_tag bytea not null,
+  timezone text not null default 'America/Sao_Paulo',
+  slot_minutes integer not null default 30,
+  business_hours jsonb not null default '{"days":[1,2,3,4,5],"start":"09:00","end":"18:00"}'::jsonb,
+  is_active boolean not null default true,
+  validated_at timestamptz,
+  validation_error text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint calendar_integrations_provider_check check (provider in ('google')),
+  constraint calendar_integrations_slot_check check (slot_minutes between 10 and 240),
+  constraint calendar_integrations_label_unique unique (organization_id, provider, label)
+);
+create index if not exists calendar_integrations_org_idx
+  on public.calendar_integrations (organization_id);
+alter table public.calendar_integrations enable row level security;
+drop policy if exists tenant_isolation_calendar_integrations_select on public.calendar_integrations;
+create policy tenant_isolation_calendar_integrations_select
+  on public.calendar_integrations for select
+  using (organization_id in (select fn_user_org_ids()));
+drop policy if exists tenant_isolation_calendar_integrations_modify on public.calendar_integrations;
+create policy tenant_isolation_calendar_integrations_modify
+  on public.calendar_integrations
+  using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+create or replace view public.calendar_integrations_safe
+  with (security_invoker = 'true') as
+select id, organization_id, provider, label, calendar_id, service_account_email,
+       timezone, slot_minutes, business_hours, is_active,
+       validated_at, validation_error, created_by, created_at, updated_at
+  from public.calendar_integrations;
+grant all on table public.calendar_integrations to service_role;
+grant select, insert, update, delete on table public.calendar_integrations to authenticated;
+grant all on table public.calendar_integrations_safe to service_role;
+grant select on table public.calendar_integrations_safe to authenticated;
+
+-- ---- followup automático (migration 0030) ----
+-- Sequência de follow-up por inatividade (IA personalizada). Idempotente.
+create table if not exists public.followup_settings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null unique references public.organizations(id) on delete cascade,
+  enabled boolean not null default false,
+  timezone text not null default 'America/Sao_Paulo',
+  -- dias 0=dom..6=sáb; janela de envio no fuso acima
+  send_window jsonb not null default '{"days":[1,2,3,4,5,6],"start":"08:00","end":"21:00"}'::jsonb,
+  -- etapas: delay_minutes conta a partir da ÚLTIMA mensagem da conversa
+  steps jsonb not null default '[
+    {"delay_minutes": 15,   "hint": "Retome a última pergunta de forma leve e natural."},
+    {"delay_minutes": 120,  "hint": "Agregue valor: uma dica útil e específica ligada ao que foi conversado."},
+    {"delay_minutes": 1440, "hint": "Última tentativa: cordial e breve, deixe a porta aberta sem pressionar."}
+  ]'::jsonb,
+  updated_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.followup_settings enable row level security;
+
+drop policy if exists tenant_isolation_followup_settings_select on public.followup_settings;
+create policy tenant_isolation_followup_settings_select
+  on public.followup_settings for select
+  using (organization_id in (select fn_user_org_ids()));
+
+drop policy if exists tenant_isolation_followup_settings_modify on public.followup_settings;
+create policy tenant_isolation_followup_settings_modify
+  on public.followup_settings
+  using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+
+grant all on table public.followup_settings to service_role;
+grant select, insert, update, delete on table public.followup_settings to authenticated;
+
+alter table public.ai_agent_runs
+  add column if not exists is_followup boolean not null default false;
+alter table public.ai_agent_runs
+  add column if not exists followup_step integer;
+alter table public.ai_agent_runs
+  add column if not exists followup_hint text;
+
+-- ---- tags de conversa (migration 0031) ----
+-- Catálogo de tags por org + conversations.tags aplicáveis pela IA. Idempotente.
+create table if not exists public.tag_definitions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  name text not null,
+  -- "Quando aplicar" — orienta a IA (ex.: "cliente pediu preço ou orçamento")
+  description text not null default '',
+  color text not null default 'gray',
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint tag_definitions_name_check check (char_length(name) between 1 and 40),
+  constraint tag_definitions_color_check check (color in ('gray','red','orange','yellow','green','blue','purple')),
+  constraint tag_definitions_org_name_unique unique (organization_id, name)
+);
+
+alter table public.tag_definitions enable row level security;
+
+drop policy if exists tenant_isolation_tag_definitions_select on public.tag_definitions;
+create policy tenant_isolation_tag_definitions_select
+  on public.tag_definitions for select
+  using (organization_id in (select fn_user_org_ids()));
+
+drop policy if exists tenant_isolation_tag_definitions_modify on public.tag_definitions;
+create policy tenant_isolation_tag_definitions_modify
+  on public.tag_definitions
+  using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+
+grant all on table public.tag_definitions to service_role;
+grant select, insert, update, delete on table public.tag_definitions to authenticated;
+
+alter table public.conversations
+  add column if not exists tags text[] not null default '{}';
+
+create index if not exists conversations_tags_gin_idx
+  on public.conversations using gin (tags);
+
+-- ---- critério de IA por etapa do kanban (migration 0032) ----
+alter table public.crm_stages
+  add column if not exists ai_criteria text;
+
+-- ---- notification_settings (migration 0033) ----
+create table if not exists public.notification_settings (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  handoff_webhook_url text,
+  handoff_enabled boolean not null default true,
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+alter table public.notification_settings enable row level security;
+drop policy if exists tenant_isolation_notification_settings_select on public.notification_settings;
+create policy tenant_isolation_notification_settings_select
+  on public.notification_settings for select using (organization_id in (select fn_user_org_ids()));
+drop policy if exists tenant_isolation_notification_settings_modify on public.notification_settings;
+create policy tenant_isolation_notification_settings_modify
+  on public.notification_settings using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+grant all on table public.notification_settings to service_role;
+grant select, insert, update, delete on table public.notification_settings to authenticated;
+
+-- ---- handoff via WhatsApp (migration 0034) ----
+alter table public.notification_settings add column if not exists handoff_whatsapp_number text;

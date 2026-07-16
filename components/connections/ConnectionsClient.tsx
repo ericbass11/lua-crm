@@ -25,6 +25,7 @@ import {
   CircleNotch,
   Phone,
   Plus,
+  Trash,
 } from "@/lib/ui/icons";
 
 type Variant = "success" | "warning" | "error" | "neutral";
@@ -126,6 +127,31 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     invalidate();
   }, [invalidate]);
 
+  const handleDelete = useCallback(
+    async (c: ChannelSession) => {
+      if (
+        !confirm(
+          `Excluir a conexão "${channelLabel(c)}"?\n\nO número é desconectado do WhatsApp. Se houver conversas vinculadas, o histórico é preservado e o registro fica como "Parado".`,
+        )
+      ) {
+        return;
+      }
+      setBusyId(c.id);
+      try {
+        const res = await apiClient.delete<{ data: { deleted: boolean; message: string } }>(
+          `/api/v1/channel-sessions/${c.id}`,
+        );
+        toast.success(res.data.message);
+        invalidate();
+      } catch (err) {
+        toast.error(errMsg(err, "Não foi possível excluir a conexão."));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [invalidate],
+  );
+
   const list = sessions ?? [];
 
   return (
@@ -219,6 +245,16 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                       <ArrowsClockwise size={14} aria-hidden />
                     )}
                     Reconectar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    disabled={busyId === c.id}
+                    onClick={() => void handleDelete(c)}
+                  >
+                    <Trash size={14} aria-hidden />
+                    Excluir
                   </Button>
                 </div>
               </Card>

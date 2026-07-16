@@ -22,6 +22,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import { notifyHandoff } from "@/lib/notify/handoff";
 
 export type HandoffReason =
   | "requested_human"
@@ -191,6 +192,37 @@ export async function triggerHandoff(
       logger.warn("[handoff-orchestrator] audit insert failed", {
         conversation_id: input.conversationId,
         error: auditErr.message,
+      });
+    }
+
+    // Step 6 — notificação externa ao time (best-effort; nunca bloqueia).
+    // Sem isto, um handoff fica parado no inbox sem ninguém saber.
+    try {
+      const { data: convContact } = await admin
+        .from("conversations")
+        .select("contact_id, contacts:contact_id(display_name, name, phone_number)")
+        .eq("id", input.conversationId)
+        .eq("organization_id", input.organizationId)
+        .maybeSingle();
+      const ct = convContact?.contacts as
+        | { display_name: string | null; name: string | null; phone_number: string | null }
+        | Array<{ display_name: string | null; name: string | null; phone_number: string | null }>
+        | null
+        | undefined;
+      const contact = Array.isArray(ct) ? ct[0] : ct;
+      await notifyHandoff(admin, {
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        contactId: (convContact?.contact_id as string | null) ?? null,
+        reason: input.reason,
+        contactName: contact?.display_name ?? contact?.name ?? null,
+        contactPhone: contact?.phone_number ?? null,
+        appUrl: process.env.NEXT_PUBLIC_APP_URL ?? null,
+      });
+    } catch (err) {
+      logger.warn("[handoff-orchestrator] notify failed", {
+        conversation_id: input.conversationId,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 

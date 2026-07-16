@@ -58,6 +58,67 @@ async function resolveContext(requestId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// GET — source + FAQ items (used by the FAQ editor to prefill on edit)
+// ---------------------------------------------------------------------------
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const requestId = randomUUID();
+  const { id: sourceId } = await params;
+
+  const ctx = await resolveContext(requestId);
+  if (ctx.error) return ctx.error;
+  const { activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
+
+  const supabase = await createClient();
+  const { data: source, error: srcErr } = await supabase
+    .from("ai_knowledge_sources")
+    .select("id, name, source_type, status, chunks_count, last_index_status")
+    .eq("id", sourceId)
+    .eq("organization_id", activeOrg.orgId)
+    .maybeSingle();
+
+  if (srcErr) {
+    console.error("[ai-knowledge-sources] GET fetch failed:", srcErr.message);
+    return fail("internal_error", "Erro ao carregar fonte.", 500, { requestId });
+  }
+  if (!source) {
+    return fail("not_found", "Fonte de conhecimento não encontrada.", 404, { requestId });
+  }
+
+  let items: Array<{ question: string; answer: string; tags: string[]; locale: string }> = [];
+  if ((source as { source_type: string }).source_type === "faq") {
+    const { data: itemRows, error: itemsErr } = await supabase
+      .from("ai_faq_items")
+      .select("question, answer, tags, locale, position")
+      .eq("knowledge_source_id", sourceId)
+      .eq("organization_id", activeOrg.orgId)
+      .order("position", { ascending: true });
+
+    if (itemsErr) {
+      console.error("[ai-knowledge-sources] GET items failed:", itemsErr.message);
+      return fail("internal_error", "Erro ao carregar itens da FAQ.", 500, { requestId });
+    }
+
+    items = ((itemRows ?? []) as Array<{
+      question: string | null;
+      answer: string | null;
+      tags: string[] | null;
+      locale: string | null;
+    }>).map((it) => ({
+      question: it.question ?? "",
+      answer: it.answer ?? "",
+      tags: it.tags ?? [],
+      locale: it.locale ?? "pt-BR",
+    }));
+  }
+
+  return ok({ source, items }, { requestId });
+}
+
+// ---------------------------------------------------------------------------
 // PATCH
 // ---------------------------------------------------------------------------
 

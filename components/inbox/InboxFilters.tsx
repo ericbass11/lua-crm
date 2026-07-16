@@ -88,7 +88,7 @@ export function InboxFilters({ value, onChange }: Props) {
         value={value.tab}
         onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
       >
-        <TabsList className="grid h-8 w-full grid-cols-5">
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
           <TabsTrigger value="unassigned" className="text-[11px]">
             Não atribuídos
           </TabsTrigger>

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
-import { PipelinesClient, type PipelineRow } from "./_client";
+import { PipelinesClient, type PipelineRow, type StageRow } from "./_client";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +25,14 @@ export default async function PipelinesSettingsPage() {
 
   const pipelines = (data ?? []) as PipelineRow[];
 
+  const { data: stageData } = await supabase
+    .from("crm_stages")
+    .select("id, pipeline_id, name, position, is_won, is_lost, ai_criteria")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("is_archived", false)
+    .order("position");
+  const stages = (stageData ?? []) as StageRow[];
+
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
@@ -33,7 +41,7 @@ export default async function PipelinesSettingsPage() {
           Vocabulário, custom fields e motivos de perda por pipeline.
         </p>
       </header>
-      <PipelinesClient pipelines={pipelines} />
+      <PipelinesClient pipelines={pipelines} stages={stages} />
     </div>
   );
 }

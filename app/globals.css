@@ -9,50 +9,50 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Surfaces (light) */
-  --color-bg: #faf9f6;
+  /* Surfaces (light — cool) */
+  --color-bg: #f7f9fc;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
+  --color-surface-elevated: #eef2f8;
+  --color-overlay: rgba(17, 24, 38, 0.42);
 
   /* Text (light) */
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
+  --color-text: #111826;
+  --color-text-muted: #4a5468;
+  --color-text-subtle: #6b7488;
 
   /* Borders (light) */
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-border: #e2e8f2;
+  --color-border-strong: #cdd6e5;
 
-  /* Accent — Sage (11 stops) */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  /* Accent — Blue (11 stops) */
+  --color-accent-50:  #eff5ff;
+  --color-accent-100: #dbe8fe;
+  --color-accent-200: #bfd7fe;
+  --color-accent-300: #93bbfd;
+  --color-accent-400: #609afa;
+  --color-accent-500: #3b82f6;
+  --color-accent-600: #2563eb;
+  --color-accent-700: #1d4ed8;
+  --color-accent-800: #1e40af;
+  --color-accent-900: #1e3a8a;
+  --color-accent-950: #172554;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
 
-  /* Neutrals — greige (11 stops, light) */
-  --color-neutral-50:  #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+  /* Neutrals — cool gray (11 stops, light) */
+  --color-neutral-50:  #f7f9fc;
+  --color-neutral-100: #eef2f8;
+  --color-neutral-200: #e2e8f2;
+  --color-neutral-300: #cdd6e5;
+  --color-neutral-400: #97a3b8;
+  --color-neutral-500: #6b7488;
+  --color-neutral-600: #4a5468;
+  --color-neutral-700: #363e4e;
+  --color-neutral-800: #232a36;
+  --color-neutral-900: #111826;
+  --color-neutral-950: #080c14;
 
   /* States (light) */
   --color-success: #5a8a5f;
@@ -144,50 +144,50 @@
 }
 
 [data-theme="dark"] {
-  /* Surfaces (dark — drawn) */
-  --color-bg: #161510;
-  --color-surface: #1d1c17;
-  --color-surface-elevated: #272620;
-  --color-overlay: rgba(0, 0, 0, 0.55);
+  /* Surfaces (dark — navy) */
+  --color-bg: #0b1220;
+  --color-surface: #121b2e;
+  --color-surface-elevated: #1b2740;
+  --color-overlay: rgba(2, 6, 16, 0.62);
 
   /* Text (dark) */
-  --color-text: #f5f4ef;
-  --color-text-muted: #8e8b7f;
-  --color-text-subtle: #605e54;
+  --color-text: #eaf0fb;
+  --color-text-muted: #97a6c2;
+  --color-text-subtle: #63708c;
 
   /* Borders (dark) */
-  --color-border: #33312a;
-  --color-border-strong: #444239;
+  --color-border: #26324d;
+  --color-border-strong: #354465;
 
-  /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  /* Accent — Blue; default sobe pra contraste no navy */
+  --color-accent-50:  #eff5ff;
+  --color-accent-100: #dbe8fe;
+  --color-accent-200: #bfd7fe;
+  --color-accent-300: #93bbfd;
+  --color-accent-400: #609afa;
+  --color-accent-500: #3b82f6;
+  --color-accent-600: #2563eb;
+  --color-accent-700: #1d4ed8;
+  --color-accent-800: #1e40af;
+  --color-accent-900: #1e3a8a;
+  --color-accent-950: #172554;
   --color-accent: var(--color-accent-400);
-  --color-accent-fg: #161510;
-  --color-accent-soft: rgba(130, 160, 119, 0.16);
+  --color-accent-fg: #0b1220;
+  --color-accent-soft: rgba(96, 154, 250, 0.16);
   --color-accent-hover: var(--color-accent-300);
 
-  /* Neutrals — greige (11 stops, dark) */
-  --color-neutral-50:  #f5f4ef;
-  --color-neutral-100: #e6e4dc;
-  --color-neutral-200: #bbb8ac;
-  --color-neutral-300: #8e8b7f;
-  --color-neutral-400: #605e54;
-  --color-neutral-500: #444239;
-  --color-neutral-600: #33312a;
-  --color-neutral-700: #272620;
-  --color-neutral-800: #1d1c17;
-  --color-neutral-900: #161510;
-  --color-neutral-950: #0c0b08;
+  /* Neutrals — navy (11 stops, dark) */
+  --color-neutral-50:  #eaf0fb;
+  --color-neutral-100: #d6e0f2;
+  --color-neutral-200: #aab8d4;
+  --color-neutral-300: #8494b6;
+  --color-neutral-400: #5f6e90;
+  --color-neutral-500: #435068;
+  --color-neutral-600: #2f3a52;
+  --color-neutral-700: #1f2b43;
+  --color-neutral-800: #121b2e;
+  --color-neutral-900: #0b1220;
+  --color-neutral-950: #060a13;
 
   /* States (dark) */
   --color-success: #82a077;

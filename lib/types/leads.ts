@@ -32,4 +32,10 @@ export interface Lead {
   created_at: string;
   updated_at: string;
   created_by_user_id: string | null;
+  /** Join do contato (board route) — para exibir nome/telefone no card. */
+  contact?: {
+    display_name: string | null;
+    name: string | null;
+    phone_number: string | null;
+  } | null;
 }

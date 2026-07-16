@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TagPicker } from "@/components/tags/TagPicker";
 import { useCreateLead } from "@/hooks/kanban/useCreateLead";
 import type { Stage } from "@/lib/kanban/types";
 import { createLeadSchema, type CreateLeadInput } from "@/lib/schemas/leads";
@@ -200,11 +201,14 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages }: Props)
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="tagsRaw">Tags (separadas por vírgula)</Label>
-            <Input
-              id="tagsRaw"
-              placeholder="vip, recompra"
-              {...form.register("tagsRaw")}
+            <Label>Tags</Label>
+            <TagPicker
+              value={form
+                .watch("tagsRaw")
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)}
+              onChange={(tags) => form.setValue("tagsRaw", tags.join(", "), { shouldDirty: true })}
             />
           </div>
 

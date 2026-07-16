@@ -3,6 +3,25 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
+/**
+ * O cookie de auth é HttpOnly → o supabase-js do browser NÃO tem sessão e
+ * assinaria tudo como 'anon' (RLS filtra 100% dos eventos, silenciosamente).
+ * Este endpoint devolve o access_token da própria sessão via cookie HttpOnly.
+ */
+async function fetchRealtimeToken(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/v1/auth/realtime-token", { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { data?: { access_token?: string } };
+    return json.data?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Renova o token do canal antes do JWT (1h) expirar. */
+const TOKEN_REFRESH_MS = 30 * 60 * 1000;
+
 export type RealtimeStatus =
   | "connecting"
   | "subscribed"
@@ -48,42 +67,71 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): { status: Real
     }
     const supabase = createClient();
     const channelName = `${name}::${instanceId}`;
-    let channel: RealtimeChannel | null = supabase.channel(channelName);
+    let channel: RealtimeChannel | null = null;
+    let cancelled = false;
 
     const handler = (payload: unknown) => {
       onChangeRef.current(payload);
     };
 
-    if (postgresChanges) {
-      channel = channel.on(
-        "postgres_changes",
-        {
-          event: postgresChanges.event,
-          schema: postgresChanges.schema ?? "public",
-          table: postgresChanges.table,
-          ...(postgresChanges.filter ? { filter: postgresChanges.filter } : {}),
-        },
-        handler,
-      );
-    }
-
-    if (broadcast) {
-      channel = channel.on("broadcast", { event: broadcast.event }, handler);
-    }
-
     setStatus("connecting");
-    channel.subscribe((s) => {
-      // s is one of "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED"
-      const map: Record<string, RealtimeStatus> = {
-        SUBSCRIBED: "subscribed",
-        CHANNEL_ERROR: "channel_error",
-        TIMED_OUT: "timed_out",
-        CLOSED: "closed",
-      };
-      setStatus(map[s] ?? "connecting");
-    });
+    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    // CRÍTICO: autenticar o socket ANTES de assinar — e o token vem do
+    // ENDPOINT (cookie HttpOnly: getSession() no browser retorna null!).
+    // claims_role da subscription tem que ser 'authenticated', senão o
+    // walrus aplica RLS como 'anon' e filtra todos os eventos.
+    void (async () => {
+      const token =
+        (await fetchRealtimeToken()) ??
+        // fallback: deployments com cookie legível pelo JS
+        (await supabase.auth.getSession()).data.session?.access_token ??
+        null;
+      if (token) await supabase.realtime.setAuth(token);
+      if (cancelled) return;
+
+      // JWT expira em 1h — renova o auth do socket (atualiza canais já
+      // assinados) antes disso, senão o realtime morre silenciosamente.
+      refreshTimer = setInterval(() => {
+        void (async () => {
+          const fresh = await fetchRealtimeToken();
+          if (fresh) await supabase.realtime.setAuth(fresh);
+        })();
+      }, TOKEN_REFRESH_MS);
+
+      channel = supabase.channel(channelName);
+
+      if (postgresChanges) {
+        channel = channel.on(
+          "postgres_changes",
+          {
+            event: postgresChanges.event,
+            schema: postgresChanges.schema ?? "public",
+            table: postgresChanges.table,
+            ...(postgresChanges.filter ? { filter: postgresChanges.filter } : {}),
+          },
+          handler,
+        );
+      }
+
+      if (broadcast) {
+        channel = channel.on("broadcast", { event: broadcast.event }, handler);
+      }
+
+      channel.subscribe((s) => {
+        // s is one of "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED"
+        const map: Record<string, RealtimeStatus> = {
+          SUBSCRIBED: "subscribed",
+          CHANNEL_ERROR: "channel_error",
+          TIMED_OUT: "timed_out",
+          CLOSED: "closed",
+        };
+        setStatus(map[s] ?? "connecting");
+      });
+    })();
 
     return () => {
+      cancelled = true;
+      if (refreshTimer) clearInterval(refreshTimer);
       if (channel) {
         supabase.removeChannel(channel);
         channel = null;

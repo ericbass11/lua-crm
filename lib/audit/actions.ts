@@ -101,6 +101,13 @@ export type AuditAction =
   | "ai.credential_created"
   | "ai.credential_deleted"
   | "ai.credential_revalidated"
+  | "integration.calendar_created"
+  | "integration.calendar_deleted"
+  | "conversation.history_cleared"
+  | "settings.followup_updated"
+  | "tag.created"
+  | "tag.deleted"
+  | "settings.notifications_updated"
   | "ai_agent.created"
   | "ai_agent.updated"
   | "ai_agent.archived"
@@ -116,4 +123,5 @@ export type AuditAction =
   | "ai_agent.run_completed"
   | "ai_agent.run_failed"
   | "channel.connected"
-  | "channel.reconnected";
+  | "channel.reconnected"
+  | "channel.deleted";

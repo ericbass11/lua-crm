@@ -1,0 +1,11 @@
+# Override LOCAL (Windows/dev) — usado junto com o prod:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.local.yml up -d
+#
+# Publica a porta 3000 do app no host. Necessário porque em instalação local
+# NEXT_PUBLIC_APP_URL=http://localhost:3000 precisa funcionar tanto no browser
+# (host) quanto DENTRO do container app (dispatcher → /api/internal/agents/run
+# usa essa URL; "localhost" no container é ele mesmo, e o app escuta na 3000).
+services:
+  app:
+    ports:
+      - "3000:3000"

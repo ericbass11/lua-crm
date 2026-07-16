@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import {
@@ -14,6 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { TagPicker } from "@/components/tags/TagPicker";
+import { apiClient } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
 import { useEditLead } from "@/hooks/kanban/useUpdateLead";
 import type { Lead } from "@/lib/types/leads";
 import { updateLeadSchema, type UpdateLeadInput } from "@/lib/schemas/leads";
@@ -24,6 +27,13 @@ interface FormShape {
   valueReais: string;
   tagsRaw: string;
   expected_close_date: string;
+}
+
+interface FieldDef {
+  key: string;
+  label: string;
+  type: string;
+  options?: Array<{ value: string; label: string }>;
 }
 
 interface Props {
@@ -40,6 +50,30 @@ function centsToReais(cents: number | null | undefined): string {
 
 export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) {
   const edit = useEditLead(pipelineId);
+
+  // Campos estratégicos declarados no pipeline (Fase 2). Editáveis; a IA também
+  // os preenche. Estado local espelhando lead.custom_fields.
+  const [fieldDefs, setFieldDefs] = useState<FieldDef[]>([]);
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    const cf = (lead.custom_fields ?? {}) as Record<string, unknown>;
+    setFieldValues(
+      Object.fromEntries(Object.entries(cf).map(([k, v]) => [k, v == null ? "" : String(v)])),
+    );
+    void (async () => {
+      try {
+        const res = await apiClient.get<{ data: { settings?: { fields?: FieldDef[] } } }>(
+          `/api/v1/pipelines/${pipelineId}`,
+        );
+        setFieldDefs(res.data?.settings?.fields ?? []);
+      } catch {
+        setFieldDefs([]);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lead.id, pipelineId]);
 
   const form = useForm<FormShape>({
     defaultValues: {
@@ -82,12 +116,29 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
       valueCents = Math.round(n * 100);
     }
 
+    // Campos estratégicos: converte por tipo declarado; vazio → null (remove).
+    const customFields: Record<string, string | number | boolean | null> = {};
+    for (const def of fieldDefs) {
+      const raw = (fieldValues[def.key] ?? "").trim();
+      if (raw === "") {
+        customFields[def.key] = null;
+      } else if (def.type === "number") {
+        const n = Number(raw.replace(",", "."));
+        customFields[def.key] = Number.isFinite(n) ? n : raw;
+      } else if (def.type === "boolean") {
+        customFields[def.key] = raw === "true" || raw === "sim" || raw === "1";
+      } else {
+        customFields[def.key] = raw;
+      }
+    }
+
     const patch: Record<string, unknown> = {
       title: values.title.trim(),
       description: values.description.trim() ? values.description.trim() : null,
       value_cents: valueCents,
       tags,
       expected_close_date: values.expected_close_date || null,
+      ...(fieldDefs.length > 0 ? { custom_fields: customFields } : {}),
     };
 
     const parsed = updateLeadSchema.safeParse(patch);
@@ -159,9 +210,70 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="tagsRaw">Tags (separadas por vírgula)</Label>
-            <Input id="tagsRaw" placeholder="vip, recompra" {...form.register("tagsRaw")} />
+            <Label>Tags</Label>
+            <TagPicker
+              value={form
+                .watch("tagsRaw")
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)}
+              onChange={(tags) => form.setValue("tagsRaw", tags.join(", "), { shouldDirty: true })}
+            />
           </div>
+
+          {fieldDefs.length > 0 && (
+            <div className="space-y-3 border-t pt-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Campos estratégicos <span className="normal-case">(a IA também preenche)</span>
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {fieldDefs.map((def) => {
+                  const val = fieldValues[def.key] ?? "";
+                  const set = (v: string) => setFieldValues((s) => ({ ...s, [def.key]: v }));
+                  return (
+                    <div
+                      key={def.key}
+                      className={cn("space-y-1", def.type === "textarea" && "sm:col-span-2")}
+                    >
+                      <Label className="text-xs">{def.label}</Label>
+                      {def.type === "textarea" ? (
+                        <Textarea rows={2} value={val} onChange={(e) => set(e.target.value)} />
+                      ) : def.type === "select" && def.options ? (
+                        <select
+                          value={val}
+                          onChange={(e) => set(e.target.value)}
+                          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                        >
+                          <option value="">—</option>
+                          {def.options.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : def.type === "boolean" ? (
+                        <select
+                          value={val}
+                          onChange={(e) => set(e.target.value)}
+                          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                        >
+                          <option value="">—</option>
+                          <option value="true">Sim</option>
+                          <option value="false">Não</option>
+                        </select>
+                      ) : (
+                        <Input
+                          type={def.type === "number" ? "number" : "text"}
+                          value={val}
+                          onChange={(e) => set(e.target.value)}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <DialogFooter>
             <Button

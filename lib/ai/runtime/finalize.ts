@@ -12,6 +12,7 @@ import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import type { Actor } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { toWhatsAppText } from "@/lib/waha/format";
 import type { SerializedStep } from "./serialize";
 
 export type RunStatus = "completed" | "failed" | "aborted" | "handoff";
@@ -119,6 +120,8 @@ export interface SendFinalResponseInput {
   conversationId: string;
   text: string;
   requestId: string;
+  /** Nº do passo quando a mensagem é um follow-up automático (marca o ciclo). */
+  followupStep?: number | null;
 }
 
 /**
@@ -146,8 +149,15 @@ export async function sendFinalResponse(
       {
         conversation_id: input.conversationId,
         type: "text",
-        body: input.text,
-        metadata: { run_id: input.runId, ai_actor_id: input.runId },
+        // LLMs emitem Markdown; WhatsApp usa sintaxe própria (*x*, _x_).
+        body: toWhatsAppText(input.text),
+        metadata: {
+          run_id: input.runId,
+          ai_actor_id: input.runId,
+          // O followup-dispatcher conta este marcador (desde last_inbound_at)
+          // pra saber o passo atual do ciclo.
+          ...(input.followupStep ? { followup_step: input.followupStep } : {}),
+        },
       },
     );
     return message.id;

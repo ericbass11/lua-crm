@@ -26,11 +26,18 @@ export const TOOL_CATALOG: ReadonlyArray<McpToolCatalogEntry> = [
   { name: "crm_list_leads", category: "read", description: "Lista leads de um pipeline" },
   { name: "crm_get_lead", category: "read", description: "Detalhe de lead" },
   { name: "crm_list_pipelines", category: "read", description: "Lista pipelines da org" },
+  { name: "crm_check_availability", category: "read", description: "Horários livres na agenda (Google Calendar)" },
+  { name: "crm_list_scheduled_meetings", category: "read", description: "Reuniões futuras agendadas pelo bot (com event_id)" },
   // write
   { name: "crm_create_lead", category: "write", description: "Cria um lead" },
   { name: "crm_update_lead", category: "write", description: "Atualiza campos de um lead" },
   { name: "crm_move_lead_stage", category: "write", description: "Move lead para outro stage" },
   { name: "crm_send_whatsapp_message", category: "write", description: "Envia mensagem WhatsApp" },
+  { name: "crm_tag_conversation", category: "write", description: "Aplica/remove tags do catálogo na conversa" },
+  { name: "crm_set_lead_fields", category: "write", description: "Preenche campos estratégicos do lead (custom_fields)" },
+  { name: "crm_schedule_meeting", category: "write", description: "Agenda call na agenda da empresa (Google Calendar)" },
+  { name: "crm_reschedule_meeting", category: "write", description: "Remarca uma reunião agendada pelo bot" },
+  { name: "crm_cancel_meeting", category: "write", description: "Cancela uma reunião agendada pelo bot" },
   // handoff
   { name: "crm_request_human_handoff", category: "handoff", description: "Solicita handoff para atendente humano" },
 ] as const;
