@@ -332,7 +332,7 @@ export async function createCalendarEvent(
     description: input.description ?? "",
     start: { dateTime: input.startIso, timeZone: cfg.timezone },
     end: { dateTime: input.endIso, timeZone: cfg.timezone },
-    extendedProperties: { private: { deskcomm: "1", ...(input.privateProps ?? {}) } },
+    extendedProperties: { private: { luaCrm: "1", ...(input.privateProps ?? {}) } },
   };
   // Service Accounts sem Domain-Wide Delegation não podem convidar attendees
   // (Google 403 forbiddenForServiceAccounts) — anexamos o e-mail na descrição.
@@ -372,7 +372,7 @@ export interface BotEvent {
 
 /**
  * Eventos futuros criados pelo bot nesta agenda. Filtra por marcador privado
- * `deskcomm` OU criador = e-mail da Service Account (cobre eventos antigos sem
+ * `lua-crm` OU criador = e-mail da Service Account (cobre eventos antigos sem
  * marcador). Nunca expõe eventos pessoais do dono da agenda.
  */
 export async function listBotEvents(cfg: CalendarConfig, maxResults = 10): Promise<BotEvent[]> {
@@ -398,7 +398,7 @@ export async function listBotEvents(cfg: CalendarConfig, maxResults = 10): Promi
   return (json.items ?? [])
     .filter(
       (e) =>
-        e.extendedProperties?.private?.deskcomm === "1" ||
+        e.extendedProperties?.private?.luaCrm === "1" ||
         e.creator?.email === cfg.saKey.client_email,
     )
     .slice(0, maxResults)

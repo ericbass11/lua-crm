@@ -37,7 +37,7 @@ interface SendArgs {
 
 export async function sendExportEmail(args: SendArgs): Promise<{ messageId: string }> {
   const shortId = args.requestId.slice(0, 8);
-  const orgName = args.organizationName ?? "DeskcommCRM";
+  const orgName = args.organizationName ?? "LUA CRM";
   const expiresFmt = args.expiresAt.toLocaleString("pt-BR", {
     timeZone: "America/Sao_Paulo",
   });

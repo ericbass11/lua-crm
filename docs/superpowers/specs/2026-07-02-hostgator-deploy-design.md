@@ -1,9 +1,9 @@
-# Spec — DeskcommCRM como template self-hosted na HostGator
+# Spec — LUA CRM como template self-hosted na HostGator
 
 **Data:** 2026-07-02
 **Autor:** Maestro (sessão Claude Code) + investigação multi-agente
-**Status:** aguardando revisão do Rafael
-**Objetivo:** transformar o DeskcommCRM num **template open-source auto-hospedável** cuja rota de deploy oficial é a infra da HostGator (via links de afiliado), com (1) adaptação técnica do projeto, (2) tutorial passo-a-passo para leigos e (3) um `.zip` "Setup Kit" que a pessoa joga no Claude Code dela e ele conduz a configuração.
+**Status:** aguardando revisão do Eric Souza
+**Objetivo:** transformar o LUA CRM num **template open-source auto-hospedável** cuja rota de deploy oficial é a infra da HostGator (via links de afiliado), com (1) adaptação técnica do projeto, (2) tutorial passo-a-passo para leigos e (3) um `.zip` "Setup Kit" que a pessoa joga no Claude Code dela e ele conduz a configuração.
 
 ---
 
@@ -17,13 +17,13 @@ Limite honesto de "100% HostGator": todo o **compute e o WhatsApp** rodam no VPS
 
 | # | Decisão | Escolha | Origem |
 |---|---------|---------|--------|
-| D1 | Onde vive o banco | **Híbrido** — compute no VPS, DB no Supabase Cloud grátis | Rafael |
-| D2 | Formato do `.zip` | `install.sh` determinístico **+** Claude Code como copiloto | Rafael |
-| D3 | Fluxo GitHub | Fork + `git clone` + `docker compose up` (CI/CD é opcional avançado) | Rafael |
-| D4 | Escopo do template | **Genérico** — Nuvemshop atrás de flag `NUVEMSHOP_ENABLED=false` | Rafael |
-| D5 | WhatsApp/WAHA | **WAHA Core grátis** como default (validar no código); Plus opcional via env | Rafael |
-| D6 | Baseline do schema | Gerar via **acesso MCP** ao projeto remoto `rrydmwnporysaiysiztn` | Rafael |
-| D7 | Workers de IA-por-evento | **Port fiel** — dormentes viram roadmap, não ativar no v1 | Rafael |
+| D1 | Onde vive o banco | **Híbrido** — compute no VPS, DB no Supabase Cloud grátis | Eric Souza |
+| D2 | Formato do `.zip` | `install.sh` determinístico **+** Claude Code como copiloto | Eric Souza |
+| D3 | Fluxo GitHub | Fork + `git clone` + `docker compose up` (CI/CD é opcional avançado) | Eric Souza |
+| D4 | Escopo do template | **Genérico** — Nuvemshop atrás de flag `NUVEMSHOP_ENABLED=false` | Eric Souza |
+| D5 | WhatsApp/WAHA | **WAHA Core grátis** como default (validar no código); Plus opcional via env | Eric Souza |
+| D6 | Baseline do schema | Gerar via **acesso MCP** ao projeto remoto `rrydmwnporysaiysiztn` | Eric Souza |
+| D7 | Workers de IA-por-evento | **Port fiel** — dormentes viram roadmap, não ativar no v1 | Eric Souza |
 | D8 | Redis | **Local no VPS** via `serverless-redis-http` (SRH), sem conta Upstash | Maestro (leigo-first) |
 | D9 | Reverse proxy | **Caddy** (HTTPS Let's Encrypt automático) | Maestro (menos config) |
 | D10 | Scheduler | **Ofelia** batendo nas rotas `/api/v1/cron/*` via `curlimages/curl` na rede interna | Maestro |

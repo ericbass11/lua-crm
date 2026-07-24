@@ -49,6 +49,21 @@ supabase/.branches/
 
 # Claude Code harness artifacts (scheduled tasks lock, etc)
 .claude/
+!.claude/
+.claude/*
+!.claude/ecc-tools.json
+!.claude/identity.json
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/lua-crm/
+!.claude/skills/lua-crm/**
+!.claude/homunculus/
+.claude/homunculus/*
+!.claude/homunculus/instincts/
+.claude/homunculus/instincts/*
+!.claude/homunculus/instincts/inherited/
+.claude/homunculus/instincts/inherited/*
+!.claude/homunculus/instincts/inherited/lua-crm-instincts.yaml
 
 # Local docker volumes (WAHA)
 .waha-data/
@@ -62,4 +77,4 @@ inbox-with-real-msgs.png
 test-results/
 playwright-report/
 .vercel
-deskcommcrm-setup-kit.zip
+lua-crm-setup-kit.zip

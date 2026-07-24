@@ -1,12 +1,12 @@
 ---
 title: Spec Técnica 11 — Internal MCP Server (Tool Catalog)
-parent: docs/research/pre-development/ai-agent-framework-deskcomm-whatsapp/09-handoff.md
+parent: docs/research/pre-development/ai-agent-framework-lua-crm-whatsapp/09-handoff.md
 depends_on: 01-spec-platform-base.md, 02-spec-customer-360.md, 03-spec-whatsapp-waha.md, 04-spec-pipeline-attendance.md, 10-spec-ai-agents-runtime.md
 related: 12-spec-ai-agents-ui.md
 version: 0.1
 status: draft (pre-implementation)
 date: 2026-05-05
-owner: Rafael Melgaço
+owner: Eric Souza
 ---
 
 # Spec 11 — Internal MCP Server (Tool Catalog)
@@ -357,7 +357,7 @@ import { allTools } from './tools'
 
 export function createMcpServer() {
   const server = new McpServer({
-    name: 'deskcomm-crm',
+    name: 'lua-crm',
     version: '0.1.0'
   })
 

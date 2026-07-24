@@ -15,6 +15,24 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // typedRoutes moved out of experimental in Next 15.5+
   typedRoutes: true,
+  // @react-pdf/* usa react-reconciler, que o Turbopack bundla de forma quebrada
+  // → "React error #31" ao renderToBuffer no server (o reconciler bundlado não
+  // reconhece os elementos). Fix: manter a ÁRVORE INTEIRA do react-pdf +
+  // react-reconciler externos (carregados do node_modules em runtime, como
+  // provado no container). Vale p/ o laudo do Cliente Oculto e p/ o export LGPD.
+  serverExternalPackages: [
+    "@react-pdf/renderer",
+    "@react-pdf/reconciler",
+    "@react-pdf/layout",
+    "@react-pdf/render",
+    "@react-pdf/font",
+    "@react-pdf/image",
+    "@react-pdf/pdfkit",
+    "@react-pdf/primitives",
+    "@react-pdf/stylesheet",
+    "@react-pdf/fns",
+    "react-reconciler",
+  ],
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "date-fns"],
   },

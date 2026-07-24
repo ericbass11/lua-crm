@@ -1,18 +1,18 @@
 ---
-title: Master Plan — DeskcommCRM MVP-B Implementation
+title: Master Plan — LUA CRM MVP-B Implementation
 version: 1.0
 status: ativo
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Eric Souza
 total_epics: 13
 estimated_total_stories: 128
 estimated_total_points: 380
 estimated_calendar: 8-12 semanas
 ---
 
-# Master Plan — DeskcommCRM MVP-B Implementation
+# Master Plan — LUA CRM MVP-B Implementation
 
-> **Para Rafael (humano)**: este é o índice de TODOS os epics do MVP-B. Pra rodar autônomo: `clear` o chat, abra novo, e mande `Execute o EPIC-NN-name conforme docs/stories/epics/EPIC-NN-name.md` invocando o skill `epic-executor`.
+> **Para Eric Souza (humano)**: este é o índice de TODOS os epics do MVP-B. Pra rodar autônomo: `clear` o chat, abra novo, e mande `Execute o EPIC-NN-name conforme docs/stories/epics/EPIC-NN-name.md` invocando o skill `epic-executor`.
 >
 > **Para o epic-executor**: este arquivo é o catálogo. Cada epic tem seu próprio arquivo `.md` em `docs/stories/epics/EPIC-NN-name.md`. Leia o arquivo do epic alvo antes de iniciar Phase 0.
 
@@ -245,7 +245,7 @@ Contracts que ficam disponíveis após cada epic. Use isto pra raciocinar sobre 
 
 Cada wave roda regression suite cumulativo. Se uma wave quebra algo de waves anteriores:
 1. Fix loop bounded em 3 tentativas
-2. Após 3, escalation halt → Rafael revisa
+2. Após 3, escalation halt → Eric Souza revisa
 3. State file `.epic-executor/{epic-id}-state.yaml` permite resume após fix manual
 
 ## 8. Anexos

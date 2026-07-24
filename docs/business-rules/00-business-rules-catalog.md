@@ -1,12 +1,12 @@
 ---
-title: DeskcommCRM — Catálogo de Regras de Negócio
+title: LUA CRM — Catálogo de Regras de Negócio
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Eric Souza
 ---
 
-# DeskcommCRM — Catálogo de Regras de Negócio
+# LUA CRM — Catálogo de Regras de Negócio
 
 > Regras de negócio normalizadas com IDs lookup-able. Cada regra documenta GIVEN/WHEN/THEN/EXCEPT, enforcement layer e política de override. Especificações técnicas (schema SQL, payloads) ficam nas Specs (Fase 3); aqui é onde a lógica de negócio vive.
 
@@ -56,7 +56,7 @@ owner: Rafael Melgaço
 ### T-05 — Roteamento de API usa subdomain OU header `X-Tenant-ID`
 - **Origem**: Sub-PRD 01 §3.2 (decisão deferida na §9 do mesmo)
 - **Tipo**: Soft policy
-- **Regra**: GIVEN request entrando pela API; WHEN chega no edge; THEN tenant é resolvido via subdomain (`<tenant>.api.deskcomm.com`) OU header `X-Tenant-ID` (configurável global). API key NÃO determina tenant — o JWT/Bearer determina.
+- **Regra**: GIVEN request entrando pela API; WHEN chega no edge; THEN tenant é resolvido via subdomain (`<tenant>.api.lua-crm.example`) OU header `X-Tenant-ID` (configurável global). API key NÃO determina tenant — o JWT/Bearer determina.
 - **Enforcement**: Edge function / middleware.
 - **Exceção**: Webhooks externos (Nuvemshop) usam path token único por tenant em vez de subdomain.
 
@@ -460,7 +460,7 @@ owner: Rafael Melgaço
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN invocação LLM via Vercel AI Gateway; WHEN o evento de billing chega do Gateway; THEN o custo é atribuído ao `tenant_id` do agent que originou a chamada.
 - **Enforcement**: Worker de billing IA.
-- **Exceção**: Custos administrativos da plataforma (super-admin testando, suporte) são debitados ao tenant `internal_deskcomm`.
+- **Exceção**: Custos administrativos da plataforma (super-admin testando, suporte) são debitados ao tenant `internal_lua-crm`.
 
 ### B-03 — Storage de mídia tem retenção configurável por tenant
 - **Origem**: PRD-Mestre §7.3

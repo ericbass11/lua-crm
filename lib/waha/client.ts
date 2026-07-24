@@ -122,6 +122,62 @@ export class WahaClient {
     if (!res.ok) throw new Error(`waha_${res.status}`);
     return res.json();
   }
+
+  /**
+   * Resolve o chatId REAL de um número no WhatsApp (trata o 9º dígito BR: o JID
+   * de muitos números é `55DDXXXXXXXX@c.us` SEM o 9). Retorna null se o número
+   * não existir no WhatsApp ou a checagem falhar — o chamador NÃO deve enviar.
+   */
+  async checkExists(
+    session: string,
+    phoneDigits: string,
+  ): Promise<{ numberExists: boolean; chatId: string | null } | null> {
+    try {
+      const res = await fetch(
+        `${this.baseUrl}/api/contacts/check-exists?phone=${encodeURIComponent(phoneDigits)}&session=${encodeURIComponent(session)}`,
+        { headers: { "X-Api-Key": this.apiKey } },
+      );
+      if (!res.ok) return null;
+      const j = (await res.json()) as { numberExists?: boolean; chatId?: string };
+      return { numberExists: !!j.numberExists, chatId: j.chatId ?? null };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Envia um documento (ex.: PDF do laudo do Cliente Oculto) por uma URL
+   * acessível ao container WAHA (doutrina: subir pro Storage e passar a URL,
+   * não base64 inline). `filename` é o nome exibido no WhatsApp.
+   */
+  async sendFile(input: {
+    session: string;
+    chatId: string;
+    url: string;
+    filename: string;
+    mimetype?: string;
+    caption?: string;
+  }): Promise<unknown> {
+    const res = await fetch(`${this.baseUrl}/api/sendFile`, {
+      method: "POST",
+      headers: {
+        "X-Api-Key": this.apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session: input.session,
+        chatId: input.chatId,
+        file: {
+          url: input.url,
+          filename: input.filename,
+          mimetype: input.mimetype ?? "application/pdf",
+        },
+        ...(input.caption ? { caption: input.caption } : {}),
+      }),
+    });
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+    return res.json();
+  }
 }
 
 /**

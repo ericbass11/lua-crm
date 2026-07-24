@@ -1,5 +1,8 @@
 "use client";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { Plus } from "@/lib/ui/icons";
+import { Button } from "@/components/ui/button";
+import { NewConversationDialog } from "./NewConversationDialog";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
@@ -49,6 +52,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
   const composerRef = useRef<ComposerHandle | null>(null);
 
   const filters: ConversationsFilters = useMemo(
@@ -103,6 +107,13 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   return (
     <div className="grid h-full min-h-0 w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[300px_1fr_320px]">
       <div className="flex h-full min-h-0 flex-col border-r border-border">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <span className="text-sm font-semibold">Conversas</span>
+          <Button size="sm" className="h-8 gap-1.5" onClick={() => setNewOpen(true)}>
+            <Plus size={16} weight="bold" aria-hidden />
+            Nova conversa
+          </Button>
+        </div>
         <InboxFilters value={filterValue} onChange={setFilterValue} />
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationList
@@ -151,6 +162,21 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         onToggleHelp={() => setHelpOpen((v) => !v)}
       />
       <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      <NewConversationDialog
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        onCreated={(id) => {
+          // A conversa nasce open + não-atribuída: garante que a aba atual a
+          // exiba (senão selectedConversation, derivado da lista, fica null e o
+          // chat não abre).
+          setFilterValue((v) =>
+            v.tab === "unassigned" || v.tab === "all"
+              ? { ...v, search: "", onlyUnread: false }
+              : { ...v, tab: "unassigned", search: "", onlyUnread: false },
+          );
+          setSelectedId(id);
+        }}
+      />
     </div>
   );
 }

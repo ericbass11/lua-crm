@@ -13,7 +13,7 @@ step()  { printf '\n\033[1m▶ %s\033[0m\n' "$*"; }
 # Vai pro diretório do projeto (onde está o compose) e carrega o .env.
 enter_project() {
   if [ -f "$COMPOSE" ]; then :;
-  elif [ -f "deskcommcrm/$COMPOSE" ]; then cd deskcommcrm;
+  elif [ -f "lua-crm/$COMPOSE" ]; then cd lua-crm;
   else die "Não achei $COMPOSE. Rode a partir da pasta do projeto."; fi
   [ -f .env ] || die "Falta o .env (rode install.sh primeiro)."
   set -a; . ./.env; set +a

@@ -1,8 +1,9 @@
 {
-  "name": "deskcomm-crm",
+  "name": "lua-crm",
   "version": "0.1.0",
+  "author": "Eric Souza",
   "private": true,
-  "description": "DeskcommCRM — CRM operacional multi-tenant para e-commerce com IA conversacional, WhatsApp via WAHA e LGPD nativa.",
+  "description": "LUA CRM — CRM operacional multi-tenant para e-commerce com IA conversacional, WhatsApp via WAHA e LGPD nativa.",
   "engines": {
     "node": ">=20"
   },

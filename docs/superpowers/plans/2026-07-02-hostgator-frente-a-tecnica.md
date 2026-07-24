@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Tornar o DeskcommCRM rodável 100% via `docker compose up` num VPS HostGator, sem quebrar o deploy Vercel atual.
+**Goal:** Tornar o LUA CRM rodável 100% via `docker compose up` num VPS HostGator, sem quebrar o deploy Vercel atual.
 
 **Architecture:** Híbrido — compute no VPS (containers app+waha+redis+srh+scheduler+caddy), DB no Supabase Cloud. Mudanças de código mínimas e aditivas (atrás de config/flag); infra nova em arquivos novos.
 
@@ -129,9 +129,9 @@ git commit -m "feat(hostgator): Nuvemshop opcional via NUVEMSHOP_ENABLED + auto-
 docker build --build-arg NEXT_PUBLIC_SUPABASE_URL=https://x.supabase.co \
   --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=dummy \
   --build-arg NEXT_PUBLIC_APP_URL=https://example.com \
-  -t deskcomm-app:test .
+  -t lua-crm-app:test .
 ```
-Expected: imagem builda. `docker run --rm -e SUPABASE_SERVICE_ROLE_KEY=... deskcomm-app:test` sobe e loga listen em `:3000` (pode falhar em deps externas, mas o processo inicia).
+Expected: imagem builda. `docker run --rm -e SUPABASE_SERVICE_ROLE_KEY=... lua-crm-app:test` sobe e loga listen em `:3000` (pode falhar em deps externas, mas o processo inicia).
 
 - [ ] **Step 4 (commit):** `git add Dockerfile .dockerignore && git commit -m "feat(hostgator): Dockerfile multi-stage standalone"`
 
@@ -198,7 +198,7 @@ select tablename from pg_publication_tables where pubname='supabase_realtime';  
 
 - [ ] **Step 2:** Resolver a ambiguidade da key: testar `X-Api-Key` com **hash SHA512** e com **plaintext** contra `/api/sessions`; fixar o formato correto no `.env.hostgator.example` e no passo do `install.sh`.
 
-- [ ] **Step 3:** Ajustar `docker-compose.prod.yml` (imagem `devlikeapro/waha`, `WAHA_DEFAULT_ENGINE` conforme resultado). Se o Core não pareia/limita demais, escalar a decisão ao Rafael (Plus opcional via `WAHA_IMAGE`).
+- [ ] **Step 3:** Ajustar `docker-compose.prod.yml` (imagem `devlikeapro/waha`, `WAHA_DEFAULT_ENGINE` conforme resultado). Se o Core não pareia/limita demais, escalar a decisão ao Eric Souza (Plus opcional via `WAHA_IMAGE`).
 
 - [ ] **Step 4 (verificação):** parear um número de teste via QR (`/api/<session>/auth/qr`) e enviar 1 mensagem via `/api/sendText`. Documentar o resultado no topo do compose.
 

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
-import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, Robot, PlugsConnected, Gauge } from "@/lib/ui/icons";
+import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, Robot, PlugsConnected, Gauge, MagnifyingGlass } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
@@ -25,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/app/contacts", label: "Contatos", icon: Users },
   { href: "/app/team", label: "Equipe", icon: UsersThree },
   { href: "/app/ai/agents", label: "Agentes IA", icon: Robot, permission: "ai.agents.view" },
+  { href: "/app/mystery", label: "Cliente Oculto", icon: MagnifyingGlass },
   { href: "/app/settings", label: "Configurações", icon: Gear },
 ];
 
@@ -41,7 +42,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
       )}
     >
       <div className={cn("flex items-center border-b px-4 h-14", collapsed ? "justify-center" : "justify-start")}>
-        <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>Lua CRM</span>
+        <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>LUA CRM</span>
         {collapsed && <span aria-hidden className="text-lg font-bold text-primary">L</span>}
       </div>
       <nav className="flex-1 space-y-1 p-2" aria-label="Navegação principal">

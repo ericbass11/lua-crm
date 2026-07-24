@@ -2,15 +2,17 @@
  * Handoff finalizer for the agent runtime (S-13.08).
  *
  * Wraps lib/ai/handoff/orchestrator.triggerHandoff and stamps the run row with
- * status='handoff'. Two sources:
+ * status='handoff'. Sources:
  *   - 'sentinel'         keyword regex on inbound (no LLM call, cost=0)
  *   - 'tool'             agent invoked crm_request_human_handoff during the loop
+ *   - 'guardrail'        output guardrail bloqueou a resposta (ex.: preço não
+ *                        fundamentado) → escala em silêncio em vez de enviar.
  */
 import { triggerHandoff, type HandoffReason } from "@/lib/ai/handoff/orchestrator";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { finalizeRun, type FinalizeRunInput } from "./finalize";
 
-export type HandoffSource = "sentinel" | "tool";
+export type HandoffSource = "sentinel" | "tool" | "guardrail";
 
 export interface FinalizeHandoffInput {
   runId: string;
@@ -25,6 +27,8 @@ export interface FinalizeHandoffInput {
   stepsCount?: number;
   toolCalls?: FinalizeRunInput["toolCalls"];
   isDryRun?: boolean;
+  /** Detalhe extra (ex.: guardrail_kind, blocked_values) — vai pro metadata da activity. */
+  extraMetadata?: Record<string, unknown>;
 }
 
 async function findLeadIdForConversation(
@@ -52,7 +56,7 @@ export async function finalizeHandoff(input: FinalizeHandoffInput): Promise<void
       organizationId: input.organizationId,
       reason: input.reason,
       leadId,
-      metadata: { run_id: input.runId, source: input.source },
+      metadata: { run_id: input.runId, source: input.source, ...(input.extraMetadata ?? {}) },
     });
   }
 

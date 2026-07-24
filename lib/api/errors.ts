@@ -1,5 +1,5 @@
 /**
- * Códigos de erro canônicos da API DeskcommCRM.
+ * Códigos de erro canônicos da API LUA CRM.
  *
  * Adicionar novo código:
  *  1. Adicionar à enum/constante abaixo

@@ -1,12 +1,12 @@
-# DeskcommCRM — Kit de Instalação (HostGator)
+# LUA CRM — Kit de Instalação (HostGator)
 
-Este kit sobe o **DeskcommCRM** no seu servidor VPS da HostGator. Você tem dois caminhos:
+Este kit sobe o **LUA CRM** no seu servidor VPS da HostGator. Você tem dois caminhos:
 
 ## 🤖 Caminho fácil: deixe o Claude Code fazer
 
 1. Contrate um **VPS na HostGator** e acesse-o por SSH.
 2. Jogue esta pasta (ou o `.zip`) no chat do **Claude Code** rodando dentro do VPS.
-3. Diga: *"instala o DeskcommCRM pra mim"*. Ele lê o `CLAUDE.md` e conduz tudo —
+3. Diga: *"instala o LUA CRM pra mim"*. Ele lê o `CLAUDE.md` e conduz tudo —
    cria o banco, gera as senhas, sobe o CRM e te ajuda a conectar o WhatsApp.
 
 ## ⚙️ Caminho manual: um comando

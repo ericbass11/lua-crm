@@ -25,7 +25,7 @@ export default async function OnboardingLayout({ children }: { children: React.R
       <header className="border-b bg-background">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-6 py-4">
           <div>
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">DeskcommCRM</p>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">LUA CRM</p>
             <h1 className="text-lg font-semibold tracking-tight">{activeOrg.name}</h1>
           </div>
           {isDev ? <SkipToEnd /> : null}

@@ -1,8 +1,8 @@
-# Supabase CLI config — DeskcommCRM
+# Supabase CLI config — LUA CRM
 # Docs: https://supabase.com/docs/guides/cli/config
 # Este arquivo é versionado. Segredos vivem em .env.local / Vercel.
 
-project_id = "deskcomm-crm"
+project_id = "lua-crm"
 
 [api]
 enabled = true

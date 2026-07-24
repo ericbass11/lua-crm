@@ -19,12 +19,24 @@ BUILD="-f docker-compose.prod.yml -f docker-compose.build.yml"
 step() { printf '\n\033[1m▶ %s\033[0m\n' "$*"; }
 
 step "1/5 Snapshot de rollback"
-CURRENT=$(docker inspect --format '{{.Image}}' deskcommcrm-app-1 2>/dev/null || echo "")
+# Resolve container e imagem-alvo DINAMICAMENTE — nunca hardcode de nome. O
+# rebrand (deskcomm→lua-crm) deixou nomes divergentes (container real
+# `deskcommcrm-app-1` / imagem `deskcomm-app:local`) e o snapshot hardcoded
+# falhava em silêncio, matando a rede de rollback. Aqui: tag-alvo vem do .env
+# (o que o compose realmente sobe) e a imagem viva vem do container em execução.
+APP_IMAGE_REF=$(awk '/^APP_IMAGE=/{sub(/^APP_IMAGE=/,"");gsub(/[" \r]/,"");print;exit}' .env 2>/dev/null || echo "")
+APP_IMAGE_REF=${APP_IMAGE_REF:-lua-crm-app:local}
+ROLLBACK_REF="${APP_IMAGE_REF%:*}:rollback"
+APP_CONTAINER=$(docker compose $COMPOSE ps -q app 2>/dev/null | head -1 || echo "")
+CURRENT=""
+if [ -n "$APP_CONTAINER" ]; then
+  CURRENT=$(docker inspect --format '{{.Image}}' "$APP_CONTAINER" 2>/dev/null || echo "")
+fi
 if [ -n "$CURRENT" ]; then
-  docker tag "$CURRENT" deskcomm-app:rollback
-  echo "  rollback aponta para ${CURRENT:0:19}..."
+  docker tag "$CURRENT" "$ROLLBACK_REF"
+  echo "  rollback ($ROLLBACK_REF) aponta para ${CURRENT:0:26}..."
 else
-  echo "  (app não está rodando — sem snapshot)"
+  echo "  (app não está rodando — sem snapshot; rollback indisponível)"
 fi
 
 step "2/5 Build (typecheck estrito + lint = portão de qualidade)"
@@ -67,12 +79,13 @@ if [ "$ok" = 1 ]; then
 fi
 
 step "5/5 ✖ VERIFICAÇÃO FALHOU — rollback automático"
-if docker image inspect deskcomm-app:rollback >/dev/null 2>&1; then
-  docker tag deskcomm-app:rollback deskcomm-app:local
+if docker image inspect "$ROLLBACK_REF" >/dev/null 2>&1; then
+  docker tag "$ROLLBACK_REF" "$APP_IMAGE_REF"
   docker compose $COMPOSE up -d app
-  echo "  Rollback aplicado (imagem anterior no ar). Investigue a causa antes de tentar de novo."
+  echo "  Rollback aplicado ($ROLLBACK_REF -> $APP_IMAGE_REF; imagem anterior no ar)."
+  echo "  Investigue a causa antes de tentar de novo."
   echo "  Se a mudança for arriscada por natureza, PARE e envie para avaliação humana."
 else
-  echo "  ✖ SEM imagem de rollback — INTERVENÇÃO HUMANA NECESSÁRIA."
+  echo "  ✖ SEM imagem de rollback ($ROLLBACK_REF) — INTERVENÇÃO HUMANA NECESSÁRIA."
 fi
 exit 1

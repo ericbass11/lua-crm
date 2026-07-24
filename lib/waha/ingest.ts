@@ -20,6 +20,8 @@ type Admin = ReturnType<typeof createAdminClient>;
 interface Session {
   id: string;
   organization_id: string;
+  /** 'inbound' (atendimento) | 'mystery_shopper' (número do cliente oculto). */
+  purpose?: string;
 }
 
 export interface WahaPayload {
@@ -348,6 +350,97 @@ async function handleOutboundFromUserPhone(
   });
 }
 
+/**
+ * Inbound numa sessão de CLIENTE OCULTO. NÃO passa pelo fluxo normal (não cria
+ * contato/conversa nem aciona o bot-da-empresa): a resposta do alvo é só
+ * capturada na campanha ativa. O respondedor-persona (Fase 2) consome daqui.
+ */
+async function handleMysteryShopperInbound(
+  admin: Admin,
+  session: Session,
+  p: WahaPayload,
+  _requestId: string,
+): Promise<void> {
+  if (!p.id || !p.from) return;
+  if (!p.body && !p.mediaUrl && !p.hasMedia) return; // status/presence vazios
+  const parsed = parseChatId(p.from);
+  if (parsed.kind === "group") return;
+
+  // O número do oculto pode ter VÁRIAS auditorias ativas (uma por empresa) e é
+  // um WhatsApp real — qualquer contato manda mensagem. ROTEAMOS a resposta
+  // para a campanha cujo alvo casa com o remetente. O WhatsApp entrega respostas
+  // com identidade LID (privacidade): o `from` vira `<lid>@lid` e o telefone
+  // real vem em `_data.key.remoteJidAlt`. Casamos por QUALQUER um, com
+  // tolerância ao 9º dígito BR.
+  const digitsOf = (s: string) => s.replace(/@.*$/, "").replace(/\D/g, "");
+  const brCanon = (d: string) =>
+    d.length === 13 && d.startsWith("55") && d[4] === "9" ? d.slice(0, 4) + d.slice(5) : d;
+  const altJid =
+    (p._data as { key?: { remoteJidAlt?: string } } | undefined)?.key?.remoteJidAlt ?? "";
+  const candidates = [digitsOf(p.from ?? ""), digitsOf(altJid)]
+    .filter(Boolean)
+    .map(brCanon);
+  if (candidates.length === 0) return;
+
+  const { data: campaigns } = await admin
+    .from("mystery_shopper_campaigns")
+    .select("id, first_contact_at, message_count, target_chat_id")
+    .eq("organization_id", session.organization_id)
+    .eq("shopper_session_id", session.id)
+    .eq("status", "running");
+  const list =
+    (campaigns as Array<{
+      id: string;
+      first_contact_at: string | null;
+      message_count: number;
+      target_chat_id: string | null;
+    }> | null) ?? [];
+  const c = list.find((x) => {
+    const t = brCanon(digitsOf(x.target_chat_id ?? ""));
+    return !!t && candidates.includes(t);
+  });
+  if (!c) return; // remetente não corresponde a nenhuma auditoria ativa
+
+  const now = new Date().toISOString();
+  const { error: insErr } = await admin.from("mystery_shopper_messages").insert({
+    organization_id: session.organization_id,
+    campaign_id: c.id,
+    direction: "target",
+    body: p.body ?? null,
+    external_id: p.id,
+    sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
+  });
+  // unique (campaign_id, external_id): 23505 = já ingerido (message vs message.any).
+  if (insErr && insErr.code !== "23505") {
+    console.error("[waha.ingest] mystery inbound insert failed", insErr.message);
+    return;
+  }
+  if (insErr?.code === "23505") return;
+
+  await admin
+    .from("mystery_shopper_campaigns")
+    .update({
+      first_contact_at: c.first_contact_at ?? now,
+      message_count: (c.message_count ?? 0) + 1,
+      updated_at: now,
+    })
+    .eq("id", c.id);
+
+  // Dispara o respondedor-persona (consumido pelo event-log-drain → Fase 2).
+  admin
+    .rpc("emit_event" as never, {
+      p_event_type: "mystery_shopper.reply_received",
+      p_entity_kind: "mystery_shopper_campaign",
+      p_entity_id: c.id,
+      p_payload: { campaign_id: c.id, organization_id: session.organization_id },
+      p_metadata: { source: "waha_webhook", request_id: _requestId },
+      p_organization_id: session.organization_id,
+    } as never)
+    .then(({ error }: { error: unknown }) => {
+      if (error) console.error("[waha.ingest] emit mystery reply failed", error);
+    });
+}
+
 async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promise<void> {
   if (!p.id) return;
   const ack = p.ack ?? 0;
@@ -401,6 +494,18 @@ export async function dispatchWahaEvent(
 ): Promise<void> {
   const eventType = envelope.event ?? "unknown";
   const payload = envelope.payload ?? {};
+
+  // Número do cliente oculto: mensagens NUNCA entram no fluxo normal (sem
+  // contato/conversa/bot). session.status/ack seguem abaixo (precisamos saber
+  // se o número está WORKING pra o oculto conseguir enviar).
+  if (session.purpose === "mystery_shopper") {
+    if (eventType === "message" || eventType === "message.any") {
+      if (!payload.fromMe) {
+        await handleMysteryShopperInbound(admin, session, payload, requestId);
+      }
+      return;
+    }
+  }
 
   if (eventType === "message" || eventType === "message.any") {
     if (payload.fromMe) {

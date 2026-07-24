@@ -1,6 +1,6 @@
-# DeskcommCRM — Workflow de Construção
+# LUA CRM — Workflow de Construção
 
-Ordem definida pelo Rafael: **PRD → Regras de Negócio → Specs → Epics → Stories → Plano com Tasks**.
+Ordem definida pelo Eric Souza: **PRD → Regras de Negócio → Specs → Epics → Stories → Plano com Tasks**.
 
 ---
 
@@ -18,7 +18,7 @@ Ordem definida pelo Rafael: **PRD → Regras de Negócio → Specs → Epics →
 
 ## Fase 1 — PRD-Mestre + sub-PRDs
 
-- [x] Escrever PRD-Mestre (`docs/prd/00-prd-master.md`) — visão, problema, escopo, stakeholders, métricas, restrições — **v0.1 escrito, em revisão pelo Rafael**
+- [x] Escrever PRD-Mestre (`docs/prd/00-prd-master.md`) — visão, problema, escopo, stakeholders, métricas, restrições — **v0.1 escrito, em revisão pelo Eric Souza**
 - [x] Sub-PRD 01: Plataforma Base (auth, multi-tenant, RBAC, audit, LGPD framework) — **v0.1 escrito**
 - [x] Sub-PRD 02: Customer 360° + Identity Resolution determinística — **v0.1 escrito**
 - [x] Sub-PRD 03: Canal WhatsApp (WAHA + anti-banimento + janela 24h + multi-atendente) — **v0.1 escrito**

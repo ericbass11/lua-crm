@@ -45,7 +45,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const { data: session, error: sessErr } = await admin
     .from("channel_sessions")
     .select(
-      "id, organization_id, waha_session_name, webhook_secret_encrypted, status, is_warmup_complete, warmup_started_at",
+      "id, organization_id, waha_session_name, webhook_secret_encrypted, status, is_warmup_complete, warmup_started_at, purpose",
     )
     .eq("webhook_path_token", token)
     .maybeSingle();

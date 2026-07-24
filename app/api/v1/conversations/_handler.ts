@@ -8,11 +8,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { normalizeToE164 } from "@/lib/phone";
 import type {
   ListConversationsQuery,
+  StartConversationInput,
   UpdateConversationStatusInput,
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
+import { createLeadHandler } from "@/app/api/v1/leads/_handler";
+import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 
 type SB = SupabaseClient;
 
@@ -219,4 +223,225 @@ export async function updateConversationStatusHandler(
   });
 
   return conv;
+}
+
+// ---------------------------------------------------------------------------
+// start (envio ativo) — cria/resolve contato+conversa, envia 1ª mensagem e
+// adiciona o contato ao funil padrão. Ver lib/schemas startConversationSchema.
+// ---------------------------------------------------------------------------
+
+export interface StartConversationResult {
+  conversation_id: string;
+  contact_id: string;
+  message_id: string;
+  message_status: string;
+  lead_created: boolean;
+  lead_id: string | null;
+}
+
+/**
+ * Resolve o canal WhatsApp que fará o envio.
+ *  - `requestedId` informado → valida que pertence à org e está WORKING.
+ *  - omitido → auto-seleciona quando há exatamente um WORKING; erra se 0 ou >1.
+ */
+async function resolveWorkingChannel(
+  supabase: SB,
+  ctx: HandlerCtx,
+  requestedId: string | undefined,
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("channel_sessions")
+    .select("id, status")
+    .eq("organization_id", ctx.organization_id);
+  if (error) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  }
+  const sessions = (data ?? []) as Array<{ id: string; status: string }>;
+  const working = sessions.filter((s) => s.status === "WORKING");
+
+  if (requestedId) {
+    const found = sessions.find((s) => s.id === requestedId);
+    if (!found) {
+      throw new ApiError(404, "channel_not_found", undefined, ctx.requestId, "Canal não encontrado.");
+    }
+    if (found.status !== "WORKING") {
+      throw new ApiError(
+        422,
+        "channel_not_working",
+        undefined,
+        ctx.requestId,
+        "O canal selecionado não está conectado.",
+      );
+    }
+    return found.id;
+  }
+
+  if (working.length === 0) {
+    throw new ApiError(
+      422,
+      "no_working_channel",
+      undefined,
+      ctx.requestId,
+      "Nenhum número de WhatsApp conectado. Conecte um canal antes de enviar.",
+    );
+  }
+  if (working.length > 1) {
+    throw new ApiError(
+      422,
+      "channel_required",
+      undefined,
+      ctx.requestId,
+      "Há mais de um número conectado — escolha por qual canal enviar.",
+    );
+  }
+  return working[0]!.id;
+}
+
+/**
+ * Cria (ou reusa, dedup atômico) o lead do contato no funil padrão, 1ª etapa.
+ * Best-effort: qualquer falha aqui é registrada mas NÃO derruba o envio da
+ * mensagem — o retorno indica se um lead foi de fato criado.
+ */
+async function addToDefaultPipeline(
+  supabase: SB,
+  ctx: HandlerCtx,
+  contactId: string,
+  title: string,
+): Promise<{ lead_created: boolean; lead_id: string | null }> {
+  const { data: pipeline } = await supabase
+    .from("crm_pipelines")
+    .select("id")
+    .eq("organization_id", ctx.organization_id)
+    .eq("is_default", true)
+    .eq("is_archived", false)
+    .order("position", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!pipeline) return { lead_created: false, lead_id: null };
+  const pipelineId = (pipeline as { id: string }).id;
+
+  const { data: stage } = await supabase
+    .from("crm_stages")
+    .select("id")
+    .eq("organization_id", ctx.organization_id)
+    .eq("pipeline_id", pipelineId)
+    .order("position", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!stage) return { lead_created: false, lead_id: null };
+  const stageId = (stage as { id: string }).id;
+
+  // Dedup: contato já tem lead aberto neste funil? Então reusa (não duplica).
+  const { data: existing } = await supabase
+    .from("crm_leads")
+    .select("id")
+    .eq("organization_id", ctx.organization_id)
+    .eq("pipeline_id", pipelineId)
+    .eq("contact_id", contactId)
+    .eq("status", "open")
+    .limit(1)
+    .maybeSingle();
+  if (existing) return { lead_created: false, lead_id: (existing as { id: string }).id };
+
+  const lead = await createLeadHandler(supabase, ctx, {
+    pipeline_id: pipelineId,
+    stage_id: stageId,
+    title: title.slice(0, 200),
+    contact_id: contactId,
+    currency: "BRL",
+    tags: [],
+    source: "whatsapp_active",
+  });
+  return { lead_created: true, lead_id: (lead as { id: string }).id };
+}
+
+export async function startConversationHandler(
+  supabase: SB,
+  admin: SB,
+  ctx: HandlerCtx,
+  input: StartConversationInput,
+): Promise<StartConversationResult> {
+  const normalized = normalizeToE164(input.phone_number);
+  if (!normalized) {
+    throw new ApiError(
+      422,
+      "invalid_phone_number",
+      undefined,
+      ctx.requestId,
+      "Número de telefone inválido.",
+    );
+  }
+
+  const channelSessionId = await resolveWorkingChannel(supabase, ctx, input.channel_session_id);
+
+  // Upserts atômicos (security definer → service_role): mesma semântica de
+  // dedup do ingest de inbound, então número existente reusa contato/conversa.
+  const { data: contactId, error: cErr } = await admin.rpc("fn_upsert_wa_contact" as never, {
+    p_org: ctx.organization_id,
+    p_kind: "phone",
+    p_phone: normalized.e164,
+    p_lid: null,
+    p_chat_id: normalized.chatId,
+    p_notify: input.contact_name?.trim() || null,
+  } as never);
+  if (cErr || !contactId) {
+    throw new ApiError(
+      500,
+      "internal_error",
+      undefined,
+      ctx.requestId,
+      cErr?.message ?? "contact_upsert_failed",
+    );
+  }
+
+  const { data: conversationId, error: convErr } = await admin.rpc(
+    "fn_upsert_wa_conversation" as never,
+    {
+      p_org: ctx.organization_id,
+      p_contact: contactId as unknown as string,
+      p_session: channelSessionId,
+    } as never,
+  );
+  if (convErr || !conversationId) {
+    throw new ApiError(
+      500,
+      "internal_error",
+      undefined,
+      ctx.requestId,
+      convErr?.message ?? "conversation_upsert_failed",
+    );
+  }
+
+  // Envia a 1ª mensagem pelo caminho de produção (grava row + dispara WAHA +
+  // ack). Client RLS do usuário — a conversa recém-criada pertence à org ativa.
+  const message = await sendMessageHandler(supabase, ctx, {
+    conversation_id: conversationId as unknown as string,
+    type: "text",
+    body: input.message,
+  });
+
+  // Adiciona ao funil padrão (best-effort — não falha o envio já concluído).
+  let lead = { lead_created: false, lead_id: null as string | null };
+  try {
+    lead = await addToDefaultPipeline(
+      supabase,
+      ctx,
+      contactId as unknown as string,
+      input.contact_name?.trim() || normalized.e164,
+    );
+  } catch (err) {
+    console.error(
+      "[conversations.start] addToDefaultPipeline failed",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  return {
+    conversation_id: conversationId as unknown as string,
+    contact_id: contactId as unknown as string,
+    message_id: message.id,
+    message_status: message.status,
+    lead_created: lead.lead_created,
+    lead_id: lead.lead_id,
+  };
 }

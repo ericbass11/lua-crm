@@ -19,7 +19,7 @@ CREATE SCHEMA IF NOT EXISTS "public";
 ALTER SCHEMA "public" OWNER TO "pg_database_owner";
 
 
-COMMENT ON SCHEMA "public" IS 'DeskcommCRM v0.1 - Migration 0001 platform_base applied 2026-04-28';
+COMMENT ON SCHEMA "public" IS 'LUA CRM v0.1 - Migration 0001 platform_base applied 2026-04-28';
 
 
 
@@ -1766,7 +1766,7 @@ CREATE TABLE IF NOT EXISTS "public"."organizations" (
 ALTER TABLE "public"."organizations" OWNER TO "postgres";
 
 
-COMMENT ON TABLE "public"."organizations" IS 'Tenants do DeskcommCRM. Cada linha = 1 e-commerce cliente.';
+COMMENT ON TABLE "public"."organizations" IS 'Tenants do LUA CRM. Cada linha = 1 e-commerce cliente.';
 
 
 
@@ -4372,3 +4372,224 @@ grant select, insert, update, delete on table public.notification_settings to au
 
 -- ---- handoff via WhatsApp (migration 0034) ----
 alter table public.notification_settings add column if not exists handoff_whatsapp_number text;
+
+-- ---- tamper-evidence do api_audit_log: hash chain (migration 0035) ----
+-- Cada linha encadeia SHA-256 sobre (prev_hash || conteúdo canônico). Aditivo,
+-- idempotente e auto-curativo. Trigger BEFORE INSERT preenche prev/entry hash;
+-- chain_seq (sequência global) dá ordem determinística por org.
+alter table public.api_audit_log add column if not exists prev_hash bytea;
+alter table public.api_audit_log add column if not exists entry_hash bytea;
+create sequence if not exists public.api_audit_log_chain_seq;
+alter table public.api_audit_log add column if not exists chain_seq bigint;
+
+with mx as (select coalesce(max(chain_seq), 0) as m from public.api_audit_log),
+ordered as (
+  select id, row_number() over (order by created_at asc, id asc) as rn
+    from public.api_audit_log where chain_seq is null
+)
+update public.api_audit_log a
+   set chain_seq = (select m from mx) + o.rn
+  from ordered o where a.id = o.id;
+
+alter table public.api_audit_log
+  alter column chain_seq set default nextval('public.api_audit_log_chain_seq');
+select setval('public.api_audit_log_chain_seq',
+  greatest((select coalesce(max(chain_seq), 0) from public.api_audit_log), 1));
+create index if not exists api_audit_log_chain_idx
+  on public.api_audit_log (organization_id, chain_seq desc);
+
+create or replace function public.fn_audit_row_digest_input(
+  p_prev bytea, p_org uuid, p_actor uuid, p_token uuid, p_admin boolean,
+  p_action text, p_rtype text, p_rid uuid, p_request text, p_bypassed boolean,
+  p_metadata jsonb, p_created timestamptz
+) returns text language sql immutable set search_path = public as $$
+  select
+    coalesce(encode(p_prev, 'hex'), '') || '|' ||
+    coalesce(p_org::text, '')     || '|' || coalesce(p_actor::text, '')   || '|' ||
+    coalesce(p_token::text, '')   || '|' || coalesce(p_admin::text, '')   || '|' ||
+    coalesce(p_action, '')        || '|' || coalesce(p_rtype, '')         || '|' ||
+    coalesce(p_rid::text, '')     || '|' || coalesce(p_request, '')       || '|' ||
+    coalesce(p_bypassed::text, '')|| '|' || coalesce(p_metadata::text, '')|| '|' ||
+    coalesce(to_char(p_created at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '');
+$$;
+
+create or replace function public.fn_audit_hash_chain()
+returns trigger language plpgsql security definer
+set search_path = public, extensions as $$
+declare v_prev bytea;
+begin
+  perform pg_advisory_xact_lock(
+    hashtext('audit_chain:' || coalesce(new.organization_id::text, 'global')));
+  select entry_hash into v_prev from public.api_audit_log
+   where organization_id is not distinct from new.organization_id and entry_hash is not null
+   order by chain_seq desc limit 1;
+  new.prev_hash := v_prev;
+  new.entry_hash := digest(public.fn_audit_row_digest_input(
+    v_prev, new.organization_id, new.actor_user_id, new.actor_api_token_id,
+    new.acting_as_platform_admin, new.action, new.resource_type, new.resource_id,
+    new.request_id, new.bypassed_rls, new.metadata, new.created_at), 'sha256');
+  return new;
+end; $$;
+drop trigger if exists trg_audit_hash_chain on public.api_audit_log;
+create trigger trg_audit_hash_chain before insert on public.api_audit_log
+  for each row execute function public.fn_audit_hash_chain();
+
+create or replace function public.fn_verify_audit_chain(p_org uuid)
+returns table(broken_id uuid, broken_at timestamptz, reason text)
+language plpgsql stable security definer set search_path = public, extensions as $$
+declare r record; v_prev bytea := null; v_expected bytea;
+begin
+  for r in select * from public.api_audit_log
+     where organization_id is not distinct from p_org and entry_hash is not null
+     order by chain_seq asc
+  loop
+    if r.prev_hash is distinct from v_prev then
+      broken_id := r.id; broken_at := r.created_at; reason := 'prev_hash_mismatch';
+      return next; return;
+    end if;
+    v_expected := digest(public.fn_audit_row_digest_input(
+      v_prev, r.organization_id, r.actor_user_id, r.actor_api_token_id,
+      r.acting_as_platform_admin, r.action, r.resource_type, r.resource_id,
+      r.request_id, r.bypassed_rls, r.metadata, r.created_at), 'sha256');
+    if r.entry_hash is distinct from v_expected then
+      broken_id := r.id; broken_at := r.created_at; reason := 'entry_hash_mismatch';
+      return next; return;
+    end if;
+    v_prev := r.entry_hash;
+  end loop;
+end; $$;
+
+do $$
+declare o record; r record; v_prev bytea;
+begin
+  for o in select distinct organization_id from public.api_audit_log loop
+    v_prev := null;
+    for r in select * from public.api_audit_log
+       where organization_id is not distinct from o.organization_id order by chain_seq asc
+    loop
+      if r.entry_hash is null then
+        update public.api_audit_log
+           set prev_hash = v_prev,
+               entry_hash = digest(public.fn_audit_row_digest_input(
+                 v_prev, r.organization_id, r.actor_user_id, r.actor_api_token_id,
+                 r.acting_as_platform_admin, r.action, r.resource_type, r.resource_id,
+                 r.request_id, r.bypassed_rls, r.metadata, r.created_at), 'sha256')
+         where id = r.id returning entry_hash into v_prev;
+      else v_prev := r.entry_hash; end if;
+    end loop;
+  end loop;
+end $$;
+
+revoke all on function public.fn_verify_audit_chain(uuid) from public;
+grant execute on function public.fn_verify_audit_chain(uuid) to service_role;
+
+-- ---- módulo Cliente/Paciente Oculto (migration 0036) ----
+-- channel_sessions.purpose distingue número de atendimento do número do oculto;
+-- tabelas de campanha/mensagens isoladas do inbox. Aditivo e idempotente.
+alter table public.channel_sessions
+  add column if not exists purpose text not null default 'inbound';
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'channel_sessions_purpose_check') then
+    alter table public.channel_sessions
+      add constraint channel_sessions_purpose_check check (purpose in ('inbound', 'mystery_shopper'));
+  end if;
+end $$;
+
+create table if not exists public.mystery_shopper_campaigns (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  shopper_session_id uuid not null references public.channel_sessions(id) on delete restrict,
+  target_number text not null,
+  target_name text,
+  persona jsonb not null default '{}'::jsonb,
+  recipient_number text not null,
+  status text not null default 'running'
+    check (status in ('running', 'completed', 'stalled', 'failed', 'cancelled')),
+  outcome text,
+  started_at timestamptz not null default now(),
+  first_contact_at timestamptz,
+  slot_offered_at timestamptz,
+  ended_at timestamptz,
+  message_count int not null default 0,
+  metrics jsonb not null default '{}'::jsonb,
+  report_storage_path text,
+  transcript_storage_path text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists mystery_campaigns_org_status_idx
+  on public.mystery_shopper_campaigns (organization_id, status, started_at desc);
+create unique index if not exists uniq_mystery_active_per_session
+  on public.mystery_shopper_campaigns (shopper_session_id) where status = 'running';
+alter table public.mystery_shopper_campaigns enable row level security;
+drop policy if exists tenant_isolation_mystery_campaigns_all on public.mystery_shopper_campaigns;
+create policy tenant_isolation_mystery_campaigns_all on public.mystery_shopper_campaigns
+  for all using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+grant all on table public.mystery_shopper_campaigns to service_role;
+grant select, insert, update, delete on table public.mystery_shopper_campaigns to authenticated;
+
+create table if not exists public.mystery_shopper_messages (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  campaign_id uuid not null references public.mystery_shopper_campaigns(id) on delete cascade,
+  direction text not null check (direction in ('shopper', 'target')),
+  body text,
+  external_id text,
+  sent_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (campaign_id, external_id)
+);
+create index if not exists mystery_messages_campaign_idx
+  on public.mystery_shopper_messages (campaign_id, sent_at);
+alter table public.mystery_shopper_messages enable row level security;
+drop policy if exists tenant_isolation_mystery_messages_all on public.mystery_shopper_messages;
+create policy tenant_isolation_mystery_messages_all on public.mystery_shopper_messages
+  for all using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+grant all on table public.mystery_shopper_messages to service_role;
+grant select, insert, update, delete on table public.mystery_shopper_messages to authenticated;
+
+-- ---- chatId real do alvo p/ casar inbound (migration 0038) ----
+alter table public.mystery_shopper_campaigns
+  add column if not exists target_chat_id text;
+
+-- ---- N auditorias simultâneas por número do oculto (migration 0039) ----
+-- Unicidade passa de (sessão) para (sessão, alvo): permite várias empresas ao
+-- mesmo tempo, barra só a mesma empresa duas vezes no mesmo número.
+drop index if exists public.uniq_mystery_active_per_session;
+create unique index if not exists uniq_mystery_active_session_target
+  on public.mystery_shopper_campaigns (shopper_session_id, target_chat_id)
+  where status = 'running';
+
+-- ---- CRM de prospecção do Cliente Oculto (migration 0040) ----
+-- Funil + localização + notas + análise do laudo (JSONB, base do RAG).
+alter table public.mystery_shopper_campaigns
+  add column if not exists stage text,
+  add column if not exists stage_changed_at timestamptz,
+  add column if not exists city text,
+  add column if not exists state text,
+  add column if not exists notes text,
+  add column if not exists analysis jsonb;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'mystery_campaigns_stage_check') then
+    alter table public.mystery_shopper_campaigns
+      add constraint mystery_campaigns_stage_check
+      check (stage is null or stage in
+        ('auditado','qualificado','contato','proposta','negociacao','fechado','perdido'));
+  end if;
+end $$;
+create index if not exists mystery_campaigns_stage_idx
+  on public.mystery_shopper_campaigns (organization_id, stage) where stage is not null;
+
+-- ---- insight de venda por empresa auditada (migration 0041) ----
+alter table public.mystery_shopper_campaigns
+  add column if not exists insight text,
+  add column if not exists insight_at timestamptz;
+
+-- ---- bucket de PDFs do Cliente Oculto (migration 0037) ----
+-- Privado; acesso só por service-role (worker sobe, action assina URL).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('mystery-reports', 'mystery-reports', false, 20971520, array['application/pdf'])
+on conflict (id) do nothing;

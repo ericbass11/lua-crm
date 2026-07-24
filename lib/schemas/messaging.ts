@@ -53,6 +53,24 @@ export const sendMessageSchema = z
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
+/**
+ * startConversationSchema → POST /api/v1/conversations (envio ativo).
+ *
+ * O operador digita um número, uma mensagem e (opcional) o nome do contato.
+ * O handler normaliza o telefone (lib/phone), resolve/cria contato+conversa via
+ * as RPCs de ingestão WAHA, envia a mensagem e adiciona o contato ao funil
+ * padrão. `channel_session_id` é opcional — auto-seleciona o único canal
+ * WORKING quando omitido; obrigatório informar quando há mais de um.
+ */
+export const startConversationSchema = z.object({
+  phone_number: z.string().min(1, "Informe o número").max(30),
+  message: z.string().min(1, "Escreva uma mensagem").max(4096),
+  contact_name: z.string().max(120).optional(),
+  channel_session_id: z.string().uuid().optional(),
+});
+
+export type StartConversationInput = z.infer<typeof startConversationSchema>;
+
 export const claimConversationSchema = z.object({
   expected_assignee: z.string().uuid().nullable().optional(),
 });

@@ -34,9 +34,9 @@ const ORG_SLUG = "e2e-test-org";
 const PASSWORD = "E2E!Test1234";
 
 const USERS: Array<{ email: string; role: "admin" | "manager" | "agent"; full_name: string }> = [
-  { email: "e2e-admin@deskcomm.test", role: "admin", full_name: "E2E Admin" },
-  { email: "e2e-manager@deskcomm.test", role: "manager", full_name: "E2E Manager" },
-  { email: "e2e-agent@deskcomm.test", role: "agent", full_name: "E2E Agent" },
+  { email: "e2e-admin@lua-crm.test", role: "admin", full_name: "E2E Admin" },
+  { email: "e2e-manager@lua-crm.test", role: "manager", full_name: "E2E Manager" },
+  { email: "e2e-agent@lua-crm.test", role: "agent", full_name: "E2E Agent" },
 ];
 
 async function ensureOrg(): Promise<string> {

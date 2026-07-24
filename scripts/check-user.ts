@@ -8,7 +8,7 @@ async function main() {
     const m=line.match(/^([A-Z_]+)=(.*)$/); if(m) env[m[1]!]=m[2]!.replace(/^"(.*)"$/,"$1");
   }
   const a = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!,{ auth:{autoRefreshToken:false,persistSession:false}});
-  const email = process.argv[2] ?? "demo@deskcomm.com.br";
+  const email = process.argv[2] ?? "demo@lua-crm.example";
   const { data: u } = await a.auth.admin.listUsers({ perPage: 200 });
   const user = u.users.find((x) => x.email === email);
   if (!user) { console.error("not found"); process.exit(1); }

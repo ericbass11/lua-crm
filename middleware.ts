@@ -7,7 +7,7 @@ import {
   IMPERSONATE_COOKIE_NAME_EDGE,
 } from "@/lib/impersonate/cookie-edge";
 
-const COOKIE_NAME = "sb-deskcomm-auth";
+const COOKIE_NAME = "sb-lua-crm-auth";
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: request.headers } });
@@ -22,7 +22,7 @@ export async function middleware(request: NextRequest) {
   request.headers.set("x-pathname", pathname);
 
   // EPIC-11: in dev we route by path (`/admin/*`); in prod the
-  // `admin.deskcomm.com` sub-domain is mapped via Vercel rewrites to the same
+  // `admin.lua-crm.example` sub-domain is mapped via Vercel rewrites to the same
   // `/admin/*` paths. The host-based branch below stays a NOOP today and only
   // exists as documentation of the intended deploy topology.
   const host = request.headers.get("host") ?? "";

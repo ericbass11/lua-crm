@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { RecoveryForm } from "@/components/auth/RecoveryForm";
 
-export const metadata = { title: "Recuperar acesso — Lua CRM" };
+export const metadata = { title: "Recuperar acesso — LUA CRM" };
 
 export default async function RecoveryPage({
   searchParams,

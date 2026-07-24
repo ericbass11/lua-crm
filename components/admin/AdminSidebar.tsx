@@ -46,7 +46,7 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
       <div className="flex h-14 items-center border-b px-4">
         <div className="flex flex-col">
           <span className="text-xs uppercase tracking-wider text-muted-foreground">
-            DeskcommCRM
+            LUA CRM
           </span>
           <span className="text-sm font-semibold tracking-tight">Admin Plataforma</span>
         </div>

@@ -28,9 +28,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import type { McpContext } from "@/lib/mcp/types";
+import { guardrailsSchema, type Guardrails } from "@/lib/ai/guardrails-schema";
 import { computeCostCents } from "./cost";
 import { finalizeRun } from "./finalize";
 import { sendFinalResponse } from "./finalize";
+import { evaluateOutputGuardrails } from "./guardrails";
 import { finalizeHandoff } from "./handoff";
 import { loadHistoryWithBudget } from "./history";
 import { mintEphemeralToken, revokeEphemeralToken } from "./mcp_token";
@@ -106,6 +108,7 @@ interface AgentRow {
   organization_id: string;
   created_by: string | null;
   active_kb_version_id: string | null;
+  guardrails: unknown;
 }
 
 function buildSentinelRegex(keywords: string[]): RegExp | null {
@@ -228,11 +231,15 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
 
     const { data: agentRaw } = await admin
       .from("ai_agents")
-      .select("id, organization_id, created_by, active_kb_version_id")
+      .select("id, organization_id, created_by, active_kb_version_id, guardrails")
       .eq("id", run.agent_id)
       .eq("organization_id", run.organization_id)
       .maybeSingle();
     const agent = agentRaw as AgentRow | null;
+    // Guardrails configurados (regex_output_block, rag_must_hit, …). Parse
+    // tolerante: config inválida vira lista vazia — nunca derruba o runtime.
+    const guardrailsParsed = guardrailsSchema.safeParse(agent?.guardrails ?? []);
+    const agentGuardrails: Guardrails = guardrailsParsed.success ? guardrailsParsed.data : [];
 
     // 4) Load credential. Plaintext lives only in this scope.
     if (!version.credential_id) {
@@ -703,9 +710,62 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       };
     }
 
-    // 16) Happy path. Send WAHA reply when not dry-run.
-    let outboundMessageId: string | null = null;
+    // 16) Guardrails de SAÍDA (gate de preço sempre ligado + regex_output_block /
+    // rag_must_hit configurados). Fonte verificada = system prompt do tenant +
+    // trechos do RAG + resultados de tools. Preço sem fonte NÃO chega ao cliente:
+    // a resposta é descartada e a conversa escala em silêncio para um humano.
     const finalText = (result.text ?? "").trim();
+    if (!run.is_dry_run && finalText && run.conversation_id) {
+      // Corpus de fundamentação = SÓ fontes verificadas: system prompt do tenant
+      // + trechos do RAG + RESULTADOS de tools. NUNCA o texto gerado pelo LLM —
+      // serializeSteps guarda `step.text` no trace, e incluí-lo faria o preço
+      // alucinado "fundamentar" a si mesmo (gate se anularia). Só `result`.
+      const toolResultsCorpus = (trace ?? [])
+        .flatMap((s) => (s.tool_calls ?? []).map((t) => JSON.stringify(t.result ?? {})))
+        .join("\n");
+      const verdict = evaluateOutputGuardrails({
+        text: finalText,
+        groundingCorpus: `${version.system_prompt}\n${knowledgeContext}\n${toolResultsCorpus}`,
+        guardrails: agentGuardrails,
+        citationCount: knowledgeContext ? 1 : 0,
+      });
+      if (verdict.blocked) {
+        await finalizeHandoff({
+          runId: run.id,
+          organizationId: run.organization_id,
+          conversationId: conversationIdForHandoff,
+          reason: "low_confidence",
+          source: "guardrail",
+          latencyMs,
+          tokensIn: usage.inputTokens,
+          tokensOut: usage.outputTokens,
+          costCents: cost,
+          stepsCount: result.steps.length,
+          toolCalls: trace,
+          isDryRun: run.is_dry_run,
+          extraMetadata: {
+            guardrail_kind: verdict.kind,
+            guardrail_reason: verdict.reason,
+            ...(verdict.detail ?? {}),
+          },
+        });
+        return {
+          run_id: run.id,
+          status: "handoff",
+          abort_reason: `guardrail:${verdict.kind}`,
+          tokens_in: usage.inputTokens,
+          tokens_out: usage.outputTokens,
+          cost_cents: cost,
+          latency_ms: latencyMs,
+          steps_count: result.steps.length,
+          tool_calls: trace,
+          would_send_to: { session: waSessionName, chat_id: chatId },
+        };
+      }
+    }
+
+    // 17) Happy path. Send WAHA reply when not dry-run.
+    let outboundMessageId: string | null = null;
     if (!run.is_dry_run && finalText && run.conversation_id) {
       outboundMessageId = await sendFinalResponse({
         supabase: admin,

@@ -1,4 +1,4 @@
-# Migration Manifest — DeskcommCRM
+# Migration Manifest — LUA CRM
 
 Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgres 17) via Supabase MCP on 2026-04-28.
 
@@ -41,6 +41,13 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 | `20260715220000` | `0032_stage_ai_criteria` | Gestão de funil pela IA (Fase 1): `crm_stages.ai_criteria` — texto "quando um lead deve estar nesta etapa", injetado no contexto do agente junto com o lead atual do contato; a IA cria/move/preenche via tools. Etapa sem critério = gestão manual. Idempotente. |
 | `20260716120000` | `0033_notification_settings` | Alerta de handoff ao time: tabela `notification_settings` (org, handoff_webhook_url, handoff_enabled). O handoff-orchestrator faz POST fire-and-forget (Slack/Discord/n8n/custom). Idempotente. |
 | `20260716140000` | `0034_handoff_whatsapp` | notification_settings.handoff_whatsapp_number — alerta de handoff também via WhatsApp (enviado pelo número do negócio via WAHA, com motivo+link+resumo). Idempotente. |
+| `20260724190000` | `0041_mystery_insight` | `insight`/`insight_at` em `mystery_shopper_campaigns`: argumento de venda por empresa gerado por LLM a partir do laudo real (Fase 3 do Cliente Oculto). Q&A sobre os laudos alimenta o LLM com os dados estruturados (embeddings ficam pra quando o volume crescer). |
+| `20260724170000` | `0040_mystery_crm` | CRM de prospecção do Cliente Oculto: colunas `stage` (funil auditado→qualificado→contato→proposta→negociacao→fechado/perdido), `stage_changed_at`, `city`, `state`, `notes` e `analysis` (JSONB — análise do laudo estruturada, base do RAG) em `mystery_shopper_campaigns`. Empresa entra em 'auditado' ao concluir a auditoria. |
+| `20260724150000` | `0039_mystery_multi_per_session` | Permite N auditorias simultâneas por número do oculto (uma por empresa): índice único passa de (shopper_session_id) para (shopper_session_id, target_chat_id) where running. Inbound roteado por target_chat_id (0038). |
+| `20260724130000` | `0038_mystery_target_chat_id` | `mystery_shopper_campaigns.target_chat_id` — chatId REAL do alvo (resolvido via check-exists) para casar o inbound. Sem isso, mensagens de QUALQUER contato ao número do oculto eram atribuídas à campanha ativa (a IA reagia ao contato errado). |
+| `20260722160000` | `0037_mystery_reports_bucket` | Bucket privado `mystery-reports` (PDFs do laudo/transcrição do Cliente Oculto). Acesso só por service-role (upload no worker + URL assinada na action). Idempotente. |
+| `20260722130000` | `0036_mystery_shopper` | Módulo Cliente/Paciente Oculto (Fase 1 — fundação): `channel_sessions.purpose` ('inbound'/'mystery_shopper') + tabelas `mystery_shopper_campaigns` (1 running por sessão via índice parcial) e `mystery_shopper_messages` (isoladas do inbox). RLS por org. Aditivo/idempotente. |
+| `20260721150000` | `0035_audit_hash_chain` | Tamper-evidence do `api_audit_log`: colunas `prev_hash`/`entry_hash`/`chain_seq` + sequência `api_audit_log_chain_seq` + trigger `trg_audit_hash_chain` (BEFORE INSERT, SECURITY DEFINER, advisory lock por org) que encadeia SHA-256 sobre (prev_hash‖conteúdo canônico UTC). `fn_verify_audit_chain(org)` retorna a 1ª linha quebrada (detecta UPDATE e DELETE). Backfill idempotente das linhas existentes. Aditivo, sem rebuild de app (o trigger preenche transparentemente). |
 ## Reproducibility
 
 Migrations were applied directly via the Supabase MCP `apply_migration` tool during the autonomous bootstrap session. The SQL of each migration is also embedded in the corresponding spec under `docs/specs/0X-spec-*.md` and the database keeps them in `supabase_migrations.schema_migrations`.

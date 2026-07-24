@@ -7,6 +7,8 @@ import { z } from "zod";
  */
 export const createChannelSchema = z.object({
   display_name: z.string().trim().min(1).max(80).optional(),
+  /** 'mystery_shopper' cria o número do Cliente Oculto (inbound não vira atendimento). */
+  purpose: z.enum(["inbound", "mystery_shopper"]).optional(),
 });
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;

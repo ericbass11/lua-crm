@@ -1,13 +1,13 @@
 ---
-title: DeskcommCRM — PRD-Mestre
+title: LUA CRM — PRD-Mestre
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Eric Souza
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
-# DeskcommCRM — PRD-Mestre
+# LUA CRM — PRD-Mestre
 
 > Documento-índice da visão, escopo e estrutura do produto. Cada subsistema é detalhado em sub-PRDs (`01-plataforma-base.md` ... `06-nuvemshop-lgpd.md`). Decisões arquiteturais herdadas estão em `docs/research/reference-synthesis.md`.
 
@@ -15,9 +15,9 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 ## 1. Sumário Executivo
 
-**O que é.** DeskcommCRM é um CRM operacional especializado em e-commerce, com IA conversacional integrada nativamente. Unifica atendimento humano, chatbot com RAG por tenant, gestão de pedidos e pipeline de pós-venda numa única plataforma multi-tenant, tendo WhatsApp como canal primário (via WAHA, API não-oficial).
+**O que é.** LUA CRM é um CRM operacional especializado em e-commerce, com IA conversacional integrada nativamente. Unifica atendimento humano, chatbot com RAG por tenant, gestão de pedidos e pipeline de pós-venda numa única plataforma multi-tenant, tendo WhatsApp como canal primário (via WAHA, API não-oficial).
 
-**Quem usa.** Hoje, em modo BPO: a empresa operadora (TBD) usa o DeskcommCRM internamente pra prestar atendimento como serviço aos e-commerces clientes contratados. Atendentes humanos operam múltiplos tenants através de uma "caixa de entrada unificada" via *super-admin role*. Amanhã, em modo SaaS: o mesmo produto será comercializado direto pra e-commerces operarem por conta própria. Toda a arquitetura é multi-tenant desde o dia 1, sem refactor previsto pro pivot.
+**Quem usa.** Hoje, em modo BPO: a empresa operadora (TBD) usa o LUA CRM internamente pra prestar atendimento como serviço aos e-commerces clientes contratados. Atendentes humanos operam múltiplos tenants através de uma "caixa de entrada unificada" via *super-admin role*. Amanhã, em modo SaaS: o mesmo produto será comercializado direto pra e-commerces operarem por conta própria. Toda a arquitetura é multi-tenant desde o dia 1, sem refactor previsto pro pivot.
 
 **Quem é o cliente alvo (tenant).** PME brasileiro de e-commerce na plataforma Nuvemshop, com ~5 mil pedidos/mês, ~300 atendimentos/dia, 2–5 atendentes humanos e 1–2 números WhatsApp.
 
@@ -33,7 +33,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 ## 2. Problema & Visão
 
-### Problemas que o DeskcommCRM resolve
+### Problemas que o LUA CRM resolve
 
 1. **Atendimento desfragmentado.** PMEs hoje atendem via WhatsApp Web pessoal + planilha + memória do atendente. Sem histórico unificado, sem multi-atendente real, sem auditoria. Quando o atendente sai da empresa, o relacionamento com o cliente vai junto.
 
@@ -47,7 +47,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 ### Visão
 
-> "DeskcommCRM é a plataforma onde IA e humanos atendem juntos os clientes finais de PMEs de e-commerce no WhatsApp, com Customer 360° unificado, compliance LGPD nativa e operação multi-tenant pronta pra escala."
+> "LUA CRM é a plataforma onde IA e humanos atendem juntos os clientes finais de PMEs de e-commerce no WhatsApp, com Customer 360° unificado, compliance LGPD nativa e operação multi-tenant pronta pra escala."
 
 Em três anos: dominar o nicho de BPO de atendimento de e-commerce no Brasil; abrir SaaS direto pra lojistas; expandir pra VTEX, Shopify, e demais plataformas; oferecer MCP público como diferencial pra clientes power-user que querem orquestrar o CRM via agentes IA próprios.
 
@@ -158,7 +158,7 @@ Em três anos: dominar o nicho de BPO de atendimento de e-commerce no Brasil; ab
 
 ## 5. Arquitetura de Referência Herdada
 
-DeskcommCRM **adota integralmente** a doutrina arquitetural extraída do material da *Aula CRM Nichado com WhatsApp (WAHA)*. Síntese completa em `docs/research/reference-synthesis.md`.
+LUA CRM **adota integralmente** a doutrina arquitetural extraída do material da *Aula CRM Nichado com WhatsApp (WAHA)*. Síntese completa em `docs/research/reference-synthesis.md`.
 
 **Pontos não negociáveis herdados:**
 - Stack Next.js + Supabase + WAHA Plus + Vercel
@@ -180,7 +180,7 @@ Toda decisão de spec/epic que conflitar com o bundle herdado **requer justifica
 
 ## 6. Capacidades Diferenciadoras (gaps sobre a referência)
 
-São os 6 deltas que o DeskcommCRM constrói sobre a base herdada — onde reside o valor competitivo e onde a engenharia adiciona algo não-trivial:
+São os 6 deltas que o LUA CRM constrói sobre a base herdada — onde reside o valor competitivo e onde a engenharia adiciona algo não-trivial:
 
 ### 6.1 Integração Nuvemshop nativa
 OAuth + 8+ webhooks (incluindo LGPD redact/data_request) + sync inicial. Adapter pattern (`EcommercePlatformAdapter`) abstrai a interface pra VTEX/Shopify entrarem em fases posteriores sem reescrita.
@@ -192,7 +192,7 @@ Cada mensagem inbound roda análise leve (Haiku 4.5 ou modelo dedicado) em paral
 Vector store por tenant (pgvector ou Supabase Vector — a definir na spec). Pipeline de ingestão com 4 fontes: FAQ manual, política da loja (PDF/markdown), catálogo Nuvemshop sincronizado, conversas resolvidas anteriores como exemplos. Roteamento de chamada combina contexto (últimas 20 messages + perfil do contato + último pedido) + RAG hits. Modelo default: Sonnet 4.6 via AI Gateway, Haiku 4.5 pra triagem de sentimento.
 
 ### 6.4 Super-admin de plataforma
-Coluna `is_platform_admin` em tabela `auth.users` ou tabela auxiliar `platform_admins`. Helper RLS retorna TRUE pra essa role em qualquer tabela tenant-aware. UI separada `/admin` (talvez subdomínio `admin.deskcomm.com`). Operação BPO ganha "caixa de entrada unificada" cross-tenant; clientes SaaS futuros não veem essa UI.
+Coluna `is_platform_admin` em tabela `auth.users` ou tabela auxiliar `platform_admins`. Helper RLS retorna TRUE pra essa role em qualquer tabela tenant-aware. UI separada `/admin` (talvez subdomínio `admin.lua-crm.example`). Operação BPO ganha "caixa de entrada unificada" cross-tenant; clientes SaaS futuros não veem essa UI.
 
 ### 6.5 AI Provider strategy via Vercel AI Gateway
 Default: Vercel AI Gateway com fallback de provedor (Anthropic primário; OpenAI de backup). Observability nativa (tokens, latência, custo por tenant). Zero data retention configurável. Strings `"anthropic/claude-sonnet-4-6"` em vez de import direto de SDK específico, conforme guidance da plataforma.
@@ -253,7 +253,7 @@ Interface `EcommercePlatformAdapter` define `fetchOrders`, `fetchCustomers`, `su
 - Tempo médio de ciclo de pipeline (carrinho → entregue)
 
 ### 8.3 Critério de sucesso geral do MVP
-DeskcommCRM é considerado MVP-validado quando:
+LUA CRM é considerado MVP-validado quando:
 1. Pelo menos **1 tenant real** está em produção atendendo clientes finais por **30 dias contínuos** sem incidente que cause banimento WAHA ou perda de dados.
 2. Pelo menos **5 KPIs dos 7 listados acima** estão sendo medidos automaticamente e dentro do target ou com plano de correção.
 3. Audit log e LGPD passam revisão manual sem encontrar lacuna crítica.
@@ -293,7 +293,7 @@ Roadmap revisado a cada 4 semanas. Estimativa otimista; recalibrar a cada milest
 
 ## 11. Glossário
 
-- **Tenant** — uma organização cliente do DeskcommCRM (um e-commerce). No DB = `organizations`. Sinônimo: organização.
+- **Tenant** — uma organização cliente do LUA CRM (um e-commerce). No DB = `organizations`. Sinônimo: organização.
 - **Operador BPO** — funcionário da empresa operadora que atende múltiplos tenants. Tem role super-admin de plataforma.
 - **Super-admin de plataforma** — role que cruza tenants. Distinto do `admin` de um tenant específico.
 - **Lead / Cliente** — registro central no CRM (`crm_leads`). No vocabulary de e-commerce, lead = "Cliente". Engloba cliente em qualquer estágio (interesse, comprou, pós-venda).

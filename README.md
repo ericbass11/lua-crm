@@ -1,14 +1,16 @@
 <div align="center">
 
-# 🛠️ DeskcommCRM
+# 🛠️ LUA CRM
 
-**CRM operacional multi-tenant para e-commerce, com IA conversacional nativa, WhatsApp via WAHA e LGPD by-design.**
+**CRM operacional multi-tenant com IA conversacional nativa, WhatsApp via WAHA e LGPD by-design.**
+
+Criado por **Eric Souza**.
 
 [![Next.js 15](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript)](https://www.typescriptlang.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%2BAuth%2BStorage-3ecf8e?logo=supabase)](https://supabase.com)
 [![Tailwind](https://img.shields.io/badge/Tailwind-CSS-38bdf8?logo=tailwindcss)](https://tailwindcss.com)
-[![License: TBD](https://img.shields.io/badge/license-TBD-lightgrey)](#licença)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [**📘 Setup Guide**](docs/SETUP.md) · [**🏗️ Arquitetura**](ARCHITECTURE.md) · [**🤝 Contribuir**](CONTRIBUTING.md) · [**📋 PRDs**](docs/prd/) · [**🗺️ Roadmap**](docs/stories/epics/MASTER.md)
 
@@ -18,7 +20,7 @@
 
 > ### ☁️ Rode este CRM em produção com 1 comando
 >
-> O DeskcommCRM foi desenvolvido em **parceria com a HostGator**: o [`hostgator-setup-kit/`](hostgator-setup-kit/)
+> O LUA CRM foi desenvolvido em **parceria com a HostGator**: o [`hostgator-setup-kit/`](hostgator-setup-kit/)
 > instala o CRM completo (app + WAHA + banco) numa VPS com um único comando, e o
 > [runbook de produção](docs/runbooks/waha-hostgator.md) já assume esse ambiente.
 >
@@ -27,7 +29,7 @@
 
 ## ✨ O que é
 
-DeskcommCRM unifica **atendimento humano**, **chatbot com RAG por tenant**, **gestão de pedidos** e **pipeline de pós-venda** numa única plataforma. Canal primário: **WhatsApp via WAHA**. Multi-tenant desde o dia 1. LGPD nativa.
+LUA CRM unifica **atendimento humano**, **chatbot com RAG por tenant**, **gestão de pedidos** e **pipeline de pós-venda** numa única plataforma. Canal primário: **WhatsApp via WAHA**. Multi-tenant desde o dia 1. LGPD nativa.
 
 > **Modo atual:** BPO interno (uma operadora atende N tenants).
 > **Modo futuro:** SaaS direto pra lojistas.
@@ -46,8 +48,8 @@ DeskcommCRM unifica **atendimento humano**, **chatbot com RAG por tenant**, **ge
 
 ```bash
 # 1. Clone
-git clone https://github.com/melgarafael/DeskcommCRM.git
-cd DeskcommCRM
+git clone https://github.com/ericbass11/lua-crm.git
+cd lua-crm
 
 # 2. Node 20 + pnpm
 nvm use                    # ou instale Node 20+
@@ -100,7 +102,7 @@ Detalhes: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 ## 📁 Estrutura
 
 ```
-DeskcommCRM/
+lua-crm/
 ├── app/                    # Next.js App Router
 │   ├── (admin)/            # Rotas super-admin (impersonate, tenants)
 │   ├── (public)/           # Login, recovery
@@ -185,13 +187,13 @@ git commit -m "feat(EPIC-XX): descrição"
 
 ## 🐛 Reportando bugs
 
-Abra uma [issue](https://github.com/melgarafael/DeskcommCRM/issues) com:
+Abra uma [issue](https://github.com/ericbass11/lua-crm/issues) com:
 - Versão do Node, pnpm e SO.
 - Output do `/api/v1/health`.
 - Stack trace ou screenshot.
 - Steps to reproduce.
 
-Pra **vulnerabilidades de segurança**, **NÃO abra issue pública**. Mande email pra `security@deskcomm.app` (a definir) ou DM ao mantenedor.
+Pra **vulnerabilidades de segurança**, **NÃO abra issue pública**. Mande email pra `security@lua-crm.example` (a definir) ou DM ao mantenedor.
 
 ---
 
@@ -207,9 +209,9 @@ Detalhe wave-by-wave: [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER
 
 ## 💬 Comunidade
 
-- **Discussões:** [GitHub Discussions](https://github.com/melgarafael/DeskcommCRM/discussions) — pra perguntas, ideias, showcase.
-- **Issues:** [GitHub Issues](https://github.com/melgarafael/DeskcommCRM/issues) — bugs e tasks.
-- **Twitter / X:** [@rafaelmelgaco](https://twitter.com) (a confirmar).
+- **Discussões:** [GitHub Discussions](https://github.com/ericbass11/lua-crm/discussions) — pra perguntas, ideias, showcase.
+- **Issues:** [GitHub Issues](https://github.com/ericbass11/lua-crm/issues) — bugs e tasks.
+- **Criador e mantenedor:** [Eric Souza](https://github.com/ericbass11).
 
 ---
 
@@ -227,8 +229,8 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
 (VPS, banco Supabase e chave de IA próprios). Isso implica:
 
 - **Suporte é comunitário e "as-is".** Dúvidas e bugs entram como
-  [Issues](https://github.com/melgarafael/DeskcommCRM/issues) ou
-  [Discussions](https://github.com/melgarafael/DeskcommCRM/discussions). Não há SLA nem
+  [Issues](https://github.com/ericbass11/lua-crm/issues) ou
+  [Discussions](https://github.com/ericbass11/lua-crm/discussions). Não há SLA nem
   suporte garantido — é open source mantido por boa vontade.
 - **Você é responsável pela sua instalação.** Atualizações não são automáticas
   (`bash hostgator-setup-kit/update.sh` quando quiser), e manter/backup do seu servidor
@@ -278,6 +280,18 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
 | 15/07 | **Markdown→WhatsApp** (`lib/waha/format.ts`): `**negrito**`→`*negrito*` etc. nas saídas da IA. |
 | 15/07 | **Despausar mcp_agent** republica a última versão automaticamente; **Arquivar** liberado para agente default (limpa a flag). |
 | 15/07 | **Excluir conexões WhatsApp** (botão + DELETE API): desconecta do WAHA; preserva histórico como "Parado" se houver conversas (FK RESTRICT). |
+| 24/07 | **`event-log-drain` não rodava no cron (CRÍTICO)**: o container `scheduler` foi criado antes de o `event-log-drain` ser adicionado ao crontab do compose — o crontab é gravado no start do container, então o scheduler rodava só os crons antigos, **sem o drain**. Efeito: eventos assíncronos (respondedor do Cliente Oculto, laudo, indexação RAG, workers LGPD) só processavam por disparo manual. Fix: `docker compose up -d --force-recreate scheduler` (regenera o crontab atual). Verificar `crontab -l` no scheduler após mudar o compose. |
+| 24/07 | **Cliente Oculto: insights de venda (Fase 3, migration 0041) + abas na UI**: cada empresa auditada ganha um `insight` de venda gerado por LLM a partir do laudo real (gargalo → impacto → como a Lua CRM resolve → gancho), automático ao concluir + regenerável (botão "insight" no card/lista). "Perguntar aos laudos" (Q&A) sintetiza padrões entre as empresas (alimenta o LLM com os dados estruturados; embeddings ficam pra quando o volume crescer). UI de /app/mystery reorganizada em **abas** (Nova auditoria · Kanban). |
+| 24/07 | **CRM de prospecção no módulo Cliente Oculto (migration 0040)**: cada empresa auditada vira um lead pra vender o Agente de IA da Lua CRM. `mystery_shopper_campaigns` ganhou `stage` (funil Auditado→Qualificado→Contato→Proposta→Negociação→Fechado/Perdido), `city`/`state` (UF derivada do DDD), `notes` e `analysis` (JSONB — laudo estruturado p/ RAG). UI em /app/mystery: KPIs (auditadas, economia média, resposta média, fechados, conversão) + **Kanban** (colunas por etapa, mover via seletor) + **Lista** (empresa, WhatsApp, cidade/UF, economia, resp. média, etapa, laudo/transcrição). Empresa entra em "Auditado" ao concluir a auditoria. Falta a Fase 3 (RAG/insights de venda sobre os laudos). |
+| 24/07 | **Abertura do Cliente Oculto sempre única (anti-spam Meta)**: a 1ª mensagem era fixa (só o objetivo variava) → risco de bloqueio por padrão de spam. Agora é **gerada pela IA a cada campanha** (temperatura 1 + estilo aleatório de um pool), quebrada em mensagens curtas; fallback determinístico variado (saudação × pedido × emoji) se o LLM falhar. Cada empresa recebe uma abertura diferente. |
+| 24/07 | **Laudo rebrand Lua CRM + empresa em destaque**: "Cloudia" (era só exemplo do modelo) trocado por **Lua CRM** em todo o laudo/pdf/prompt de análise; o nome da empresa avaliada saiu do subtítulo para um **bloco próprio destacado** (rótulo "EMPRESA AVALIADA" + nome grande em azul). |
+| 24/07 | **Encerramento + laudo do Cliente Oculto confiáveis**: (a) o LLM às vezes produzia a fala de fechamento mas esquecia o flag `should_end`/`target_offered_slot` → a campanha ficava `running` pra sempre e o laudo nunca era gerado. Backstop determinístico: se a IA disser o roteiro de fim ("vou confirmar / te retorno"), encerra mesmo sem o flag (marca `slot_offered_at` pelo timestamp da última msg do alvo). (b) A entrega do laudo por WhatsApp agora resolve o chatId do destinatário via `checkExists` (mesmo 9º dígito/LID do envio), senão "enviava" sem entregar. Laudo sempre baixável na UI mesmo se a entrega falhar. |
+| 24/07 | **Cliente Oculto responde "picado" (várias mensagens curtas)**: a persona agora retorna `messages[]` (1–4 mensagens curtas) em vez de um bloco; o motor envia cada uma com pacing humano (~1.2–2.8s + jitter), como uma pessoa digita. Fallback quebra bloco em frases se o LLM devolver texto único. |
+| 24/07 | **Resposta via LID roteada pelo telefone (Cliente Oculto)**: o WhatsApp entrega respostas com identidade **LID** (`<lid>@lid`, privacidade), que não bate com o `target_chat_id` (telefone). Resultado: a IA não entrava na conversa. Fix: no `handleMysteryShopperInbound`, além do `from`, extraímos o telefone real de `_data.key.remoteJidAlt` (`<phone>@s.whatsapp.net`) e casamos por ele, com tolerância ao 9º dígito BR (canoniza 13→12). Validado real: Clínica Novo Sorriso respondeu via LID, a IA capturou e respondeu de forma humanizada. |
+| 24/07 | **Inbound do Cliente Oculto casado com o alvo (migration 0038)**: o número do oculto é um WhatsApp real — qualquer contato pode mandar mensagem. O ingest atribuía QUALQUER inbound à campanha ativa (a IA reagiria ao contato errado, e poderia responder ao alvo real reagindo a mensagem de terceiro). Fix: `mystery_shopper_campaigns.target_chat_id` (JID real do alvo, resolvido via check-exists) + `handleMysteryShopperInbound` só captura se os dígitos do remetente casarem com o alvo; de terceiro, ignora. |
+| 24/07 | **9º dígito BR no envio do Cliente Oculto**: o JID do WhatsApp de muitos números BR é `55DDXXXXXXXX@c.us` (SEM o 9), mas o código gerava `55DD9XXXXXXXX@c.us` → a WAHA aceitava o `sendText` (201) mas a mensagem nunca era entregue (log `USync fetch yielded no results for pending PNs`) e não aparecia no chat. Fix: `WahaClient.checkExists` (`/api/contacts/check-exists`) resolve o chatId REAL e valida a existência no WhatsApp; o motor usa isso na validação de início (erro claro `target_not_on_whatsapp` se não existe) e em cada envio. |
+| 22/07 | **PDF (react-pdf) consertado no server standalone**: o Next App Router bundla código server com o React vendorizado dele (canary 19), incompatível com o `react-reconciler` do `@react-pdf/renderer` (react 18.3.1) → `renderToBuffer` quebrava com "React error #31" (e depois "reading 'S'"). Fix: `next.config.ts` externaliza a árvore `@react-pdf/*` + `react-reconciler`, e `lib/mystery/pdf.ts` monta os elementos com `createRequire(process.cwd())` (react real do node_modules, o mesmo do react-pdf) via `createElement` — nunca o React vendorizado. **Conserta também o export LGPD** (mesmo renderer). Provado end-to-end (laudo+transcrição gerados e no bucket). |
+| 21/07 | **`safe-deploy.sh` com rollback consertado**: o script tinha nomes hardcoded do rebrand (`lua-crm-app-1` / `lua-crm-app:*`) que não batiam com o container/imagem reais (`deskcommcrm-app-1` / `deskcomm-app:local`) → o snapshot de rollback falhava em silêncio e um build quebrado ficaria sem rede de segurança. Agora resolve o container via `docker compose ps -q app` e a tag-alvo via `APP_IMAGE` do `.env` — snapshot/rollback à prova de rename. |
 
 ### Features novas
 | Data | Feature |
@@ -287,7 +301,13 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
 | 15/07 | **Limpar histórico** (botão admin na conversa): apaga mensagens, zera handoff/atribuição — a IA recomeça do zero. |
 | 15/07 | **Watchdog channel-health** (cron 5/min): engine≠NOWEB → incidente crítico; sessão DB=WORKING divergente do WAHA → corrige status + incidente. |
 | 15/07 | **Item "Credenciais IA"** no menu lateral. |
+| 22/07 | **Cliente/Paciente Oculto — Fases 2–4 (módulo completo)**: **motor** (`lib/mystery/engine.ts`) — inicia campanha (dispara 1ª msg pela sessão do oculto), respondedor-persona acionado a cada resposta do alvo (evento `mystery_shopper.reply_received` consumido pelo `event-log-drain`, reusa o LLM BYO do agente publicado da org), conduz até a **oferta de horário** e encerra SEM confirmar; cap de 40 msgs + varredura de stall (45min) no mesmo drain. **Laudo** (`lib/mystery/report.ts` + `metrics.ts` + `pdf.tsx`) — métricas dos timestamps (tempo médio/total, perda, projeção 10/dia, economia % — benchmarks Cloudia fixos 3s/5min), análise de qualidade por LLM, 2 PDFs (relatório + transcrição) via `@react-pdf/renderer`, upload no Storage e entrega ao número cadastrado via `sendFile` (best-effort; laudo sempre baixável na UI). **UI** em `/app/mystery` (admin): conectar número dedicado (QR), iniciar auditoria (persona + alvo + destino), listar campanhas e baixar laudos. `channel-sessions` aceita `purpose`. 19 testes unitários (métricas batem o modelo 09/12). |
+| 22/07 | **Cliente/Paciente Oculto — Fase 1 (fundação, migration 0036)**: módulo onde a IA vira o *cliente* e audita o atendimento humano de uma empresa-alvo. Esta fase entrega a base (dormente até a Fase 2): `channel_sessions.purpose` ('inbound'/'mystery_shopper'), tabelas `mystery_shopper_campaigns` (1 running por sessão) e `mystery_shopper_messages` (isoladas do inbox), `WahaClient.sendFile` (envio de PDF via URL) e o **desvio de roteamento** no `lib/waha/ingest.ts`: inbound numa sessão de oculto NÃO cria contato/conversa nem aciona o bot-da-empresa — só captura na campanha ativa. Decisões: para antes de fechar horário real · disparo manual · branding Cloudia fixo. Provado no DB (RLS, unique de campanha ativa). |
+| 22/07 | **Criar e excluir pipelines no kanban** (sem migration): página `/app/kanban` ganhou botão "Novo pipeline" (cria o funil com etapas padrão Novo·Em andamento·Ganhou·Perdido, slug único auto-gerado) e exclusão por pipeline. Exclusão **só quando não há nenhum lead** (checagem no app + backstop da FK `crm_leads.pipeline_id` ON DELETE RESTRICT; etapas somem via cascade). Se o pipeline excluído era o padrão e sobra outro, promove o de menor posição a padrão. Server actions admin-only (`createPipeline`/`deletePipeline`); botão de excluir desabilitado com a contagem de leads na UI. |
+| 21/07 | **Auditoria à prova de adulteração (hash chain, migration 0035)**: `api_audit_log` ganhou `prev_hash`/`entry_hash`/`chain_seq` + trigger `trg_audit_hash_chain` (BEFORE INSERT, SECURITY DEFINER, advisory lock por org) que encadeia SHA-256 de cada linha sobre a anterior. Alterar OU apagar qualquer linha antiga quebra a verificação das posteriores — `select * from fn_verify_audit_chain('<org>')` retorna a 1ª linha quebrada (vazio = íntegra). Backfill idempotente das 10.315 linhas existentes; provado (detecta UPDATE e DELETE); app não precisou de rebuild (o trigger preenche transparente — confirmado gravando `ai.dispatcher_run` já hasheado). Dá base pro "provar o que a IA fez e quando". |
+| 21/07 | **Gate anti-alucinação de preço + motor de guardrails de saída** (`lib/ai/runtime/guardrails.ts`, sem migration): o runtime agora avalia a resposta ANTES de enviar (agent.ts §16). **Gate de preço sempre ligado** — extrai valores monetários do texto final e, se algum não aparece em fonte verificada (system prompt do tenant + trechos do RAG + resultado de tools), **descarta a resposta e escala em silêncio pra humano** (`source=guardrail`, reason `low_confidence`, detalhe em metadata). Também ativa os guardrails configuráveis que eram letra morta: `regex_output_block` e `rag_must_hit` (o campo `ai_agents.guardrails` finalmente é lido). Viés pró-segurança: na dúvida, bloqueia. 13 testes unitários. |
 | 15/07 | **Guardrail de deploy** (`scripts/safe-deploy.sh` + hook Claude Code): build gate → health gate → rollback automático. Deploy direto bloqueado. |
+| 21/07 | **Envio ativo / "Nova conversa"** (sem migration): botão no topo do Inbox abre diálogo (número + mensagem + nome opcional). `POST /api/v1/conversations` normaliza o telefone p/ E.164 (`lib/phone.ts`, default DDI +55), resolve o canal WORKING (auto se houver só um; seletor se >1), reusa as RPCs atômicas `fn_upsert_wa_contact`/`fn_upsert_wa_conversation` (mesmo dedup do inbound — número existente não duplica), envia a 1ª mensagem via `sendMessageHandler` e **adiciona o contato ao funil padrão (1ª etapa) automaticamente** (`source=whatsapp_active`; reusa lead aberto existente). Ao concluir, abre a conversa no chat. |
 
 ### Operação local (Windows)
 - Stack: `docker compose -f docker-compose.prod.yml -f docker-compose.local.yml up -d` · app em `http://localhost:3000`
@@ -301,7 +321,7 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
 | 16/07 | **Modais responsivos (fix de base)**: `DialogContent` ganhou `w-[calc(100%-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain` — nenhum modal ultrapassa mais os limites da tela (conteúdo alto rola dentro do modal); vale para todos os diálogos do sistema de uma vez. |
 | 16/07 | **Gestão de lead pela IA — Fase 3**: (1) **briefing pré-call** — `crm_schedule_meeting` aceita `contact_id` e o servidor injeta os campos estratégicos do lead (segmento, dor, orçamento, resumo…) na descrição do evento, entregando ao comercial um briefing pronto; (2) **follow-up ciente do funil** — o dispatcher carrega etapa+campos do lead e adequa o tom do reengajamento (quente puxa ação, frio reaquece com valor); (3) **score contínuo** — instrução reforçada para recalcular o score a cada interação (sobe/desce conforme a conversa). Preenchimento retroativo fica como ação gated (operação em massa). |
 | 16/07 | **Card do Kanban**: passou a exibir nome + telefone do lead (join do contato no board route); removidos o valor (R$) e o avatar de dono "00" (owner era UUID zerado da IA). |
-| 16/07 | **Rebrand + design system azul + layout do inbox**: nome → **Lua CRM** (sidebar, login, títulos); paleta migrada de verde "sage" para **azul** (accent blue; dark mode em **navy** profundo) nos tokens de `globals.css`. Inbox: shell agora `h-dvh` + `overflow-hidden` (janela nunca rola; scroll só nos painéis internos) — removida a barra de rolagem de página e o `h-[calc(100vh-3.5rem)]` frágil; `main` sem `p-6` (cada página já tem o seu; corrige padding-duplo). Filtros: `TabsList` virou flex-wrap — "Não atribuídos" não estoura mais o componente. |
+| 16/07 | **Rebrand + design system azul + layout do inbox**: nome → **LUA CRM** (sidebar, login, títulos); paleta migrada de verde "sage" para **azul** (accent blue; dark mode em **navy** profundo) nos tokens de `globals.css`. Inbox: shell agora `h-dvh` + `overflow-hidden` (janela nunca rola; scroll só nos painéis internos) — removida a barra de rolagem de página e o `h-[calc(100vh-3.5rem)]` frágil; `main` sem `p-6` (cada página já tem o seu; corrige padding-duplo). Filtros: `TabsList` virou flex-wrap — "Não atribuídos" não estoura mais o componente. |
 | 16/07 | **Configurações reorganizada em abas por categoria** (`SettingsHub`): Conta · Organização · IA & Automação · Canais & Integrações · Conformidade & Segurança. **Credenciais de IA** e **LGPD** saíram da barra lateral e agora vivem dentro de Configurações (grupos IA e Conformidade). Cards gateados por papel; grupo sem item visível não aparece. |
 | 16/07 | **IA multimodal (áudio + imagem)**: mensagens de voz do cliente são transcritas (OpenAI Whisper) e imagens são descritas (visão gpt-4o-mini); o texto vai pro `body` (a IA entende e aparece no inbox). `lib/ai/runtime/media.ts`, ligado no runtime quando o body vem vazio. |
 | 16/07 | **Alerta de handoff ao time** (migration 0033): `notification_settings` (webhook por org) + `notifyHandoff` no Step 6 do handoff-orchestrator (POST Slack/Discord/n8n/custom com motivo, contato e link). UI em Configurações → Conta → Notificações. Sem isto, handoff ficava parado sem ninguém saber. |

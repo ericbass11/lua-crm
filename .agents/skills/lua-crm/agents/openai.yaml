@@ -1,0 +1,6 @@
+interface:
+  display_name: "LUA CRM"
+  short_description: "Repo-specific patterns and workflows for LUA CRM"
+  default_prompt: "Use the LUA CRM repo skill to follow existing architecture, testing, and workflow conventions."
+policy:
+  allow_implicit_invocation: true

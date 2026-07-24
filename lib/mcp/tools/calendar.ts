@@ -168,7 +168,7 @@ export const crmScheduleMeeting: McpToolDefinition<typeof scheduleMeetingShape> 
       input.contact_phone ? `WhatsApp: ${input.contact_phone}` : null,
       input.notes ? `\n${input.notes}` : null,
       briefing ? `\n${briefing}` : null,
-      "\nAgendado automaticamente pelo agente de IA do DeskcommCRM.",
+      "\nAgendado automaticamente pelo agente de IA do LUA CRM.",
     ].filter(Boolean);
 
     try {

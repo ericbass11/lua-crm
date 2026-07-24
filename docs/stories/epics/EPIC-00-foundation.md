@@ -16,7 +16,7 @@ exposes_contracts:
   - "lib.schemas — registry `lib/schemas/index.ts` + helper `validateRequest<T>(schema, request)`"
 status: completed
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Eric Souza
 ---
 
 # EPIC-00 — Foundation & Tooling
@@ -657,7 +657,7 @@ Pre-flight check: se theme provider NÃO existe, esta story bloqueia até algué
 
 #### Implementation steps (sequential)
 
-1. Pre-flight: confirmar `useTheme` (next-themes) disponível. Se não, halt e avisar Rafael.
+1. Pre-flight: confirmar `useTheme` (next-themes) disponível. Se não, halt e avisar Eric Souza.
 2. `pnpm add react-hotkeys-hook` se ausente
 3. Criar `components/theme/theme-toggle.tsx`:
    ```tsx
@@ -1081,7 +1081,7 @@ Ao terminar EPIC-00, a regression suite deve cobrir:
 
 | Risco | Severidade | Mitigação |
 |---|---|---|
-| Theme provider não existe ainda no repo | Alta (S-00.06 bloqueia) | Pre-flight check na S-00.06; halt+escalate ao Rafael se ausente. Não improvisar provider novo |
+| Theme provider não existe ainda no repo | Alta (S-00.06 bloqueia) | Pre-flight check na S-00.06; halt+escalate ao Eric Souza se ausente. Não improvisar provider novo |
 | `crypto.randomUUID()` não disponível em runtime edge antigo | Baixa | Next 15 + Node 20 cobre; se algum runtime edge falhar, fallback `uuid` package em PR emergencial |
 | Dev server em :3001 (não :3000 default Next) | Baixa | Playwright config aponta pra 3001; documentado em CLAUDE.md "Como rodar local" |
 | Lint custom (`no-restricted-imports` pra phosphor; `no-restricted-syntax` pra supabase.channel) pode atrasar wave | Média | Best-effort. Se inviável, criar issue de follow-up; não bloquear wave |

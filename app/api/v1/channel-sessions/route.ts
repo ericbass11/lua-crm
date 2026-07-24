@@ -84,6 +84,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       organization_id: activeOrg.orgId,
       waha_session_name: sessionName,
       display_name: parsed.data.display_name ?? null,
+      purpose: parsed.data.purpose ?? "inbound",
       engine: "NOWEB",
       webhook_path_token: randomUUID().replace(/-/g, ""),
       webhook_secret_encrypted: Buffer.from([0]),

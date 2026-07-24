@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# DeskcommCRM — imagem de produção self-host (Next.js standalone).
-# Build: docker build --build-arg NEXT_PUBLIC_SUPABASE_URL=... -t deskcomm-app .
+# LUA CRM — imagem de produção self-host (Next.js standalone).
+# Build: docker build --build-arg NEXT_PUBLIC_SUPABASE_URL=... -t lua-crm-app .
 
 # ---- deps: instala dependências (layer cacheável) ----
 FROM node:20-alpine AS deps

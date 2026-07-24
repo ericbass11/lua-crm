@@ -22,13 +22,14 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Lua CRM — CRM operacional para e-commerce",
-    template: "%s · Lua CRM",
+    default: "LUA CRM — CRM operacional para e-commerce",
+    template: "%s · LUA CRM",
   },
   description:
     "Centralize WhatsApp, e-mail e Instagram em um único atendimento. IA que resolve sozinha o que dá pra resolver, time humano focado no que importa. Multi-tenant, LGPD-nativo, sob medida pra operações brasileiras.",
-  applicationName: "Lua CRM",
-  authors: [{ name: "Lua CRM" }],
+  applicationName: "LUA CRM",
+  authors: [{ name: "Eric Souza", url: "https://github.com/ericbass11" }],
+  creator: "Eric Souza",
   keywords: [
     "CRM",
     "atendimento",
@@ -50,7 +51,7 @@ export const viewport: Viewport = {
 
 // Inline FOUC-prevention. Conteúdo é string literal estática (zero input do usuário),
 // portanto seguro. Lê localStorage + prefers-color-scheme antes do primeiro paint.
-const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('deskcomm-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=(s==='dark'||s==='light')?s:((s==='system'||!s)&&d?'dark':'light');document.documentElement.setAttribute('data-theme',r);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
+const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('lua-crm-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=(s==='dark'||s==='light')?s:((s==='system'||!s)&&d?'dark':'light');document.documentElement.setAttribute('data-theme',r);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
 export default function RootLayout({
   children,

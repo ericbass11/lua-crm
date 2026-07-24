@@ -11,7 +11,7 @@ const SENSITIVE_HEADERS = [
   "x-api-key",
   "x-waha-api-key",
   "x-nuvemshop-token",
-  "x-deskcomm-token",
+  "x-lua-crm-token",
 ];
 
 function scrubMessage(input: string): string {

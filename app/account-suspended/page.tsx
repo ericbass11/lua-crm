@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 export const metadata = {
-  title: "Conta suspensa — DeskcommCRM",
+  title: "Conta suspensa — LUA CRM",
 };
 
 export default function AccountSuspendedPage() {
@@ -14,10 +14,10 @@ export default function AccountSuspendedPage() {
         <p className="text-sm text-muted-foreground">
           Sua conta está suspensa. Entre em contato com{" "}
           <a
-            href="mailto:support@deskcomm.com.br"
+            href="mailto:support@lua-crm.example"
             className="underline underline-offset-4 hover:text-foreground transition-colors"
           >
-            support@deskcomm.com.br
+            support@lua-crm.example
           </a>{" "}
           para mais informações.
         </p>

@@ -112,3 +112,9 @@ export const pipelineConfigPatchSchema = z.object({
   lost_reasons: z.array(z.string().min(1).max(80)).max(50).optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
+
+export const createPipelineSchema = z.object({
+  name: z.string().trim().min(2, "Nome muito curto").max(60, "Nome muito longo"),
+  description: z.string().trim().max(280).optional(),
+});
+export type CreatePipelineInput = z.infer<typeof createPipelineSchema>;

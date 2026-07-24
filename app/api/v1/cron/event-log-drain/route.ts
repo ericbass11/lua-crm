@@ -27,6 +27,7 @@ import {
 import { ragIndexerHandler } from "@/workers/rag-indexer.handler";
 import { lgpdExportHandler } from "@/workers/lgpd-export-worker.handler";
 import { lgpdRedactHandler } from "@/workers/lgpd-redact-worker.handler";
+import { mysteryResponderHandler, mysteryReportHandler } from "@/workers/mystery-shopper.handler";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +52,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   registerHandler(ragIndexerHandler);
   registerHandler(lgpdExportHandler);
   registerHandler(lgpdRedactHandler);
+  registerHandler(mysteryResponderHandler);
+  registerHandler(mysteryReportHandler);
   const types = [...new Set(getRegisteredHandlers().flatMap((h) => h.events))];
 
   const admin = createAdminClient();

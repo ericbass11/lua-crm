@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DeskcommCRM — instalador self-host para VPS (HostGator).
+# LUA CRM — instalador self-host para VPS (HostGator).
 #
 # Idempotente: pode rodar de novo sem estragar nada. Dependências no host:
 # só docker, docker compose, git, openssl, curl. psql/bootstrap rodam via Docker.
@@ -11,8 +11,8 @@
 #
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
-REPO_DIR="${REPO_DIR:-deskcommcrm}"
+REPO_URL="${REPO_URL:-https://github.com/ericbass11/lua-crm.git}"
+REPO_DIR="${REPO_DIR:-lua-crm}"
 COMPOSE="docker-compose.prod.yml"
 NONINTERACTIVE=0
 [ "${1:-}" = "--yes" ] && NONINTERACTIVE=1
@@ -78,7 +78,7 @@ if [ -f .env ]; then set -a; . ./.env; set +a; c_grn "✓ .env existente carrega
 
 ask DOMAIN            "Domínio do CRM (ex: crm.suaempresa.com.br)"
 ask ACME_EMAIL        "Seu e-mail (avisos de SSL)"
-ask APP_IMAGE         "Imagem Docker do app" "ghcr.io/melgarafael/deskcommcrm:latest"
+ask APP_IMAGE         "Imagem Docker do app" "ghcr.io/ericbass11/lua-crm:latest"
 ask NEXT_PUBLIC_SUPABASE_URL   "Supabase Project URL (Settings > API)"
 ask NEXT_PUBLIC_SUPABASE_ANON_KEY "Supabase anon key"
 ask SUPABASE_SERVICE_ROLE_KEY  "Supabase service_role key" "" secret

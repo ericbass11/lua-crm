@@ -5,7 +5,7 @@ depends_on: 01-spec-platform-base.md, 02-spec-customer-360.md, 03-spec-whatsapp-
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Eric Souza
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
@@ -83,7 +83,7 @@ Adicionais (não-shadcn, custom):
 
 ### 2.3 Tooling
 
-- **ESLint** com `eslint-plugin-react-hooks`, `@typescript-eslint`, e plugin custom `eslint-plugin-deskcomm` (item §11.3).
+- **ESLint** com `eslint-plugin-react-hooks`, `@typescript-eslint`, e plugin custom `eslint-plugin-lua-crm` (item §11.3).
 - **Prettier** com `prettier-plugin-tailwindcss`.
 - **Vitest** + `@testing-library/react` + `@testing-library/user-event` para unit/integration de componentes.
 - **Playwright** para E2E (drag-drop, send, claim concorrente).
@@ -1842,10 +1842,10 @@ Realtime: vocabulary é parte de `crm_pipelines.settings`. Subscribe em `pipelin
 
 ### 11.3 Linter custom contra strings hardcoded em PT
 
-Plugin `eslint-plugin-deskcomm` com regra `no-hardcoded-vocabulary`. Bloqueia em `.tsx` strings literais que parecem vocabulary:
+Plugin `eslint-plugin-lua-crm` com regra `no-hardcoded-vocabulary`. Bloqueia em `.tsx` strings literais que parecem vocabulary:
 
 ```js
-// eslint-plugin-deskcomm/rules/no-hardcoded-vocabulary.js
+// eslint-plugin-lua-crm/rules/no-hardcoded-vocabulary.js
 const FORBIDDEN = [
   "Cliente", "Clientes",
   "Pedido", "Pedidos",
@@ -1879,7 +1879,7 @@ module.exports = {
 };
 ```
 
-Whitelist via `// deskcomm-allow-vocab: <razão>`. CI roda `eslint --max-warnings 0` no diff dos PRs.
+Whitelist via `// lua-crm-allow-vocab: <razão>`. CI roda `eslint --max-warnings 0` no diff dos PRs.
 
 ---
 

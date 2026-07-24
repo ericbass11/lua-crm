@@ -1,4 +1,4 @@
-# Contributing — DeskcommCRM
+# Contributing — LUA CRM
 
 ## Antes de começar
 
@@ -75,4 +75,4 @@ Veja [`README.md`](README.md) §Como rodar local.
 
 ## Suporte
 
-Dúvidas: `rafael@maudibrasil.com.br`. Canal interno do BPO Discord (link no Notion).
+Dúvidas: `eric@lua-crm.example`. Canal interno do BPO Discord (link no Notion).

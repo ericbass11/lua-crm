@@ -1,4 +1,4 @@
-# Architecture — DeskcommCRM
+# Architecture — LUA CRM
 
 > Visão de 1 página. Profundidade vive em `docs/specs/` e `docs/stories/epics/MASTER.md`.
 

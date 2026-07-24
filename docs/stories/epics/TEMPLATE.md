@@ -9,7 +9,7 @@ exposes_contracts:
   - "<contrato canônico exposto pra outros epics>"
 status: pending
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Eric Souza
 ---
 
 # EPIC-NN — Nome do Epic
@@ -125,7 +125,7 @@ exposes:
 ```
 
 #### Decisões a registrar
-- Decisão arquitetural específica que esta story toma e que outros podem precisar (ex: "Cookie de sessão chama-se `sb-deskcomm-auth` em todos os ambientes")
+- Decisão arquitetural específica que esta story toma e que outros podem precisar (ex: "Cookie de sessão chama-se `sb-lua-crm-auth` em todos os ambientes")
 
 #### Definition of Done
 - [ ] Todos os ACs passam em Playwright

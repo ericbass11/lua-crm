@@ -1,4 +1,4 @@
-# CLAUDE.md — DeskcommCRM
+# CLAUDE.md — LUA CRM
 
 > Instruções pra futuras sessões Claude trabalhando neste repo. Leitura obrigatória antes de qualquer task de código.
 
@@ -6,7 +6,7 @@
 
 ## Visão (1 parágrafo)
 
-DeskcommCRM é um CRM operacional multi-tenant para e-commerce com IA conversacional nativa. Unifica atendimento humano, chatbot RAG por tenant, gestão de pedidos e pós-venda — WhatsApp como canal primário (via WAHA). Modo atual = BPO (operadora atende N tenants); modo futuro = SaaS direto pra lojistas. Arquitetura multi-tenant com RLS desde o dia 1; LGPD nativa; MCP-ready.
+LUA CRM é um CRM operacional multi-tenant para e-commerce com IA conversacional nativa. Unifica atendimento humano, chatbot RAG por tenant, gestão de pedidos e pós-venda — WhatsApp como canal primário (via WAHA). Modo atual = BPO (operadora atende N tenants); modo futuro = SaaS direto pra lojistas. Arquitetura multi-tenant com RLS desde o dia 1; LGPD nativa; MCP-ready.
 
 ---
 
