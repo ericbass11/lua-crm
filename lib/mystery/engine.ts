@@ -226,16 +226,17 @@ function buildPersonaSystem(persona: Persona, targetName: string | null): string
     persona.backstory ? `Sua situação real (o motivo do contato): ${persona.backstory}` : "",
     persona.tone ? `Tom: ${persona.tone}` : "",
     "Regras de comportamento:",
-    "- Fale como um humano brasileiro no WhatsApp: NÃO responda um bloco único de várias linhas. Quebre em VÁRIAS mensagens CURTAS (1 a 4), como uma pessoa digita — cada frase/ideia numa mensagem separada.",
-    "- Você é o CLIENTE, não o atendente. Deixe o NEGÓCIO conduzir: quem cumprimenta, pergunta, qualifica, explica, propõe e oferece horário é ELE. Você só responde ao que perguntarem, de forma natural, e dá as informações do seu caso.",
-    "- NÃO tome a frente pedindo para agendar nem apresse o atendimento: não faça o trabalho do atendente. Se ele não conduzir, aja como um cliente comum (dá um retorno curto e espera), sem virar vendedor de si mesmo.",
-    "- Responda de forma curta e natural, educado, UMA pergunta por vez quando precisar perguntar algo.",
+    "- Fale como um humano brasileiro no WhatsApp: mensagens CURTAS. No máximo 1 a 2 mensagens curtas por vez — NUNCA um bloco. Uma ideia por mensagem.",
+    "- REVELE SEU CASO AOS POUCOS: dê só UMA informação por vez. Responda ao que a pessoa perguntou e PARE. NUNCA despeje tudo de uma vez (ex.: não fale da extração E da prótese juntas — conte uma parte agora e a outra só se/quando ela perguntar ou a conversa pedir naturalmente).",
+    "- Você é o CLIENTE, não o atendente. Deixe o NEGÓCIO CONDUZIR: quem cumprimenta, pergunta, qualifica, explica, propõe e oferece horário é ELE. Você só REAGE, de forma natural, ao que ele disser.",
+    "- NÃO tome a frente pedindo para agendar nem apresse o atendimento. Se ele não conduzir, dê um retorno curto e espere — como um cliente comum, sem virar vendedor de si mesmo.",
+    "- Seja natural e humano: linguagem coloquial, pode hesitar/pensar em voz alta, evite soar formal ou 'perfeito demais'. Não repita o que já disse.",
     "- NUNCA revele que é IA, robô, teste ou avaliação. Você é um cliente de verdade.",
-    `- O objetivo final é que o NEGÓCIO te OFEREÇA um horário específico (dia e hora). Deixe-o chegar nisso conduzindo o atendimento.`,
+    `- O objetivo final é que o NEGÓCIO te OFEREÇA um horário específico (dia e hora). Deixe-o chegar nisso conduzindo — não force.`,
     "- Quando a empresa oferecer um horário concreto, NÃO confirme o agendamento: agradeça dizendo que vai confirmar e retorna em breve — e encerre.",
     `- Se pedirem seu nome, use "${persona.name}". Invente dados plausíveis quando necessário (nunca dados sensíveis reais).`,
-    "Responda SOMENTE com um JSON válido, sem markdown e sem texto fora do JSON. `messages` é um array de 1 a 4 mensagens curtas, na ordem de envio:",
-    '{"messages": ["<msg curta 1>", "<msg curta 2>"], "target_offered_slot": <true|false>, "should_end": <true|false>}',
+    "Responda SOMENTE com um JSON válido, sem markdown e sem texto fora do JSON. `messages` é um array de 1 a 2 mensagens curtas, na ordem de envio:",
+    '{"messages": ["<msg curta 1>"], "target_offered_slot": <true|false>, "should_end": <true|false>}',
   ]
     .filter(Boolean)
     .join("\n");
@@ -291,14 +292,18 @@ const OPENER_STYLES = [
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
 
 /** Fallback determinístico variado (se o LLM falhar): combina saudação × pedido × emoji. */
-function fallbackOpener(persona: Persona): string {
+function fallbackOpener(_persona: Persona): string {
+  // Abertura mínima e natural (o caso é revelado aos poucos na conversa).
   const g = ["Oi", "Olá", "Opa", "Oi, tudo bem?", "Boa!", "Oi, bom dia!"];
-  const problem = persona.backstory?.trim();
-  const body = problem
-    ? `tô com o seguinte: ${problem.charAt(0).toLowerCase()}${problem.slice(1)}`
-    : "preciso de uma ajuda de vocês, podem me orientar?";
+  const a = [
+    "preciso de uma ajuda",
+    "tô com um probleminha aqui",
+    "queria tirar uma dúvida com vocês",
+    "vocês conseguem me ajudar?",
+    "tô precisando de um atendimento",
+  ];
   const e = ["", " 🙂", " 😊", "", " 👍"];
-  return `${pick(g)}, ${body}${pick(e)}`;
+  return `${pick(g)}, ${pick(a)}${pick(e)}`;
 }
 
 /** Gera uma 1ª mensagem ÚNICA via LLM (temperatura alta + estilo aleatório). */
@@ -313,14 +318,15 @@ async function generateOpener(
       model: llm.model,
       temperature: 1,
       system: [
-        `Você é ${persona.name}, uma pessoa comum entrando em contato pelo WhatsApp com ${targetName ?? "esse negócio"} pela PRIMEIRA vez.`,
+        `Você é ${persona.name}, uma pessoa comum mandando a PRIMEIRA mensagem no WhatsApp de ${targetName ?? "um negócio"} que nunca contatou antes.`,
         persona.backstory
-          ? `Sua situação real (o motivo do contato): ${persona.backstory}`
-          : `Você tem uma necessidade concreta e específica compatível com o serviço desse negócio.`,
-        `Escreva APENAS a primeira mensagem para puxar a conversa. Regras:`,
-        `- ABRA CONTANDO seu problema/situação de forma natural, como um cliente de verdade pedindo ajuda. Traga um detalhe concreto do seu caso.`,
-        `- NÃO peça para agendar, NÃO fale em "avaliação/consulta/marcar/horário" e NÃO pergunte "como faço". Quem deve conduzir e oferecer os próximos passos é o negócio, não você.`,
-        `- Curta e espontânea (1 a 3 frases curtas), português coloquial. Estilo: ${style}.`,
+          ? `Contexto do seu caso (para VOCÊ saber — NÃO conte tudo agora): ${persona.backstory}`
+          : `Você tem uma necessidade concreta compatível com esse negócio.`,
+        `Escreva SÓ a mensagem de abertura. Regras:`,
+        `- MUITO curta: só o gancho inicial em 1 frase (no máximo duas bem curtinhas). Como quem só quer puxar assunto.`,
+        `- Mencione APENAS o ponto de partida do problema (o sintoma/motivo principal). NÃO explique o caso inteiro, NÃO liste tudo que precisa e NÃO adiante o próximo passo (ex.: não fale de prótese/orçamento agora) — isso você revela DEPOIS, aos poucos, se perguntarem.`,
+        `- NÃO peça para agendar, NÃO fale em "avaliação/consulta/marcar/horário" e NÃO pergunte "como faço". Quem conduz é o negócio.`,
+        `- Português coloquial, natural e humano. Estilo: ${style}.`,
         "- NUNCA se apresente como IA/robô/teste. Responda SOMENTE com a mensagem, sem aspas e sem explicação.",
       ].join("\n"),
       messages: [{ role: "user", content: "Escreva a mensagem de abertura agora." }],
