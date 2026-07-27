@@ -4248,12 +4248,12 @@ alter table public.calendar_integrations enable row level security;
 drop policy if exists tenant_isolation_calendar_integrations_select on public.calendar_integrations;
 create policy tenant_isolation_calendar_integrations_select
   on public.calendar_integrations for select
-  using (organization_id in (select fn_user_org_ids()));
+  using (organization_id in (select public.fn_user_org_ids()));
 drop policy if exists tenant_isolation_calendar_integrations_modify on public.calendar_integrations;
 create policy tenant_isolation_calendar_integrations_modify
   on public.calendar_integrations
-  using (organization_id in (select fn_user_org_ids()))
-  with check (organization_id in (select fn_user_org_ids()));
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
 create or replace view public.calendar_integrations_safe
   with (security_invoker = 'true') as
 select id, organization_id, provider, label, calendar_id, service_account_email,
@@ -4290,13 +4290,13 @@ alter table public.followup_settings enable row level security;
 drop policy if exists tenant_isolation_followup_settings_select on public.followup_settings;
 create policy tenant_isolation_followup_settings_select
   on public.followup_settings for select
-  using (organization_id in (select fn_user_org_ids()));
+  using (organization_id in (select public.fn_user_org_ids()));
 
 drop policy if exists tenant_isolation_followup_settings_modify on public.followup_settings;
 create policy tenant_isolation_followup_settings_modify
   on public.followup_settings
-  using (organization_id in (select fn_user_org_ids()))
-  with check (organization_id in (select fn_user_org_ids()));
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
 
 grant all on table public.followup_settings to service_role;
 grant select, insert, update, delete on table public.followup_settings to authenticated;
@@ -4330,13 +4330,13 @@ alter table public.tag_definitions enable row level security;
 drop policy if exists tenant_isolation_tag_definitions_select on public.tag_definitions;
 create policy tenant_isolation_tag_definitions_select
   on public.tag_definitions for select
-  using (organization_id in (select fn_user_org_ids()));
+  using (organization_id in (select public.fn_user_org_ids()));
 
 drop policy if exists tenant_isolation_tag_definitions_modify on public.tag_definitions;
 create policy tenant_isolation_tag_definitions_modify
   on public.tag_definitions
-  using (organization_id in (select fn_user_org_ids()))
-  with check (organization_id in (select fn_user_org_ids()));
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
 
 grant all on table public.tag_definitions to service_role;
 grant select, insert, update, delete on table public.tag_definitions to authenticated;
@@ -4362,11 +4362,11 @@ create table if not exists public.notification_settings (
 alter table public.notification_settings enable row level security;
 drop policy if exists tenant_isolation_notification_settings_select on public.notification_settings;
 create policy tenant_isolation_notification_settings_select
-  on public.notification_settings for select using (organization_id in (select fn_user_org_ids()));
+  on public.notification_settings for select using (organization_id in (select public.fn_user_org_ids()));
 drop policy if exists tenant_isolation_notification_settings_modify on public.notification_settings;
 create policy tenant_isolation_notification_settings_modify
-  on public.notification_settings using (organization_id in (select fn_user_org_ids()))
-  with check (organization_id in (select fn_user_org_ids()));
+  on public.notification_settings using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
 grant all on table public.notification_settings to service_role;
 grant select, insert, update, delete on table public.notification_settings to authenticated;
 
@@ -4525,8 +4525,8 @@ create unique index if not exists uniq_mystery_active_per_session
 alter table public.mystery_shopper_campaigns enable row level security;
 drop policy if exists tenant_isolation_mystery_campaigns_all on public.mystery_shopper_campaigns;
 create policy tenant_isolation_mystery_campaigns_all on public.mystery_shopper_campaigns
-  for all using (organization_id in (select fn_user_org_ids()))
-  with check (organization_id in (select fn_user_org_ids()));
+  for all using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
 grant all on table public.mystery_shopper_campaigns to service_role;
 grant select, insert, update, delete on table public.mystery_shopper_campaigns to authenticated;
 
@@ -4546,8 +4546,8 @@ create index if not exists mystery_messages_campaign_idx
 alter table public.mystery_shopper_messages enable row level security;
 drop policy if exists tenant_isolation_mystery_messages_all on public.mystery_shopper_messages;
 create policy tenant_isolation_mystery_messages_all on public.mystery_shopper_messages
-  for all using (organization_id in (select fn_user_org_ids()))
-  with check (organization_id in (select fn_user_org_ids()));
+  for all using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
 grant all on table public.mystery_shopper_messages to service_role;
 grant select, insert, update, delete on table public.mystery_shopper_messages to authenticated;
 

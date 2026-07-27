@@ -6,6 +6,7 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 
 | Version | Name | Description |
 |---|---|---|
+| `20260727160000` | `0042_fix_rls_fn_user_org_ids_schema_qualify` | Forward-fix de RLS: 6 tabelas (`calendar_integrations`, `followup_settings`, `tag_definitions`, `notification_settings`, `mystery_shopper_campaigns`, `mystery_shopper_messages`) criavam a policy `tenant_isolation_*` chamando `fn_user_org_ids()` SEM `public.`. No baseline (search_path vazio) o CREATE POLICY falhava → tabela com RLS ligado e ZERO policies = fail-closed (dados invisíveis ao usuário autenticado; funil do Cliente Oculto e settings vazios). Qualificado para `public.fn_user_org_ids()` no baseline (16 usos) + migration idempotente. |
 | `20260428195354` | `0001_platform_base` | organizations, user_organizations, platform_admins, api_tokens, api_audit_log, user_recovery_codes, idempotency_keys + RLS helpers (fn_user_org_ids, fn_is_platform_admin, fn_user_role_in_org, fn_role_at_least) |
 | `20260428195513` | `0002_event_log_and_compat` | event_log + emit_event/fn_log_event helpers + compat aliases (fn_set_updated_at, fn_user_role_in returning int) |
 | `20260428195708` | `0003_customer_360` | contacts (CPF encrypted), crm_pipelines, crm_stages, crm_leads, crm_lead_activities, crm_lead_links, merge_queue + 5 domain triggers |
