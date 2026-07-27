@@ -222,14 +222,16 @@ interface PersonaTurn {
 
 function buildPersonaSystem(persona: Persona, targetName: string | null): string {
   return [
-    `Você é ${persona.name}, uma pessoa real no WhatsApp querendo ${persona.goal}${targetName ? ` com "${targetName}"` : ""}.`,
-    persona.backstory ? `Contexto: ${persona.backstory}` : "",
+    `Você é ${persona.name}, uma pessoa real no WhatsApp que entrou em contato com ${targetName ? `"${targetName}"` : "um negócio"} por causa de uma necessidade concreta.`,
+    persona.backstory ? `Sua situação real (o motivo do contato): ${persona.backstory}` : "",
     persona.tone ? `Tom: ${persona.tone}` : "",
     "Regras de comportamento:",
     "- Fale como um humano brasileiro no WhatsApp: NÃO responda um bloco único de várias linhas. Quebre em VÁRIAS mensagens CURTAS (1 a 4), como uma pessoa digita — cada frase/ideia numa mensagem separada.",
-    "- Mensagens curtas e naturais, educado, UMA pergunta por vez (a pergunta vai na última mensagem).",
+    "- Você é o CLIENTE, não o atendente. Deixe o NEGÓCIO conduzir: quem cumprimenta, pergunta, qualifica, explica, propõe e oferece horário é ELE. Você só responde ao que perguntarem, de forma natural, e dá as informações do seu caso.",
+    "- NÃO tome a frente pedindo para agendar nem apresse o atendimento: não faça o trabalho do atendente. Se ele não conduzir, aja como um cliente comum (dá um retorno curto e espera), sem virar vendedor de si mesmo.",
+    "- Responda de forma curta e natural, educado, UMA pergunta por vez quando precisar perguntar algo.",
     "- NUNCA revele que é IA, robô, teste ou avaliação. Você é um cliente de verdade.",
-    `- Conduza a conversa até a empresa te OFERECER um horário específico (dia e hora) para ${persona.goal}.`,
+    `- O objetivo final é que o NEGÓCIO te OFEREÇA um horário específico (dia e hora). Deixe-o chegar nisso conduzindo o atendimento.`,
     "- Quando a empresa oferecer um horário concreto, NÃO confirme o agendamento: agradeça dizendo que vai confirmar e retorna em breve — e encerre.",
     `- Se pedirem seu nome, use "${persona.name}". Invente dados plausíveis quando necessário (nunca dados sensíveis reais).`,
     "Responda SOMENTE com um JSON válido, sem markdown e sem texto fora do JSON. `messages` é um array de 1 a 4 mensagens curtas, na ordem de envio:",
@@ -291,15 +293,12 @@ const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
 /** Fallback determinístico variado (se o LLM falhar): combina saudação × pedido × emoji. */
 function fallbackOpener(persona: Persona): string {
   const g = ["Oi", "Olá", "Opa", "Oi, tudo bem?", "Boa!", "Oi, bom dia!"];
-  const a = [
-    `queria saber como faço pra ${persona.goal} com vocês`,
-    `vocês fazem ${persona.goal}? como que agenda?`,
-    `gostaria de ${persona.goal}, dá pra ver por aqui?`,
-    `me ajuda? tô querendo ${persona.goal}`,
-    `como funciona pra ${persona.goal} aí?`,
-  ];
+  const problem = persona.backstory?.trim();
+  const body = problem
+    ? `tô com o seguinte: ${problem.charAt(0).toLowerCase()}${problem.slice(1)}`
+    : "preciso de uma ajuda de vocês, podem me orientar?";
   const e = ["", " 🙂", " 😊", "", " 👍"];
-  return `${pick(g)}, ${pick(a)}${pick(e)}`;
+  return `${pick(g)}, ${body}${pick(e)}`;
 }
 
 /** Gera uma 1ª mensagem ÚNICA via LLM (temperatura alta + estilo aleatório). */
@@ -314,12 +313,16 @@ async function generateOpener(
       model: llm.model,
       temperature: 1,
       system: [
-        `Você é ${persona.name}, um cliente em potencial no WhatsApp${targetName ? ` da ${targetName}` : ""}.`,
-        `Escreva UMA primeira mensagem, curta e natural, para iniciar o contato querendo ${persona.goal}.`,
-        `Estilo desta mensagem: ${style}.`,
-        "Seja espontâneo e ÚNICO — varie a saudação, a estrutura e as palavras; NUNCA pareça um template. No máximo duas frases curtas.",
-        "NÃO se apresente como IA/robô/teste. Responda SOMENTE com a mensagem, sem aspas e sem explicação.",
-      ].join(" "),
+        `Você é ${persona.name}, uma pessoa comum entrando em contato pelo WhatsApp com ${targetName ?? "esse negócio"} pela PRIMEIRA vez.`,
+        persona.backstory
+          ? `Sua situação real (o motivo do contato): ${persona.backstory}`
+          : `Você tem uma necessidade concreta e específica compatível com o serviço desse negócio.`,
+        `Escreva APENAS a primeira mensagem para puxar a conversa. Regras:`,
+        `- ABRA CONTANDO seu problema/situação de forma natural, como um cliente de verdade pedindo ajuda. Traga um detalhe concreto do seu caso.`,
+        `- NÃO peça para agendar, NÃO fale em "avaliação/consulta/marcar/horário" e NÃO pergunte "como faço". Quem deve conduzir e oferecer os próximos passos é o negócio, não você.`,
+        `- Curta e espontânea (1 a 3 frases curtas), português coloquial. Estilo: ${style}.`,
+        "- NUNCA se apresente como IA/robô/teste. Responda SOMENTE com a mensagem, sem aspas e sem explicação.",
+      ].join("\n"),
       messages: [{ role: "user", content: "Escreva a mensagem de abertura agora." }],
     });
     const text = (res.text ?? "").replace(/^["']+|["']+$/g, "").trim();
