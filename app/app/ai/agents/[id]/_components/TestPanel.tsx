@@ -59,7 +59,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
 
   if (!target) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-text-muted">
         Configure e salve uma versão antes de testar.
       </p>
     );
@@ -108,7 +108,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="flex flex-col gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
             Versão alvo
           </p>
           <div className="flex items-center gap-2 text-sm">
@@ -119,11 +119,11 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           </div>
         </div>
 
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
-          <p className="font-medium text-amber-700 dark:text-amber-400">
+        <div className="rounded-xl border border-warning bg-warning-bg p-3 text-xs">
+          <p className="font-semibold text-warning-fg">
             ⚠ Modo teste consome créditos do provider.
           </p>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-text-muted">
             Nenhuma mensagem é enviada via WhatsApp. O run é registrado como dry-run.
           </p>
         </div>
@@ -169,24 +169,24 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
       </div>
 
       <div className="flex flex-col gap-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
           Resultado
         </p>
 
         {!result && !pending ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-muted">
             Nenhum teste executado ainda.
           </p>
         ) : null}
 
         {pending ? (
-          <p className="text-sm text-muted-foreground">Executando dry-run…</p>
+          <p className="text-sm text-text-muted">Executando dry-run…</p>
         ) : null}
 
         {result ? (
           <>
             {result.stub ? (
-              <p className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs text-muted-foreground">
+              <p className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs text-text-muted">
                 Stub: o runtime real é entregue na S-13.08. O trace abaixo é simulado.
               </p>
             ) : null}
@@ -218,7 +218,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded border border-border/60 px-2 py-1">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-[10px] uppercase tracking-wide text-text-muted">{label}</p>
       <p className="font-mono">{children}</p>
     </div>
   );

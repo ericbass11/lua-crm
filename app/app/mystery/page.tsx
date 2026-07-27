@@ -14,7 +14,7 @@ export default async function MysteryPage() {
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center text-sm text-text-muted">
         Você não tem nenhuma organização ativa.
       </div>
     );
@@ -23,7 +23,7 @@ export default async function MysteryPage() {
   const isAdmin = user.is_platform_admin || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   if (!isAdmin) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-text-muted">
         O módulo Cliente Oculto é restrito a administradores.
       </div>
     );

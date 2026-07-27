@@ -11,8 +11,8 @@ export default async function ProfilePage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Perfil</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight">Perfil</h1>
+        <p className="text-sm text-text-muted">
           Informações pessoais. Email só pode ser trocado em breve.
         </p>
       </header>

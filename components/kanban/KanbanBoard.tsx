@@ -36,15 +36,15 @@ function groupLeadsByStage(stages: Stage[], leads: Lead[]): Map<string, Lead[]> 
 
 function BoardSkeleton() {
   return (
-    <div className="flex gap-3 overflow-x-auto p-4">
+    <div className="flex gap-4 overflow-x-auto p-4">
       {[0, 1, 2].map((c) => (
         <div
           key={c}
-          className="flex w-80 shrink-0 flex-col gap-2 rounded-lg border border-border bg-surface-muted/40 p-3"
+          className="flex w-80 shrink-0 flex-col gap-3 rounded-xl border border-border bg-surface-elevated p-4"
         >
           <Skeleton className="h-5 w-32" />
           {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-24 w-full animate-pulse" />
+            <Skeleton key={i} className="h-24 w-full rounded-xl animate-pulse" />
           ))}
         </div>
       ))}
@@ -178,7 +178,7 @@ export function KanbanBoard({
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex h-full gap-3 overflow-x-auto p-4">
+      <div className="flex h-full gap-4 overflow-x-auto p-4">
         {data.stages.map((stage) => (
           <StageColumn
             key={stage.id}

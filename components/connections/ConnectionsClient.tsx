@@ -157,10 +157,15 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          {list.length === 0
-            ? "Nenhum número conectado ainda."
-            : `${list.length} ${list.length === 1 ? "número conectado" : "números conectados"}.`}
+        <p className="text-sm text-text-muted">
+          {list.length === 0 ? (
+            "Nenhum número conectado ainda."
+          ) : (
+            <>
+              <span className="font-bold tabular-nums text-text">{list.length}</span>{" "}
+              {list.length === 1 ? "número conectado" : "números conectados"}.
+            </>
+          )}
         </p>
         <div className="flex gap-2">
           {list.length > 0 && (
@@ -199,35 +204,39 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       )}
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Carregando conexões…</p>
+        <p className="text-sm text-text-muted">Carregando conexões…</p>
       ) : list.length === 0 ? (
         <Card className="flex flex-col items-center gap-3 p-8 text-center">
-          <Phone size={28} className="text-muted-foreground" aria-hidden />
-          <p className="text-sm text-muted-foreground">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent">
+            <Phone size={28} aria-hidden />
+          </span>
+          <p className="text-sm text-text-muted">
             Conecte seu primeiro número de WhatsApp para começar a atender.
           </p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {list.map((c) => {
             const info = statusInfo(c.status);
             return (
-              <Card key={c.id} className="flex flex-col gap-3 p-4">
+              <Card key={c.id} className="flex flex-col gap-4 p-5">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Phone size={16} className="text-muted-foreground" aria-hidden />
-                      <span className="truncate text-sm font-medium">{channelLabel(c)}</span>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
+                      <Phone size={18} aria-hidden />
+                    </span>
+                    <div className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-text">{channelLabel(c)}</span>
+                      {c.phone_number && c.display_name && (
+                        <p className="mt-0.5 font-mono text-xs tabular-nums text-text-subtle">
+                          {c.phone_number}
+                        </p>
+                      )}
                     </div>
-                    {c.phone_number && c.display_name && (
-                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                        {c.phone_number}
-                      </p>
-                    )}
                   </div>
                   <Badge variant={info.variant}>{info.label}</Badge>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] text-text-subtle">
                   {c.last_health_check_at
                     ? `Verificado ${new Date(c.last_health_check_at).toLocaleString("pt-BR")}`
                     : "Ainda não verificado"}
@@ -355,7 +364,7 @@ function QrDialog({
               Não foi possível conectar. Feche e tente “Reconectar”.
             </p>
           ) : (
-            <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex flex-col items-center gap-2 text-sm text-text-muted">
               <CircleNotch size={28} className="animate-spin" aria-hidden />
               Preparando o código…
             </div>

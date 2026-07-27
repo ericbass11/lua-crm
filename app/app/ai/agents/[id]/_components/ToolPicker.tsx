@@ -55,7 +55,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
   }
 
   if (query.isLoading) {
-    return <p className="text-sm text-muted-foreground">Carregando catálogo de tools…</p>;
+    return <p className="text-sm text-text-muted">Carregando catálogo de tools…</p>;
   }
   if (query.isError) {
     return <p className="text-sm text-destructive">Erro ao carregar tools.</p>;
@@ -68,7 +68,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
           key={category}
           className="space-y-2 rounded-md border border-border/60 p-3"
         >
-          <legend className="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <legend className="px-1 text-xs font-medium uppercase tracking-wide text-text-muted">
             {CATEGORY_LABELS[category] ?? category}
           </legend>
           {list.map((t) => {
@@ -88,7 +88,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
                 />
                 <span className="flex-1">
                   <code className="font-mono text-xs">{t.id}</code>
-                  <span className="block text-xs text-muted-foreground">{t.description}</span>
+                  <span className="block text-xs text-text-muted">{t.description}</span>
                 </span>
               </label>
             );

@@ -35,7 +35,7 @@ function MediaPlaceholder({ type }: { type: string }) {
 
 function AckIndicator({ status }: { status: string }) {
   if (status === "read") {
-    return <Checks size={12} weight="bold" className="text-blue-400" aria-label="Lida" />;
+    return <Checks size={12} weight="bold" className="text-info" aria-label="Lida" />;
   }
   if (status === "delivered") {
     return <Checks size={12} weight="bold" className="text-current/70" aria-label="Entregue" />;
@@ -64,11 +64,11 @@ export function MessageBubble({ message, debugCitations }: Props) {
     <div className={cn("flex w-full px-4 py-1", isOutbound ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-sm",
+          "max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm",
           isOutbound
-            ? "rounded-br-sm bg-primary text-primary-foreground"
-            : "rounded-bl-sm bg-muted text-foreground",
-          isFailed && "border border-destructive",
+            ? "rounded-br-sm bg-accent text-accent-foreground"
+            : "rounded-bl-sm bg-surface-elevated text-text",
+          isFailed && "border border-error",
         )}
       >
         {senderLabel && (
@@ -89,7 +89,7 @@ export function MessageBubble({ message, debugCitations }: Props) {
         <div
           className={cn(
             "mt-1 flex items-center justify-end gap-1 text-[10px]",
-            isOutbound ? "text-primary-foreground/70" : "text-muted-foreground",
+            isOutbound ? "text-accent-foreground/70" : "text-text-subtle",
           )}
         >
           <span>{time}</span>

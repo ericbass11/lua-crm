@@ -10,10 +10,11 @@ import {
   YAxis,
 } from "recharts";
 
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient } from "@/lib/api/client";
+import { ChatCircle, Users, Robot } from "@/lib/ui/icons";
+import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 interface Metrics {
   days: number;
@@ -31,17 +32,38 @@ interface Metrics {
   capped: boolean;
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+const PERIODS = [7, 30, 90];
+
+/** Card branco arredondado com título — base do layout Buzzy CRM. */
+function Panel({ title, action, children, className }: { title: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <Card className="p-4">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-    </Card>
+    <section className={`rounded-xl border border-border bg-surface p-5 shadow-sm ${className ?? ""}`}>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-base font-bold tracking-tight">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
   );
 }
 
-const PERIODS = [7, 30, 90];
+/** Stat card do Figma: número grande + badge de ícone em gradiente pastel. */
+function StatCard({ label, value, sub, icon: Icon, gradient }: { label: string; value: string; sub?: string; icon: PhosphorIcon; gradient: string }) {
+  return (
+    <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-text-muted">{label}</p>
+          <p className="mt-1 text-[40px] font-bold leading-none tracking-tight tabular-nums">{value}</p>
+          {sub && <p className="mt-1.5 text-xs text-text-subtle">{sub}</p>}
+        </div>
+        <span className="grid size-14 place-items-center rounded-full text-white" style={{ background: gradient }}>
+          <Icon size={26} weight="fill" aria-hidden />
+        </span>
+      </div>
+    </section>
+  );
+}
 
 export function DashboardClient() {
   const [days, setDays] = useState(30);
@@ -82,52 +104,80 @@ export function DashboardClient() {
     <div className="space-y-5">
       <div className="flex items-center gap-1.5">
         {PERIODS.map((p) => (
-          <Button
-            key={p}
-            size="sm"
-            variant={days === p ? "default" : "outline"}
-            onClick={() => setDays(p)}
-          >
+          <Button key={p} size="sm" variant={days === p ? "default" : "outline"} onClick={() => setDays(p)}>
             {p} dias
           </Button>
         ))}
       </div>
 
       {loading || !data ? (
-        <Skeleton className="h-40 w-full" />
+        <div className="grid gap-5 lg:grid-cols-[300px_1fr_320px]">
+          <Skeleton className="h-72 w-full rounded-xl" />
+          <Skeleton className="h-72 w-full rounded-xl" />
+          <Skeleton className="h-72 w-full rounded-xl" />
+        </div>
       ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-            <Kpi label="Conversas" value={String(data.conversations)} sub={`${data.inbound_total} msgs recebidas`} />
-            <Kpi label="Leads" value={String(data.leads_total)} />
-            <Kpi label="Conversão" value={`${data.conversion_pct}%`} sub={`${data.won_count} ganhos`} />
-            <Kpi label="Resolvido pela IA" value={`${autoPct}%`} sub={`${data.ai.handoffs} handoffs`} />
-            <Kpi label="Respostas da IA" value={String(data.ai.replies)} />
-            <Kpi label="Follow-ups" value={String(data.followups_sent)} />
+        <div className="grid items-start gap-5 lg:grid-cols-[300px_1fr_320px]">
+          {/* ── Coluna esquerda: hero + stat cards ── */}
+          <div className="space-y-5">
+            <div
+              className="relative overflow-hidden rounded-xl p-6 text-white shadow-lg"
+              style={{ background: "linear-gradient(150deg, var(--color-accent-500), var(--color-accent-700))" }}
+            >
+              <span className="pointer-events-none absolute -bottom-16 -right-12 size-52 rounded-full bg-white/10" />
+              <p className="text-xs uppercase tracking-wider opacity-85">Destaque do período</p>
+              <p className="mt-2 text-[44px] font-bold leading-none tabular-nums">{data.conversion_pct}%</p>
+              <p className="mt-1 text-sm opacity-90">de conversão · {data.won_count} negócios ganhos</p>
+              <div className="mt-5 flex gap-8">
+                <div>
+                  <span className="block text-xs opacity-80">Leads</span>
+                  <b className="text-lg">{data.leads_total}</b>
+                </div>
+                <div>
+                  <span className="block text-xs opacity-80">Follow-ups</span>
+                  <b className="text-lg">{data.followups_sent}</b>
+                </div>
+              </div>
+            </div>
+
+            <StatCard
+              label="Conversas"
+              value={String(data.conversations)}
+              sub={`${data.inbound_total} mensagens recebidas`}
+              icon={ChatCircle}
+              gradient="linear-gradient(135deg,#ff7a70,#f0506e)"
+            />
+            <StatCard
+              label="Leads ativos"
+              value={String(data.leads_total)}
+              sub={`${data.won_count} ganhos no período`}
+              icon={Users}
+              gradient="linear-gradient(135deg,#38c7a0,#2aa5b8)"
+            />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Card className="p-4">
-              <h2 className="text-sm font-semibold">Funil de leads</h2>
-              <div className="mt-3 space-y-2">
+          {/* ── Coluna central: funil + gráfico ── */}
+          <div className="space-y-5">
+            <Panel title="Funil de leads">
+              <div className="space-y-2.5">
                 {data.funnel.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">Sem leads no funil ainda.</p>
+                  <p className="text-xs text-text-muted">Sem leads no funil ainda.</p>
                 ) : (
                   data.funnel.map((f) => (
                     <div key={f.stage} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
-                        <span className={f.is_won ? "text-green-600 dark:text-green-400" : f.is_lost ? "text-muted-foreground" : ""}>
+                        <span className={f.is_won ? "font-medium text-success" : f.is_lost ? "text-text-subtle" : "text-text"}>
                           {f.stage}
                         </span>
-                        <span className="tabular-nums text-muted-foreground">{f.count}</span>
+                        <span className="tabular-nums text-text-muted">{f.count}</span>
                       </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-surface-elevated">
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-surface-elevated">
                         <div
-                          className="h-full rounded-full"
+                          className="h-full rounded-full transition-[width] duration-500"
                           style={{
                             width: `${(f.count / maxFunnel) * 100}%`,
                             backgroundColor: f.is_won
-                              ? "#22c55e"
+                              ? "var(--color-success)"
                               : f.is_lost
                                 ? "var(--color-border-strong)"
                                 : "var(--color-accent)",
@@ -138,17 +188,12 @@ export function DashboardClient() {
                   ))
                 )}
               </div>
-              <div className="mt-4 flex gap-3 text-xs text-muted-foreground">
-                <span>🔥 Quente: {data.score_buckets.quente}</span>
-                <span>🟡 Morno: {data.score_buckets.morno}</span>
-                <span>❄️ Frio: {data.score_buckets.frio}</span>
-              </div>
-            </Card>
+            </Panel>
 
-            <Card className="p-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Mensagens recebidas por horário</h2>
-                <span className="text-[11px] text-muted-foreground">
+            <Panel
+              title="Mensagens por horário"
+              action={
+                <span className="text-[11px] text-text-muted">
                   <span className="mr-2 inline-flex items-center gap-1">
                     <span className="inline-block size-2 rounded-sm" style={{ backgroundColor: "var(--color-accent)" }} />
                     comercial
@@ -158,58 +203,88 @@ export function DashboardClient() {
                     fora
                   </span>
                 </span>
-              </div>
-              <div className="mt-3 h-56 w-full">
+              }
+            >
+              <div className="h-56 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={hourlyData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontSize: 9, fill: "var(--color-text-muted)" }}
-                      interval={1}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      allowDecimals={false}
-                      tick={{ fontSize: 10, fill: "var(--color-text-muted)" }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={28}
-                    />
+                    <XAxis dataKey="label" tick={{ fontSize: 9, fill: "var(--color-text-muted)" }} interval={1} axisLine={false} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "var(--color-text-muted)" }} axisLine={false} tickLine={false} width={28} />
                     <Tooltip
                       cursor={{ fill: "var(--color-surface-elevated)" }}
                       contentStyle={{
                         background: "var(--color-surface)",
                         border: "1px solid var(--color-border)",
-                        borderRadius: 8,
+                        borderRadius: 10,
                         fontSize: 12,
                         color: "var(--color-text)",
                       }}
                     />
-                    <Bar name="Recebidas" dataKey="inbound" radius={[3, 3, 0, 0]}>
+                    <Bar name="Recebidas" dataKey="inbound" radius={[4, 4, 0, 0]}>
                       {hourlyData.map((h) => (
-                        <Cell
-                          key={h.hour}
-                          fill={h.commercial ? "var(--color-accent)" : "var(--color-border-strong)"}
-                        />
+                        <Cell key={h.hour} fill={h.commercial ? "var(--color-accent)" : "var(--color-border-strong)"} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1 text-[11px] text-text-muted">
                 Janela comercial: {String(data.business_hours.start).padStart(2, "0")}h–
-                {String(data.business_hours.end).padStart(2, "0")}h (fuso America/Sao_Paulo).
+                {String(data.business_hours.end).padStart(2, "0")}h (America/Sao_Paulo).
               </p>
-            </Card>
+            </Panel>
           </div>
 
-          {data.capped && (
-            <p className="text-xs text-muted-foreground">
-              * Volume alto: métricas de mensagens amostradas nas mais recentes do período.
-            </p>
-          )}
-        </>
+          {/* ── Coluna direita: concentração + IA ── */}
+          <div className="space-y-5">
+            <Panel title="Concentração de leads">
+              <ul className="space-y-3">
+                {[
+                  { k: "Quente", v: data.score_buckets.quente, c: "var(--color-error)" },
+                  { k: "Morno", v: data.score_buckets.morno, c: "var(--color-warning)" },
+                  { k: "Frio", v: data.score_buckets.frio, c: "var(--color-info)" },
+                ].map((row) => (
+                  <li key={row.k} className="flex items-center gap-3">
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: row.c }} />
+                    <span className="flex-1 text-sm text-text">{row.k}</span>
+                    <span className="text-sm font-semibold tabular-nums">{row.v}</span>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+
+            <Panel title="Desempenho da IA">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[28px] font-bold leading-none tabular-nums">{autoPct}%</p>
+                  <p className="mt-1 text-xs text-text-muted">resolvido pela IA</p>
+                </div>
+                <div>
+                  <p className="text-[28px] font-bold leading-none tabular-nums">{data.ai.replies}</p>
+                  <p className="mt-1 text-xs text-text-muted">respostas da IA</p>
+                </div>
+                <div>
+                  <p className="text-[28px] font-bold leading-none tabular-nums">{data.ai.handoffs}</p>
+                  <p className="mt-1 text-xs text-text-muted">handoffs</p>
+                </div>
+                <div>
+                  <p className="text-[28px] font-bold leading-none tabular-nums">{data.followups_sent}</p>
+                  <p className="mt-1 text-xs text-text-muted">follow-ups</p>
+                </div>
+              </div>
+              <div className="mt-4 flex items-center gap-2 border-t border-border pt-3 text-xs text-text-muted">
+                <Robot size={16} weight="fill" className="text-accent" aria-hidden />
+                {data.ai.followup_runs} execuções de follow-up automático
+              </div>
+            </Panel>
+          </div>
+        </div>
+      )}
+
+      {data?.capped && (
+        <p className="text-xs text-text-muted">
+          * Volume alto: métricas de mensagens amostradas nas mais recentes do período.
+        </p>
       )}
     </div>
   );

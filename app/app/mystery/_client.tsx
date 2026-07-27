@@ -107,10 +107,12 @@ export function MysteryClient({
     <div className="flex h-full flex-col gap-5 overflow-auto p-6">
       <header className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <MagnifyingGlass size={26} weight="duotone" className="text-muted-foreground" />
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-surface-elevated text-accent">
+            <MagnifyingGlass size={24} weight="duotone" />
+          </span>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Cliente Oculto</h1>
-            <p className="text-xs text-muted-foreground">
+            <h1 className="text-2xl font-bold tracking-tight">Cliente Oculto</h1>
+            <p className="text-sm text-text-muted">
               A IA vira o cliente, audita o atendimento humano e gera um laudo.
             </p>
           </div>
@@ -147,17 +149,17 @@ export function MysteryClient({
 
 function SessionsCard({ sessions }: { sessions: ShopperSessionItem[] }) {
   return (
-    <Card className="p-4">
-      <h2 className="mb-2 text-sm font-semibold">Números do cliente oculto</h2>
+    <Card className="p-5">
+      <h2 className="mb-3 text-sm font-bold tracking-tight">Números do cliente oculto</h2>
       {sessions.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Nenhum número dedicado ainda. Conecte um WhatsApp separado (nunca o número de atendimento).
         </p>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {sessions.map((s) => (
-            <li key={s.id} className="flex items-center justify-between text-sm">
-              <span>{s.label}</span>
+            <li key={s.id} className="flex items-center justify-between rounded-xl border border-border bg-surface-elevated px-3 py-2 text-sm">
+              <span className="font-medium">{s.label}</span>
               <Badge variant={s.status === "WORKING" ? "success" : "secondary"} className="text-[10px]">
                 {s.status}
               </Badge>
@@ -235,10 +237,10 @@ function NewAuditCard({
   }
 
   return (
-    <Card className="space-y-3 p-4">
-      <h2 className="text-sm font-semibold">Nova auditoria</h2>
+    <Card className="space-y-4 p-5">
+      <h2 className="text-sm font-bold tracking-tight">Nova auditoria</h2>
       {workingSessions.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Conecte e ative um número do oculto (status WORKING) para iniciar auditorias.
         </p>
       ) : (
@@ -320,10 +322,10 @@ function CampaignsCard({ campaigns, onChange }: { campaigns: CampaignItem[]; onC
   }
 
   return (
-    <Card className="p-4">
-      <h2 className="mb-3 text-sm font-semibold">Auditorias</h2>
+    <Card className="p-5">
+      <h2 className="mb-3 text-sm font-bold tracking-tight">Auditorias</h2>
       {campaigns.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Nenhuma auditoria ainda.</p>
+        <p className="text-xs text-text-muted">Nenhuma auditoria ainda.</p>
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {campaigns.map((c) => {
@@ -336,9 +338,9 @@ function CampaignsCard({ campaigns, onChange }: { campaigns: CampaignItem[]; onC
                     <Badge variant={st.variant} className="text-[10px]">
                       {st.label}
                     </Badge>
-                    {c.outcome && <span className="text-[10px] text-muted-foreground">{c.outcome}</span>}
+                    {c.outcome && <span className="text-[10px] text-text-muted">{c.outcome}</span>}
                   </div>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-text-muted">
                     {fmt(c.startedAt)} · {c.messageCount} msgs · laudo p/ {c.recipientNumber}
                   </span>
                 </div>
@@ -454,7 +456,7 @@ function ConnectDialog({
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3 py-2">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-text-muted">
               {current?.status === "WORKING"
                 ? "Conectado! Fechando…"
                 : `Status: ${current?.status ?? "STARTING"} — aguardando leitura do QR…`}
@@ -489,9 +491,9 @@ function fmtSecs(n: number | null): string {
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border bg-surface px-3 py-2">
-      <div className="text-lg font-semibold tabular-nums">{value}</div>
-      <div className="text-[10px] text-muted-foreground">{label}</div>
+    <div className="rounded-xl border border-border bg-surface-elevated px-3 py-2.5">
+      <div className="text-lg font-bold tabular-nums text-text">{value}</div>
+      <div className="text-[10px] text-text-muted">{label}</div>
     </div>
   );
 }
@@ -548,18 +550,18 @@ function ProspectFunnel({
   const loc = (p: ProspectItem) => [p.city, p.state].filter(Boolean).join("/") || p.targetNumber;
 
   return (
-    <Card className="p-4">
+    <Card className="p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Funil de prospecção</h2>
-        <div className="flex rounded-md border border-border p-0.5">
+        <h2 className="text-sm font-bold tracking-tight">Funil de prospecção</h2>
+        <div className="flex rounded-xl border border-border p-0.5">
           {(["kanban", "lista"] as const).map((v) => (
             <button
               key={v}
               type="button"
               onClick={() => setView(v)}
               className={cn(
-                "rounded px-2.5 py-1 text-xs capitalize",
-                view === v ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+                "rounded-lg px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+                view === v ? "bg-accent text-accent-foreground" : "text-text-muted hover:text-text",
               )}
             >
               {v}
@@ -577,8 +579,8 @@ function ProspectFunnel({
       </div>
 
       {total > 0 && (
-        <div className="mb-4 rounded-md border border-border bg-surface p-3">
-          <Label className="text-xs">Perguntar aos laudos (insights de venda)</Label>
+        <div className="mb-4 rounded-xl border border-border bg-surface-elevated p-4">
+          <Label className="text-xs text-text-muted">Perguntar aos laudos (insights de venda)</Label>
           <div className="mt-1.5 flex items-center gap-2">
             <Input
               value={q}
@@ -591,13 +593,13 @@ function ProspectFunnel({
             </Button>
           </div>
           {answer && (
-            <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{answer}</p>
+            <p className="mt-2 whitespace-pre-wrap text-xs text-text-muted">{answer}</p>
           )}
         </div>
       )}
 
       {total === 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Nenhuma empresa auditada ainda. Ao concluir uma auditoria, a empresa entra aqui como
           &quot;Auditado&quot;.
         </p>
@@ -607,15 +609,15 @@ function ProspectFunnel({
             const items = prospects.filter((p) => p.stage === st.key);
             return (
               <div key={st.key} className="w-56 shrink-0">
-                <div className="mb-2 flex items-center justify-between border-b border-border pb-1">
-                  <span className="text-xs font-semibold">{st.label}</span>
-                  <span className="text-[10px] text-muted-foreground">{items.length}</span>
+                <div className="mb-2 flex items-center justify-between border-b border-border pb-1.5">
+                  <span className="text-xs font-bold tracking-tight">{st.label}</span>
+                  <span className="text-[10px] font-semibold tabular-nums text-text-muted">{items.length}</span>
                 </div>
                 <div className="flex flex-col gap-2">
                   {items.map((p) => (
-                    <div key={p.id} className="rounded-md border border-border bg-surface p-2.5 text-xs">
-                      <div className="font-medium">{p.targetName || p.targetNumber}</div>
-                      <div className="text-[11px] text-muted-foreground">{loc(p)}</div>
+                    <div key={p.id} className="rounded-xl border border-border bg-surface-elevated p-2.5 text-xs">
+                      <div className="font-semibold text-text">{p.targetName || p.targetNumber}</div>
+                      <div className="text-[11px] text-text-muted">{loc(p)}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         {p.economyPercent != null && (
                           <Badge variant="secondary" className="text-[10px]">
@@ -662,7 +664,7 @@ function ProspectFunnel({
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
+              <tr className="border-b border-border text-left text-text-muted">
                 <th className="py-1.5 pr-2">Empresa</th>
                 <th className="pr-2">WhatsApp</th>
                 <th className="pr-2">Cidade/UF</th>
@@ -705,7 +707,7 @@ function ProspectFunnel({
                         <button
                           type="button"
                           onClick={() => download(p.id, "transcript")}
-                          className="text-muted-foreground underline"
+                          className="text-text-muted underline"
                         >
                           transcrição
                         </button>

@@ -36,8 +36,8 @@ export default async function PipelinesSettingsPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Pipelines</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight">Pipelines</h1>
+        <p className="text-sm text-text-muted">
           Vocabulário, custom fields e motivos de perda por pipeline.
         </p>
       </header>

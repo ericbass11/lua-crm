@@ -3,8 +3,9 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────
-   LUA CRM — Design System tokens (Sage palette · density Aerada)
-   Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
+   LUA CRM — Design System tokens (Indigo · Buzzy CRM · density Aerada)
+   Runtime source of truth (NÃO é o showcase /app/design/lib/tokens.ts).
+   Acento índigo #514ef3 extraído do Figma "Buzzy CRM". Cantos maiores + pill.
    Light + dark drawn separately (NOT inverted).
    ───────────────────────────────────────────────────────────────────────── */
 
@@ -24,22 +25,22 @@
   --color-border: #e2e8f2;
   --color-border-strong: #cdd6e5;
 
-  /* Accent — Blue (11 stops) */
-  --color-accent-50:  #eff5ff;
-  --color-accent-100: #dbe8fe;
-  --color-accent-200: #bfd7fe;
-  --color-accent-300: #93bbfd;
-  --color-accent-400: #609afa;
-  --color-accent-500: #3b82f6;
-  --color-accent-600: #2563eb;
-  --color-accent-700: #1d4ed8;
-  --color-accent-800: #1e40af;
-  --color-accent-900: #1e3a8a;
-  --color-accent-950: #172554;
-  --color-accent: var(--color-accent-600);
+  /* Accent — Indigo (11 stops) · source: Figma "Buzzy CRM" #514ef3 */
+  --color-accent-50:  #eef0fe;
+  --color-accent-100: #e0e1fd;
+  --color-accent-200: #c5c4fb;
+  --color-accent-300: #a7a5f8;
+  --color-accent-400: #827ef5;
+  --color-accent-500: #514ef3;
+  --color-accent-600: #3f36e6;
+  --color-accent-700: #332ccb;
+  --color-accent-800: #2b27a3;
+  --color-accent-900: #272581;
+  --color-accent-950: #17154b;
+  --color-accent: var(--color-accent-500);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
-  --color-accent-hover: var(--color-accent-700);
+  --color-accent-hover: var(--color-accent-600);
 
   /* Neutrals — cool gray (11 stops, light) */
   --color-neutral-50:  #f7f9fc;
@@ -84,12 +85,12 @@
   --space-24: 96px;
   --space-32: 128px;
 
-  /* Radius */
+  /* Radius — mais arredondado (Buzzy CRM: cards ~16-20px, botões pill) */
   --radius-none: 0px;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --radius-full: 9999px;
 
   /* Shadows — desaturated, neutral-based */
@@ -159,21 +160,21 @@
   --color-border: #26324d;
   --color-border-strong: #354465;
 
-  /* Accent — Blue; default sobe pra contraste no navy */
-  --color-accent-50:  #eff5ff;
-  --color-accent-100: #dbe8fe;
-  --color-accent-200: #bfd7fe;
-  --color-accent-300: #93bbfd;
-  --color-accent-400: #609afa;
-  --color-accent-500: #3b82f6;
-  --color-accent-600: #2563eb;
-  --color-accent-700: #1d4ed8;
-  --color-accent-800: #1e40af;
-  --color-accent-900: #1e3a8a;
-  --color-accent-950: #172554;
+  /* Accent — Indigo; default sobe pra contraste no navy */
+  --color-accent-50:  #eef0fe;
+  --color-accent-100: #e0e1fd;
+  --color-accent-200: #c5c4fb;
+  --color-accent-300: #a7a5f8;
+  --color-accent-400: #827ef5;
+  --color-accent-500: #514ef3;
+  --color-accent-600: #3f36e6;
+  --color-accent-700: #332ccb;
+  --color-accent-800: #2b27a3;
+  --color-accent-900: #272581;
+  --color-accent-950: #17154b;
   --color-accent: var(--color-accent-400);
   --color-accent-fg: #0b1220;
-  --color-accent-soft: rgba(96, 154, 250, 0.16);
+  --color-accent-soft: rgba(130, 126, 245, 0.16);
   --color-accent-hover: var(--color-accent-300);
 
   /* Neutrals — navy (11 stops, dark) */

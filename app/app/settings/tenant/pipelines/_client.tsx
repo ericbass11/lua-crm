@@ -57,7 +57,7 @@ export function PipelinesClient({
 }) {
   if (pipelines.length === 0) {
     return (
-      <Card className="p-6 text-sm text-muted-foreground">
+      <Card className="p-6 text-sm text-text-muted">
         Nenhum pipeline ativo. Crie um em Pipelines.
       </Card>
     );
@@ -86,7 +86,7 @@ function StageCriteriaEditor({ stage }: { stage: StageRow }) {
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">
           {stage.name}
-          <span className="text-muted-foreground">{marker}</span>
+          <span className="text-text-muted">{marker}</span>
         </span>
         {dirty && (
           <Button
@@ -159,7 +159,7 @@ function PipelineEditor({ pipeline, stages = [] }: { pipeline: PipelineRow; stag
     <Card className="space-y-4 p-6">
       <header>
         <h2 className="text-base font-semibold">{pipeline.name}</h2>
-        <p className="text-xs text-muted-foreground">/{pipeline.slug}</p>
+        <p className="text-xs text-text-muted">/{pipeline.slug}</p>
       </header>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -194,7 +194,7 @@ function PipelineEditor({ pipeline, stages = [] }: { pipeline: PipelineRow; stag
           className="min-h-32 w-full rounded-md border border-border bg-background p-2 font-mono text-xs"
           spellCheck={false}
         />
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Ex: <code>{`[{ "key": "size", "label": "Tamanho", "type": "text" }]`}</code>
         </p>
       </div>
@@ -209,7 +209,7 @@ function PipelineEditor({ pipeline, stages = [] }: { pipeline: PipelineRow; stag
         <div className="space-y-2 border-t pt-4">
           <div>
             <Label className="text-sm font-medium">Critérios de IA por etapa</Label>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-text-muted">
               Descreva quando um lead deve estar em cada etapa. A IA usa isto para criar e mover
               cards automaticamente. Etapa sem critério fica só na gestão manual.
             </p>

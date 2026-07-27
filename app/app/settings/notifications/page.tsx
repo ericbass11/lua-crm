@@ -8,8 +8,8 @@ export default async function NotificationsPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Notificações</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight">Notificações</h1>
+        <p className="text-sm text-text-muted">
           Alertas de atendimento humano por WhatsApp e webhook.
         </p>
       </header>

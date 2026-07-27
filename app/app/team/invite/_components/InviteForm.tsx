@@ -93,18 +93,20 @@ export function InviteForm() {
           <>
             {result.sent.length > 0 ? (
               <section>
-                <h2 className="text-sm font-semibold">Enviados ({result.sent.length})</h2>
+                <h2 className="text-sm font-bold tracking-tight text-text">
+                  Enviados (<span className="tabular-nums">{result.sent.length}</span>)
+                </h2>
                 <ul className="mt-2 space-y-2 text-sm">
                   {result.sent.map((s) => (
-                    <li key={s.email} className="rounded-md border p-2">
-                      <div className="font-medium">{s.email}</div>
-                      <div className="text-xs text-muted-foreground">
+                    <li key={s.email} className="rounded-lg border border-border bg-surface p-3 shadow-sm">
+                      <div className="font-semibold text-text">{s.email}</div>
+                      <div className="text-xs text-text-subtle">
                         {s.email_dispatched
                           ? "Email enviado."
                           : "Resend não configurado — link copiável abaixo (DEV)."}
                       </div>
                       {!s.email_dispatched ? (
-                        <code className="mt-1 block break-all text-xs">{s.accept_url}</code>
+                        <code className="mt-1 block break-all text-xs text-text-muted">{s.accept_url}</code>
                       ) : null}
                     </li>
                   ))}
@@ -113,14 +115,14 @@ export function InviteForm() {
             ) : null}
             {result.failed.length > 0 ? (
               <section>
-                <h2 className="text-sm font-semibold text-destructive">
-                  Falhas ({result.failed.length})
+                <h2 className="text-sm font-bold tracking-tight text-error-fg">
+                  Falhas (<span className="tabular-nums">{result.failed.length}</span>)
                 </h2>
                 <ul className="mt-2 space-y-1 text-sm">
                   {result.failed.map((f) => (
                     <li key={f.email}>
-                      <span className="font-medium">{f.email}</span>{" "}
-                      <span className="text-muted-foreground">— {f.reason}</span>
+                      <span className="font-semibold text-text">{f.email}</span>{" "}
+                      <span className="text-text-subtle">— {f.reason}</span>
                     </li>
                   ))}
                 </ul>
@@ -128,7 +130,7 @@ export function InviteForm() {
             ) : null}
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-subtle">
             Resultados aparecerão aqui após o envio.
           </p>
         )}

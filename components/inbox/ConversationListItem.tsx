@@ -14,11 +14,11 @@ interface Props {
 }
 
 const STATUS_DOT: Record<string, string> = {
-  open: "bg-muted-foreground/60",
-  claimed: "bg-blue-500",
-  ai_handling: "bg-purple-500",
-  closed: "bg-muted-foreground/30",
-  archived: "bg-muted-foreground/20",
+  open: "bg-text-subtle/50",
+  claimed: "bg-info",
+  ai_handling: "bg-accent",
+  closed: "bg-text-subtle/30",
+  archived: "bg-text-subtle/20",
 };
 
 function initials(name: string | null | undefined, fallback: string): string {
@@ -66,11 +66,17 @@ export function ConversationListItem({ conversation, isSelected, onSelect }: Pro
       type="button"
       onClick={() => onSelect(conversation.id)}
       className={cn(
-        "group flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left transition-colors hover:bg-accent/40",
-        isSelected && "bg-accent/60",
+        "group relative flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left transition-colors hover:bg-surface-elevated",
+        isSelected && "bg-accent-soft",
       )}
       aria-current={isSelected ? "true" : undefined}
     >
+      {isSelected && (
+        <span
+          className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent"
+          aria-hidden
+        />
+      )}
       <div className="relative shrink-0">
         <Avatar className="h-10 w-10">
           <AvatarFallback className="text-xs">
@@ -79,7 +85,7 @@ export function ConversationListItem({ conversation, isSelected, onSelect }: Pro
         </Avatar>
         <span
           className={cn(
-            "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background",
+            "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-surface",
             dot,
           )}
           aria-hidden
@@ -90,18 +96,18 @@ export function ConversationListItem({ conversation, isSelected, onSelect }: Pro
         <div className="flex items-baseline justify-between gap-2">
           <span
             className={cn(
-              "truncate text-sm font-medium",
-              c?.is_anonymized && "italic text-muted-foreground",
+              "truncate text-sm font-semibold text-text",
+              c?.is_anonymized && "italic text-text-muted",
             )}
           >
             {displayName}
           </span>
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span className="shrink-0 text-xs text-text-muted">
             {time}
           </span>
         </div>
 
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+        <p className="mt-0.5 truncate text-xs text-text-subtle">
           {isAi ? <Robot size={10} weight="duotone" className="mr-1 inline" aria-hidden /> : null}
           {truncated}
         </p>
@@ -113,7 +119,7 @@ export function ConversationListItem({ conversation, isSelected, onSelect }: Pro
             </Badge>
           ))}
           {overflow > 0 && (
-            <span className="text-[10px] text-muted-foreground">+{overflow}</span>
+            <span className="text-[10px] text-text-muted">+{overflow}</span>
           )}
           {c?.is_blocked && (
             <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">

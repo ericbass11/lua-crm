@@ -85,7 +85,7 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
   );
 
   if (sorted.length === 0) {
-    return <p className="text-sm text-muted-foreground">Nenhuma versão criada ainda.</p>;
+    return <p className="text-sm text-text-muted">Nenhuma versão criada ainda.</p>;
   }
 
   function openDiff(target: AgentVersionRow) {
@@ -138,14 +138,14 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
                 {v.status}
               </Badge>
               <span className="font-mono">v{v.version_number}</span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-text-muted">
                 {new Date(v.created_at).toLocaleString()}
               </span>
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="font-mono text-xs text-text-muted">
                 {v.provider}/{v.model}
               </span>
               {v.published_at ? (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-text-muted">
                   publicada em {new Date(v.published_at).toLocaleString()}
                 </span>
               ) : null}

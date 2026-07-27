@@ -39,26 +39,26 @@ export function StageColumn({
     : undefined;
 
   return (
-    <div className="flex w-80 shrink-0 flex-col rounded-lg border border-border bg-surface-muted/40">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+    <div className="flex w-80 shrink-0 flex-col rounded-xl border border-border bg-surface-elevated">
+      <div className="flex items-center gap-2 px-4 py-3">
         <span
           className={cn(
-            "h-2 w-2 rounded-full",
+            "h-2.5 w-2.5 rounded-full",
             !stage.color && "bg-text-muted/40",
           )}
           style={accentStyle}
           aria-hidden
         />
-        <h2 className="flex-1 truncate text-sm font-semibold text-text">
+        <h2 className="flex-1 truncate text-sm font-bold text-text">
           {stage.name}
         </h2>
-        <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-muted">
+        <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-semibold tabular-nums text-accent">
           {leads.length}
         </span>
       </div>
 
       {totalCents > 0 && (
-        <div className="border-b border-border px-3 py-1.5 text-[11px] tabular-nums text-text-muted">
+        <div className="px-4 pb-1 text-[11px] font-medium tabular-nums text-text-subtle">
           {formatBRL(totalCents)}
         </div>
       )}
@@ -69,8 +69,8 @@ export function StageColumn({
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cn(
-              "flex flex-1 flex-col gap-2 p-2 transition-colors",
-              snapshot.isDraggingOver && "bg-accent/5",
+              "flex flex-1 flex-col gap-3 rounded-b-xl p-3 transition-colors",
+              snapshot.isDraggingOver && "bg-accent-soft",
             )}
           >
             {leads.map((lead, idx) => (
@@ -85,7 +85,7 @@ export function StageColumn({
             ))}
             {provided.placeholder}
             {leads.length === 0 && !snapshot.isDraggingOver && (
-              <div className="flex h-20 items-center justify-center text-[11px] text-text-muted/70">
+              <div className="flex h-20 items-center justify-center rounded-xl border border-dashed border-border text-[11px] text-text-subtle">
                 vazio
               </div>
             )}

@@ -58,7 +58,7 @@ export function RunsTable({ agentId, active }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-text-muted">
           {isLoading ? "Carregando…" : `${rows.length} execuções recentes`}
         </p>
         <Button
@@ -94,7 +94,7 @@ export function RunsTable({ agentId, active }: Props) {
           <TableBody>
             {rows.length === 0 && !isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-sm text-text-muted">
                   Nenhuma execução ainda.
                 </TableCell>
               </TableRow>
@@ -123,7 +123,7 @@ export function RunsTable({ agentId, active }: Props) {
                       teste
                     </Badge>
                   ) : (
-                    <span className="text-muted-foreground">produção</span>
+                    <span className="text-text-muted">produção</span>
                   )}
                 </TableCell>
                 <TableCell className="font-mono text-xs">

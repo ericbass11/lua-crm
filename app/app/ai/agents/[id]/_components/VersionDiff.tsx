@@ -102,17 +102,17 @@ export function VersionDiff({ versionA, versionB }: Props) {
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2 text-sm">
         <Badge variant="outline">v{versionA.version_number}</Badge>
-        <span className="text-muted-foreground">→</span>
+        <span className="text-text-muted">→</span>
         <Badge variant="outline">v{versionB.version_number}</Badge>
       </div>
 
       <Section title="Configuração">
         {fields.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Sem mudanças.</p>
+          <p className="text-xs text-text-muted">Sem mudanças.</p>
         ) : (
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-muted-foreground">
+              <tr className="text-left text-text-muted">
                 <th className="py-1">Campo</th>
                 <th className="py-1">v{versionA.version_number}</th>
                 <th className="py-1">v{versionB.version_number}</th>
@@ -122,8 +122,8 @@ export function VersionDiff({ versionA, versionB }: Props) {
               {fields.map((f) => (
                 <tr key={f.key} className="border-t border-border/40">
                   <td className="py-1 font-mono">{f.label}</td>
-                  <td className="py-1 font-mono text-destructive">{String(f.a)}</td>
-                  <td className="py-1 font-mono text-emerald-600">{String(f.b)}</td>
+                  <td className="py-1 font-mono text-error-fg">{String(f.a)}</td>
+                  <td className="py-1 font-mono text-success-fg">{String(f.b)}</td>
                 </tr>
               ))}
             </tbody>
@@ -135,7 +135,7 @@ export function VersionDiff({ versionA, versionB }: Props) {
         <Pills label="Adicionadas" tone="add" items={tools.added} />
         <Pills label="Removidas" tone="del" items={tools.removed} />
         {tools.added.length === 0 && tools.removed.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Sem mudanças.</p>
+          <p className="text-xs text-text-muted">Sem mudanças.</p>
         ) : null}
       </Section>
 
@@ -143,7 +143,7 @@ export function VersionDiff({ versionA, versionB }: Props) {
         <Pills label="Adicionadas" tone="add" items={handoffKw.added} />
         <Pills label="Removidas" tone="del" items={handoffKw.removed} />
         {handoffKw.added.length === 0 && handoffKw.removed.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Sem mudanças.</p>
+          <p className="text-xs text-text-muted">Sem mudanças.</p>
         ) : null}
       </Section>
 
@@ -152,9 +152,9 @@ export function VersionDiff({ versionA, versionB }: Props) {
           {lines.map((l, idx) => {
             const cls =
               l.kind === "add"
-                ? "block bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                ? "block bg-success-bg text-success-fg"
                 : l.kind === "del"
-                  ? "block bg-destructive/10 text-destructive"
+                  ? "block bg-error-bg text-error-fg"
                   : "block";
             const prefix = l.kind === "add" ? "+ " : l.kind === "del" ? "- " : "  ";
             return (
@@ -173,7 +173,7 @@ export function VersionDiff({ versionA, versionB }: Props) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <h4 className="text-xs font-medium uppercase tracking-wide text-text-muted">
         {title}
       </h4>
       <div className="space-y-2">{children}</div>
@@ -193,15 +193,15 @@ function Pills({
   if (items.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-muted-foreground">{label}:</span>
+      <span className="text-xs text-text-muted">{label}:</span>
       {items.map((id) => (
         <Badge
           key={id}
           variant="outline"
           className={
             tone === "add"
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-              : "border-destructive/40 bg-destructive/10 text-destructive"
+              ? "border-transparent bg-success-bg text-success-fg"
+              : "border-transparent bg-error-bg text-error-fg"
           }
         >
           {tone === "add" ? "+ " : "− "}

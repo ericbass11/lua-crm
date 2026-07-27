@@ -28,8 +28,8 @@ export default async function IntegrationsPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Integrações</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight">Integrações</h1>
+        <p className="text-sm text-text-muted">
           Conecte a agenda da empresa para os agentes de IA marcarem calls
           (ferramentas <code>crm_check_availability</code> e <code>crm_schedule_meeting</code>).
         </p>

@@ -63,7 +63,7 @@ export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props)
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input id="email" value={email} disabled />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-text-muted">
             Trocar email — em breve.
           </p>
         </div>
@@ -114,7 +114,7 @@ export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props)
             value={avatarUrl}
             onChange={(e) => setAvatarUrl(e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-text-muted">
             Upload de arquivo — em breve. Cole uma URL pública.
           </p>
         </div>

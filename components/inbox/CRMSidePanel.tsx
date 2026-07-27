@@ -129,14 +129,14 @@ export function CRMSidePanel({ conversation }: Props) {
 
   if (!conversation) {
     return (
-      <aside className="flex h-full items-center justify-center border-l border-border p-4 text-center text-xs text-muted-foreground">
+      <aside className="flex h-full items-center justify-center border-l border-border bg-surface p-4 text-center text-xs text-text-muted">
         Selecione uma conversa para ver detalhes do contato.
       </aside>
     );
   }
 
   return (
-    <aside className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-background p-4">
+    <aside className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-surface p-4">
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Contato
@@ -217,10 +217,10 @@ export function CRMSidePanel({ conversation }: Props) {
                       className={
                         "text-[10px] font-semibold tabular-nums " +
                         ((score as number) >= 70
-                          ? "text-green-600 dark:text-green-400"
+                          ? "text-success"
                           : (score as number) >= 40
-                            ? "text-amber-600 dark:text-amber-400"
-                            : "text-muted-foreground")
+                            ? "text-warning"
+                            : "text-text-muted")
                       }
                     >
                       ★ {Math.round(score as number)}

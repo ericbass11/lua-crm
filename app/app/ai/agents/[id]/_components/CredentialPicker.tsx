@@ -57,7 +57,7 @@ export function CredentialPicker({ provider, credentials, value, onChange, disab
         </SelectContent>
       </Select>
       {filtered.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Cadastre em <code>/app/ai/credentials</code>.
         </p>
       ) : null}

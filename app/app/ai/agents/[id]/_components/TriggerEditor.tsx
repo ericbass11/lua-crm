@@ -144,7 +144,7 @@ export function TriggerEditor({ value, onChange, disabled }: Props) {
           disabled={disabled}
           spellCheck={false}
         />
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Quando preenchido, agent só responde se a mensagem casar com o regex.
         </p>
       </div>
@@ -223,7 +223,7 @@ export function TriggerEditor({ value, onChange, disabled }: Props) {
                       className={`rounded border px-2 py-1 text-xs ${
                         active
                           ? "border-primary bg-primary/10 text-primary"
-                          : "border-border/60 text-muted-foreground"
+                          : "border-border/60 text-text-muted"
                       } disabled:cursor-not-allowed disabled:opacity-50`}
                     >
                       {d.label}

@@ -269,6 +269,12 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
 
 > Toda melhoria feita nesta instalação DEVE ser registrada aqui (regra do guardrail no CLAUDE.md).
 
+### Redesign visual — design system "Indigo" (branch `redesign/design-system`, em andamento)
+| Data | Mudança |
+|---|---|
+| 27/07 | **Novo design system baseado no Figma "Buzzy CRM"** (acento índigo `#514ef3`, cantos maiores, botões pill, sombras suaves). Só estilo — nenhuma lógica/rota tocada. Arquivos: `app/globals.css` (tokens runtime — accent índigo 11-stops, radius md/lg/xl 10/16/20, badge índigo), `components/ui/{button,card,badge,input,table}.tsx` (button pill; card 20px+sombra; badge encorpado; input 10px; table linhas arejadas + hover via token + header uppercase), `components/shell/Sidebar.tsx` (item ativo arredondado+sombra, hover índigo, logo em quadrado escuro). `typecheck`/`lint` verdes; nada quebrado. |
+| 27/07 | **Dashboard reconstruído no layout do Figma** (`app/app/dashboard/_components/DashboardClient.tsx`): 3 colunas (hero índigo em gradiente com taxa de conversão + stat cards "Conversas"/"Leads" com badge de ícone pastel · funil + gráfico por horário · concentração de leads + painel de IA). Toda a busca de dados (`/api/v1/dashboard/metrics`), seletor de período e gráfico recharts **preservados** — só a apresentação mudou. |
+
 ### Correções de bugs do produto
 | Data | Correção |
 |---|---|

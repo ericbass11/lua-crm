@@ -102,9 +102,9 @@ export function SettingsHub() {
           <div key={g.key} className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {g.items.map((item) => (
               <Link key={item.href} href={item.href} className="block">
-                <Card className="h-full p-4 transition-colors hover:border-border-strong">
-                  <h2 className="text-sm font-semibold">{item.title}</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
+                <Card className="h-full p-5 transition-colors hover:border-border-strong hover:shadow-md">
+                  <h2 className="text-sm font-bold tracking-tight">{item.title}</h2>
+                  <p className="mt-1.5 text-xs text-text-muted">{item.description}</p>
                 </Card>
               </Link>
             ))}

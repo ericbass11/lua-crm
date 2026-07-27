@@ -57,7 +57,7 @@ export function ConversationList({
 
   if (q.isError) {
     return (
-      <div className="p-4 text-center text-sm text-muted-foreground">
+      <div className="p-4 text-center text-sm text-text-muted">
         <p>Erro ao carregar conversas.</p>
         <Button
           size="sm"

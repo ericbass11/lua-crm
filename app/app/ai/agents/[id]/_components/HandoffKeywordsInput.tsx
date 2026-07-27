@@ -43,11 +43,11 @@ export function HandoffKeywordsInput({ value, onChange, disabled }: Props) {
             aria-label={`Remover ${kw}`}
           >
             {kw}
-            <span className="text-muted-foreground group-hover:text-destructive">×</span>
+            <span className="text-text-muted group-hover:text-destructive">×</span>
           </button>
         ))}
         {value.length === 0 ? (
-          <span className="text-xs text-muted-foreground">Sem palavras-chave.</span>
+          <span className="text-xs text-text-muted">Sem palavras-chave.</span>
         ) : null}
       </div>
       <div className="flex gap-2">
@@ -81,7 +81,7 @@ export function HandoffKeywordsInput({ value, onChange, disabled }: Props) {
             type="button"
             onClick={() => add(d)}
             disabled={disabled}
-            className="rounded border border-dashed border-border/60 px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+            className="rounded border border-dashed border-border/60 px-2 py-0.5 text-xs text-text-muted hover:bg-muted"
           >
             + {d}
           </button>

@@ -22,8 +22,8 @@ export default async function ConnectionsPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Conexões</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight text-text">Conexões</h1>
+        <p className="text-sm text-text-subtle">
           Verifique a saúde dos seus números de WhatsApp, reconecte os que caíram e adicione novos.
         </p>
       </header>

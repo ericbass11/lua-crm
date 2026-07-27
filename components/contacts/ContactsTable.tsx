@@ -21,6 +21,15 @@ function displayName(c: Contact): string {
   return c.display_name?.trim() || c.name?.trim() || "—";
 }
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0];
+  if (!first || first === "—") return "—";
+  if (parts.length === 1) return first.slice(0, 2).toUpperCase();
+  const last = parts[parts.length - 1] ?? first;
+  return ((first[0] ?? "") + (last[0] ?? "")).toUpperCase();
+}
+
 export function ContactsTable({ contacts }: Props) {
   return (
     <Table>
@@ -37,27 +46,38 @@ export function ContactsTable({ contacts }: Props) {
       <TableBody>
         {contacts.map((c) => (
           <TableRow key={c.id} className="cursor-pointer">
-            <TableCell className="font-medium">
-              <Link href={`/app/contacts/${c.id}`} className="hover:underline">
-                {displayName(c)}
-              </Link>
+            <TableCell>
+              <div className="flex items-center gap-3">
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent"
+                  aria-hidden
+                >
+                  {initials(displayName(c))}
+                </span>
+                <Link
+                  href={`/app/contacts/${c.id}`}
+                  className="font-semibold text-text hover:text-accent hover:underline"
+                >
+                  {displayName(c)}
+                </Link>
+              </div>
             </TableCell>
-            <TableCell className="text-muted-foreground">
+            <TableCell className="text-text-subtle">
               {c.email ?? "—"}
             </TableCell>
-            <TableCell className="text-muted-foreground">
+            <TableCell className="text-text-subtle tabular-nums">
               {c.phone_number ?? "—"}
             </TableCell>
             <TableCell>
               <div className="flex flex-wrap gap-1">
                 {c.tags.length === 0
-                  ? <span className="text-muted-foreground text-xs">—</span>
+                  ? <span className="text-text-subtle text-xs">—</span>
                   : c.tags.map((t) => (
                       <Badge key={t} variant="neutral">{t}</Badge>
                     ))}
               </div>
             </TableCell>
-            <TableCell className="text-muted-foreground text-sm">
+            <TableCell className="text-text-subtle text-sm">
               {c.last_activity_at
                 ? formatRelative(new Date(c.last_activity_at), new Date(), { locale: ptBR })
                 : "—"}

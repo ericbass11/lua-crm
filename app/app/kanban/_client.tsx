@@ -80,7 +80,7 @@ export function KanbanPipelinesClient({
           {pipelines.map((p) => (
             <li
               key={p.id}
-              className="flex items-center gap-2 rounded-md border border-border bg-surface transition-colors hover:border-border-strong"
+              className="flex items-center gap-2 rounded-xl border border-border bg-surface shadow-sm transition hover:border-border-strong hover:shadow-md"
             >
               <Link href={`/app/pipelines/${p.id}`} className="flex flex-1 items-center justify-between px-4 py-3">
                 <div className="flex flex-col">

@@ -16,9 +16,9 @@ interface KanbanCardProps {
 }
 
 const URGENCY_STYLE: Record<string, string> = {
-  alta: "bg-red-500/15 text-red-600 dark:text-red-400",
-  media: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  baixa: "bg-slate-500/15 text-slate-600 dark:text-slate-400",
+  alta: "bg-error-bg text-error-fg",
+  media: "bg-warning-bg text-warning-fg",
+  baixa: "bg-info-bg text-info-fg",
 };
 
 /** Sinais estratégicos mantidos pela IA: score (0-100) + urgência. */
@@ -32,7 +32,7 @@ function LeadSignals({ customFields }: { customFields: Record<string, unknown> |
   if (!hasScore && !hasUrg) return null;
 
   const scoreColor =
-    score >= 70 ? "text-green-600 dark:text-green-400" : score >= 40 ? "text-amber-600 dark:text-amber-400" : "text-slate-500";
+    score >= 70 ? "text-success-fg" : score >= 40 ? "text-warning-fg" : "text-text-subtle";
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -45,7 +45,7 @@ function LeadSignals({ customFields }: { customFields: Record<string, unknown> |
         </span>
       )}
       {hasUrg && (
-        <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-medium capitalize", URGENCY_STYLE[urg])}>
+        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium capitalize", URGENCY_STYLE[urg])}>
           {urg === "media" ? "média" : urg}
         </span>
       )}
@@ -80,27 +80,35 @@ export function KanbanCard({
           onClick={handleClick}
           onDoubleClick={() => setEditOpen(true)}
           className={cn(
-            "group rounded-md border border-border bg-surface p-3 shadow-xs transition-colors",
-            "hover:border-border-strong",
-            snapshot.isDragging && "rotate-1 shadow-md ring-1 ring-accent/40",
+            "group rounded-xl border border-border bg-surface p-4 shadow-sm transition",
+            "hover:border-border-strong hover:shadow-md",
+            snapshot.isDragging && "rotate-1 shadow-lg ring-1 ring-accent/40",
             isSelected && "ring-2 ring-accent",
           )}
         >
           <div className="flex items-start justify-between gap-2">
-            <h3 className="line-clamp-2 text-sm font-medium leading-snug text-text">
+            <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-text">
               {lead.title}
             </h3>
             <KanbanCardActions lead={lead} pipelineId={pipelineId} />
           </div>
 
           {(contactName || contactPhone) && (
-            <div className="mt-1.5 space-y-0.5">
-              {contactName && (
-                <p className="truncate text-xs font-medium text-text">{contactName}</p>
-              )}
-              {contactPhone && (
-                <p className="truncate text-[11px] tabular-nums text-text-muted">{contactPhone}</p>
-              )}
+            <div className="mt-2.5 flex items-center gap-2.5">
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent"
+                aria-hidden
+              >
+                {(contactName ?? lead.title).charAt(0).toUpperCase()}
+              </span>
+              <div className="min-w-0 space-y-0.5">
+                {contactName && (
+                  <p className="truncate text-xs font-medium text-text">{contactName}</p>
+                )}
+                {contactPhone && (
+                  <p className="truncate text-xs tabular-nums text-text-subtle">{contactPhone}</p>
+                )}
+              </div>
             </div>
           )}
 

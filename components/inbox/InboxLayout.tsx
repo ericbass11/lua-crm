@@ -106,9 +106,9 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
 
   return (
     <div className="grid h-full min-h-0 w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[300px_1fr_320px]">
-      <div className="flex h-full min-h-0 flex-col border-r border-border">
+      <div className="flex h-full min-h-0 flex-col border-r border-border bg-surface">
         <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-          <span className="text-sm font-semibold">Conversas</span>
+          <span className="text-sm font-semibold text-text">Conversas</span>
           <Button size="sm" className="h-8 gap-1.5" onClick={() => setNewOpen(true)}>
             <Plus size={16} weight="bold" aria-hidden />
             Nova conversa
@@ -127,7 +127,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         </div>
       </div>
 
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-col bg-surface">
         {selectedConversation ? (
           <>
             <ConversationHeader conversation={selectedConversation} />
@@ -142,7 +142,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             />
           </>
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-sm text-text-muted">
             Selecione uma conversa
           </div>
         )}

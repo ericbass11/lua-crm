@@ -45,7 +45,7 @@ export function FollowupClient() {
     })();
   }, []);
 
-  if (!settings) return <Card className="max-w-3xl p-5 text-sm text-muted-foreground">Carregando…</Card>;
+  if (!settings) return <Card className="max-w-3xl p-5 text-sm text-text-muted">Carregando…</Card>;
 
   const patch = (p: Partial<Settings>) => setSettings((s) => (s ? { ...s, ...p } : s));
   const patchStep = (i: number, p: Partial<Step>) =>
@@ -86,7 +86,7 @@ export function FollowupClient() {
       <Card className="flex items-center justify-between p-5">
         <div>
           <h2 className="text-base font-semibold">Ativar follow-up automático</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-muted">
             Vale para conversas com a IA e também com atendente humano — nesse caso a IA envia
             apenas a mensagem de reengajamento, sem assumir a conversa. Nunca segue clientes
             bloqueados ou pós-handoff.
@@ -98,7 +98,7 @@ export function FollowupClient() {
       <Card className="space-y-4 p-5">
         <div>
           <h2 className="text-base font-semibold">Sequência ({settings.steps.length} etapas)</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-muted">
             Cada etapa dispara após o tempo de silêncio contado da última mensagem da conversa. A
             instrução orienta o tom daquele follow-up — o conteúdo é gerado pela IA com base na
             conversa real.
@@ -166,7 +166,7 @@ export function FollowupClient() {
       <Card className="space-y-3 p-5">
         <div>
           <h2 className="text-base font-semibold">Janela de envio</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-muted">
             Follow-ups só saem nestes dias/horários (fuso {settings.timezone}). Fora da janela, a
             etapa espera a próxima abertura — proteção anti-banimento do WhatsApp.
           </p>

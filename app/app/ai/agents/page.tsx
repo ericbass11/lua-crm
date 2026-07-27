@@ -33,8 +33,8 @@ export default async function AgentsListPage() {
     <div className="flex h-full flex-col gap-6 p-6">
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Agents de IA</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-2xl font-bold tracking-tight">Agents de IA</h1>
+          <p className="text-sm text-text-muted">
             Configure o comportamento dos agents que respondem no WhatsApp.
           </p>
         </div>

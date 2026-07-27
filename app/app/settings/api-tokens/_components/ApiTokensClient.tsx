@@ -85,9 +85,9 @@ export function ApiTokensClient() {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Carregando…</p>
+        <p className="text-sm text-text-muted">Carregando…</p>
       ) : tokens.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum token criado ainda.</p>
+        <p className="text-sm text-text-muted">Nenhum token criado ainda.</p>
       ) : (
         <div className="rounded-md border">
           <Table>
@@ -124,7 +124,7 @@ export function ApiTokensClient() {
                       <Badge variant="default">Ativo</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell className="text-sm text-text-muted">
                     {t.expires_at ? new Date(t.expires_at).toLocaleDateString("pt-BR") : "—"}
                   </TableCell>
                   <TableCell>
@@ -232,7 +232,7 @@ export function ApiTokensClient() {
               >
                 Copiar para clipboard
               </Button>
-              <p className="text-xs text-muted-foreground">{created._warning}</p>
+              <p className="text-xs text-text-muted">{created._warning}</p>
             </div>
           ) : null}
           <DialogFooter>

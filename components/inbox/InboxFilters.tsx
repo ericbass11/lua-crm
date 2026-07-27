@@ -46,12 +46,12 @@ export function InboxFilters({ value, onChange }: Props) {
   }, [searchInput]);
 
   return (
-    <div className="space-y-3 border-b border-border bg-background px-3 py-3">
+    <div className="space-y-3 border-b border-border bg-surface px-3 py-3">
       <div className="relative">
         <MagnifyingGlass
           size={14}
           weight="regular"
-          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-subtle"
           aria-hidden
         />
         <Input
@@ -108,7 +108,7 @@ export function InboxFilters({ value, onChange }: Props) {
       </Tabs>
 
       <div className="flex items-center justify-between">
-        <Label htmlFor="only-unread" className="text-xs text-muted-foreground">
+        <Label htmlFor="only-unread" className="text-xs text-text-muted">
           Apenas não lidos
         </Label>
         <Switch

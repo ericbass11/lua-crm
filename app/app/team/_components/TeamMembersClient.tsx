@@ -44,6 +44,16 @@ interface Props {
   canManage: boolean;
 }
 
+function memberInitials(m: TeamMember): string {
+  const base = m.full_name?.trim() || m.email?.trim() || m.user_id;
+  const parts = base.split(/\s+/).filter(Boolean);
+  const first = parts[0];
+  if (!first) return "—";
+  if (parts.length === 1) return first.slice(0, 2).toUpperCase();
+  const last = parts[parts.length - 1] ?? first;
+  return ((first[0] ?? "") + (last[0] ?? "")).toUpperCase();
+}
+
 export function TeamMembersClient({ currentUserId, canManage }: Props) {
   const { data, isLoading, isError } = useTeamMembers();
   const changeRole = useChangeRole();
@@ -54,19 +64,19 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
   const [pendingRole, setPendingRole] = useState<Role>("agent");
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Carregando…</p>;
+    return <p className="text-sm text-text-muted">Carregando…</p>;
   }
   if (isError) {
-    return <p className="text-sm text-destructive">Erro ao carregar membros.</p>;
+    return <p className="text-sm text-error-fg">Erro ao carregar membros.</p>;
   }
   const members = data?.data ?? [];
   if (members.length === 0) {
-    return <p className="text-sm text-muted-foreground">Nenhum membro ativo.</p>;
+    return <p className="text-sm text-text-muted">Nenhum membro ativo.</p>;
   }
 
   return (
     <>
-      <div className="rounded-md border">
+      <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -81,10 +91,22 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
             {members.map((m) => (
               <TableRow key={m.user_id}>
                 <TableCell>
-                  <div className="font-medium">{m.full_name ?? m.email ?? m.user_id.slice(0, 8)}</div>
-                  {m.email ? (
-                    <div className="text-xs text-muted-foreground">{m.email}</div>
-                  ) : null}
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent"
+                      aria-hidden
+                    >
+                      {memberInitials(m)}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-text">
+                        {m.full_name ?? m.email ?? m.user_id.slice(0, 8)}
+                      </div>
+                      {m.email ? (
+                        <div className="text-xs text-text-subtle">{m.email}</div>
+                      ) : null}
+                    </div>
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Badge variant="secondary">{m.role}</Badge>
@@ -96,7 +118,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                     <Badge variant="outline">Pendente</Badge>
                   )}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
+                <TableCell className="text-sm tabular-nums text-text-subtle">
                   {m.last_sign_in_at
                     ? new Date(m.last_sign_in_at).toLocaleString("pt-BR")
                     : "—"}
@@ -128,7 +150,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : (
-                      <span className="text-xs text-muted-foreground">você</span>
+                      <span className="text-xs text-text-subtle">você</span>
                     )}
                   </TableCell>
                 ) : null}

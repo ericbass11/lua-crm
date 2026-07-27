@@ -41,9 +41,9 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         collapsed ? "w-16" : "w-60",
       )}
     >
-      <div className={cn("flex items-center border-b px-4 h-14", collapsed ? "justify-center" : "justify-start")}>
-        <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>LUA CRM</span>
-        {collapsed && <span aria-hidden className="text-lg font-bold text-primary">L</span>}
+      <div className={cn("flex items-center gap-2.5 border-b px-3 h-14", collapsed ? "justify-center" : "justify-start")}>
+        <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-900 text-sm font-bold text-white shadow-sm">L</span>
+        {!collapsed && <span className="font-bold tracking-tight">LUA CRM</span>}
       </div>
       <nav className="flex-1 space-y-1 p-2" aria-label="Navegação principal">
         {NAV_ITEMS.filter((item) => {
@@ -59,8 +59,8 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
               title={collapsed ? item.label : undefined}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                isActive ? "bg-accent text-accent-foreground shadow-sm" : "text-muted-foreground hover:bg-accent-soft hover:text-accent",
                 collapsed && "justify-center px-2",
               )}
             >
@@ -81,7 +81,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           onClick={() => startTransition(() => toggleSidebar(collapsed))}
           disabled={isPending}
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground hover:bg-accent-soft hover:text-accent",
             collapsed && "justify-center px-2",
           )}
           aria-label={collapsed ? "Expandir sidebar" : "Recolher sidebar"}

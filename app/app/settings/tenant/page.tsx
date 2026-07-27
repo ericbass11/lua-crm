@@ -45,8 +45,8 @@ export default async function TenantSettingsPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Organização</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight">Organização</h1>
+        <p className="text-sm text-text-muted">
           Dados da empresa, retenção de mídia, DPO. Admin only.
         </p>
       </header>

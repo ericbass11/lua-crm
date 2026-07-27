@@ -102,8 +102,8 @@ export function BulkActionBar({
 
   return (
     <>
-      <div className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 shadow-md">
-        <span className="text-sm font-medium">
+      <div className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-2 rounded-full border border-border bg-surface-elevated px-4 py-2.5 shadow-lg">
+        <span className="px-1 text-sm font-semibold text-text">
           {selectedIds.length} selecionado{selectedIds.length > 1 ? "s" : ""}
         </span>
 

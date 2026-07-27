@@ -58,7 +58,7 @@ export function RunTrace({
 
   if (steps.length === 0 && !finalText) {
     return (
-      <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+      <p className="text-sm text-text-muted">{emptyMessage}</p>
     );
   }
 
@@ -84,19 +84,19 @@ export function RunTrace({
                   </Badge>
                 ) : null}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-text-muted">
                 {typeof s.latency_ms === "number" ? `${s.latency_ms}ms` : "—"}
               </span>
             </summary>
             <div className="space-y-3 border-t border-border/60 px-3 py-3 text-xs">
               <div>
-                <p className="mb-1 font-medium text-muted-foreground">Args</p>
+                <p className="mb-1 font-medium text-text-muted">Args</p>
                 <pre className="overflow-x-auto rounded bg-muted/40 p-2 font-mono leading-relaxed">
                   {clip(fmtJson(s.args))}
                 </pre>
               </div>
               <div>
-                <p className="mb-1 font-medium text-muted-foreground">Result</p>
+                <p className="mb-1 font-medium text-text-muted">Result</p>
                 <pre className="overflow-x-auto rounded bg-muted/40 p-2 font-mono leading-relaxed">
                   {clip(fmtJson(s.result))}
                 </pre>
@@ -109,7 +109,7 @@ export function RunTrace({
                   </pre>
                 </div>
               ) : null}
-              <div className="text-muted-foreground">
+              <div className="text-text-muted">
                 <span>{s.started_at ?? "—"}</span>
                 <span className="mx-2">→</span>
                 <span>{s.ended_at ?? "—"}</span>

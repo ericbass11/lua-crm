@@ -39,7 +39,7 @@ export function ConversationHeader({ conversation }: Props) {
   const isOpen = status === "open" || conversation.assigned_to_user_id == null;
 
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
+    <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <h2 className="truncate text-sm font-semibold">{displayName}</h2>
@@ -48,7 +48,7 @@ export function ConversationHeader({ conversation }: Props) {
           </Badge>
         </div>
         {phone && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-text-muted">
             <Phone size={11} weight="regular" aria-hidden /> {phone}
           </p>
         )}

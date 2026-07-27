@@ -38,9 +38,11 @@ export function AgentsList({ initialData, canWrite }: Props) {
   if (!isLoading && agents.length === 0) {
     return (
       <Card className="flex flex-col items-center gap-3 p-10 text-center">
-        <Robot size={36} aria-hidden className="text-muted-foreground" />
-        <h2 className="font-medium">Nenhum agent configurado</h2>
-        <p className="max-w-sm text-sm text-muted-foreground">
+        <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-surface-elevated text-accent">
+          <Robot size={30} weight="duotone" aria-hidden />
+        </span>
+        <h2 className="font-bold tracking-tight">Nenhum agent configurado</h2>
+        <p className="max-w-sm text-sm text-text-muted">
           Crie um agent para responder a conversas no WhatsApp com IA. Você
           configura prompt, tools, gatilhos e janela de contexto.
         </p>
@@ -76,7 +78,7 @@ export function AgentsList({ initialData, canWrite }: Props) {
       </div>
 
       {filtered.length === 0 ? (
-        <Card className="p-8 text-center text-sm text-muted-foreground">
+        <Card className="p-8 text-center text-sm text-text-muted">
           Nenhum agent corresponde aos filtros atuais.
         </Card>
       ) : (

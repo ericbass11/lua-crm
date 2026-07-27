@@ -70,12 +70,19 @@ export function ContactDetailClient({ contactId }: Props) {
       )}
 
       <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-start gap-4">
+          <span
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent-soft text-lg font-bold text-accent"
+            aria-hidden
+          >
+            {displayName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "—"}
+          </span>
+          <div>
+          <h1 className="text-2xl font-bold tracking-tight text-text">{displayName}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-text-subtle">
             {contact.email && <span>{contact.email}</span>}
             {contact.email && contact.phone_number && <span>•</span>}
-            {contact.phone_number && <span>{contact.phone_number}</span>}
+            {contact.phone_number && <span className="tabular-nums">{contact.phone_number}</span>}
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {contact.tags.map((t) => (
@@ -83,6 +90,7 @@ export function ContactDetailClient({ contactId }: Props) {
             ))}
             {contact.is_blocked && <Badge variant="warning">Bloqueado</Badge>}
             {contact.is_anonymized && <Badge variant="destructive">Anonimizado</Badge>}
+          </div>
           </div>
         </div>
         {!contact.is_anonymized && (
@@ -101,31 +109,31 @@ export function ContactDetailClient({ contactId }: Props) {
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
-          <Card className="p-4">
-            <dl className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
+          <Card className="p-5">
+            <dl className="grid grid-cols-1 gap-5 text-sm md:grid-cols-2">
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Nome</dt>
-                <dd className="mt-1">{contact.name ?? "—"}</dd>
+                <dt className="text-xs uppercase tracking-wide text-text-subtle">Nome</dt>
+                <dd className="mt-1 font-medium text-text">{contact.name ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Display name</dt>
-                <dd className="mt-1">{contact.display_name ?? "—"}</dd>
+                <dt className="text-xs uppercase tracking-wide text-text-subtle">Display name</dt>
+                <dd className="mt-1 font-medium text-text">{contact.display_name ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Email</dt>
-                <dd className="mt-1">{contact.email ?? "—"}</dd>
+                <dt className="text-xs uppercase tracking-wide text-text-subtle">Email</dt>
+                <dd className="mt-1 font-medium text-text">{contact.email ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Telefone</dt>
-                <dd className="mt-1">{contact.phone_number ?? "—"}</dd>
+                <dt className="text-xs uppercase tracking-wide text-text-subtle">Telefone</dt>
+                <dd className="mt-1 font-medium tabular-nums text-text">{contact.phone_number ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Origem</dt>
-                <dd className="mt-1">{contact.source}</dd>
+                <dt className="text-xs uppercase tracking-wide text-text-subtle">Origem</dt>
+                <dd className="mt-1 font-medium text-text">{contact.source}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Última atividade</dt>
-                <dd className="mt-1">
+                <dt className="text-xs uppercase tracking-wide text-text-subtle">Última atividade</dt>
+                <dd className="mt-1 font-medium text-text">
                   {contact.last_activity_at
                     ? format(new Date(contact.last_activity_at), "dd/MM/yyyy HH:mm", {
                         locale: ptBR,
@@ -134,13 +142,13 @@ export function ContactDetailClient({ contactId }: Props) {
                 </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Criado em</dt>
-                <dd className="mt-1">
+                <dt className="text-xs uppercase tracking-wide text-text-subtle">Criado em</dt>
+                <dd className="mt-1 font-medium tabular-nums text-text">
                   {format(new Date(contact.created_at), "dd/MM/yyyy", { locale: ptBR })}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Tags</dt>
+                <dt className="text-xs uppercase tracking-wide text-text-subtle">Tags</dt>
                 <dd className="mt-1 flex flex-wrap gap-1">
                   {contact.tags.length === 0
                     ? "—"
@@ -159,16 +167,16 @@ export function ContactDetailClient({ contactId }: Props) {
 
         {isAdmin && (
           <TabsContent value="lgpd" className="mt-4">
-            <Card className="p-4 space-y-4">
+            <Card className="p-5 space-y-4">
               <div>
-                <h2 className="text-lg font-semibold">Direito ao esquecimento (LGPD)</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <h2 className="text-lg font-bold tracking-tight text-text">Direito ao esquecimento (LGPD)</h2>
+                <p className="mt-1 text-sm text-text-muted">
                   A anonimização é irreversível. Use somente após confirmação formal
                   do titular ou ordem judicial.
                 </p>
               </div>
               {contact.is_anonymized ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-text-muted">
                   Este contato já foi anonimizado
                   {contact.anonymized_at &&
                     ` em ${format(new Date(contact.anonymized_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}`}

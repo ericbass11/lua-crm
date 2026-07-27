@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Robot } from "@/lib/ui/icons";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import { AgentStatusBadge, deriveAgentStatus } from "./AgentStatusBadge";
 import { AgentRowMenu } from "./AgentRowMenu";
@@ -23,15 +24,20 @@ export function AgentCard({ agent, canWrite }: Props) {
   const provider = agent.model?.split("/")[0] ?? "?";
 
   return (
-    <Card className="flex h-full flex-col gap-3 p-4">
+    <Card className="flex h-full flex-col gap-3 p-5">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate font-medium" title={agent.name}>
-            {agent.name}
-          </h3>
-          <p className="truncate text-xs text-muted-foreground">
-            {provider} · {formatModel(agent.model)}
-          </p>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-elevated text-accent">
+            <Robot size={20} weight="duotone" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h3 className="truncate font-semibold text-text" title={agent.name}>
+              {agent.name}
+            </h3>
+            <p className="truncate text-xs text-text-muted">
+              {provider} · {formatModel(agent.model)}
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {agent.is_default && (
@@ -44,15 +50,15 @@ export function AgentCard({ agent, canWrite }: Props) {
         </div>
       </div>
       {agent.description && (
-        <p className="line-clamp-2 text-xs text-muted-foreground">{agent.description}</p>
+        <p className="line-clamp-2 text-xs text-text-muted">{agent.description}</p>
       )}
       <dl className="grid grid-cols-2 gap-2 pt-1 text-xs">
         <div>
-          <dt className="text-muted-foreground">Tipo</dt>
+          <dt className="text-text-muted">Tipo</dt>
           <dd className="font-mono">{agent.kind ?? "rag_bot"}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Prioridade</dt>
+          <dt className="text-text-muted">Prioridade</dt>
           <dd className="font-mono">{agent.priority ?? "—"}</dd>
         </div>
       </dl>

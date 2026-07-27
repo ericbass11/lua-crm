@@ -59,7 +59,7 @@ export function HandoffWebhookCard() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold">Alerta de atendimento humano</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-text-muted">
             Quando a IA passa uma conversa para um humano, o time é avisado neste webhook. Funciona
             com Slack, Discord, n8n ou qualquer endpoint — o payload traz o motivo, o contato e o
             link da conversa.
@@ -76,7 +76,7 @@ export function HandoffWebhookCard() {
           placeholder="55DDDNÚMERO (separe vários por vírgula)"
           disabled={!loaded}
         />
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Recebe o alerta pelo próprio número do negócio (WhatsApp), com motivo, resumo e link.
           Ex.: <code>5531999998888</code>.
         </p>
@@ -91,7 +91,7 @@ export function HandoffWebhookCard() {
           placeholder="https://… (Slack / Discord / n8n / custom)"
           disabled={!loaded}
         />
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Alternativa ou complemento ao WhatsApp. Dica: aponte para um fluxo do n8n e roteie para
           Telegram, e-mail, etc.
         </p>

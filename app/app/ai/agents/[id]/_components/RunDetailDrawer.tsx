@@ -114,14 +114,14 @@ export function RunDetailDrawer({ run, open, onOpenChange }: Props) {
             </div>
 
             <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
                 Trace
               </p>
               <RunTrace toolCalls={run.tool_calls} />
             </div>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Selecione uma execução.</p>
+          <p className="text-sm text-text-muted">Selecione uma execução.</p>
         )}
       </SheetContent>
     </Sheet>
@@ -131,7 +131,7 @@ export function RunDetailDrawer({ run, open, onOpenChange }: Props) {
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded border border-border/60 px-2 py-1">
-      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-[10px] uppercase tracking-wide text-text-muted">{label}</dt>
       <dd className="font-mono">{children}</dd>
     </div>
   );

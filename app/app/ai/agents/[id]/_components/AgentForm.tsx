@@ -328,13 +328,13 @@ export function AgentForm(props: Props) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-semibold tracking-tight">
+            <h2 className="text-xl font-bold tracking-tight">
               {isEdit ? props.agent.name : "Novo agent"}
             </h2>
             {statusBadge}
           </div>
           {isEdit && props.agent.description ? (
-            <p className="text-xs text-muted-foreground">{props.agent.description}</p>
+            <p className="text-xs text-text-muted">{props.agent.description}</p>
           ) : null}
         </div>
 
@@ -374,8 +374,8 @@ export function AgentForm(props: Props) {
         {/* COLUMN 1 */}
         <div className="space-y-4">
           {/* Identification */}
-          <Card className="space-y-3 p-4">
-            <h3 className="text-sm font-medium">Identificação</h3>
+          <Card className="space-y-3 p-5">
+            <h3 className="text-sm font-bold tracking-tight">Identificação</h3>
             <div className="space-y-1">
               <Label htmlFor="name">Nome</Label>
               <Input
@@ -413,15 +413,15 @@ export function AgentForm(props: Props) {
                 onChange={(e) => patch({ priority: Number(e.target.value) })}
                 disabled={disabled}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-text-muted">
                 Maior prioridade = avaliado primeiro pelo dispatcher.
               </p>
             </div>
           </Card>
 
           {/* Provider + credential + model */}
-          <Card className="space-y-3 p-4">
-            <h3 className="text-sm font-medium">Modelo & credencial</h3>
+          <Card className="space-y-3 p-5">
+            <h3 className="text-sm font-bold tracking-tight">Modelo & credencial</h3>
             <div className="space-y-1">
               <Label htmlFor="provider">Provider</Label>
               <Select
@@ -463,15 +463,15 @@ export function AgentForm(props: Props) {
               <p className="text-xs text-destructive">{validation.credential_id}</p>
             ) : null}
             {cred && credSt !== "validated" ? (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
+              <p className="text-xs text-warning-fg">
                 Credencial selecionada está com status {credSt}. Publish bloqueado até validar.
               </p>
             ) : null}
           </Card>
 
           {/* WhatsApp session */}
-          <Card className="space-y-3 p-4">
-            <h3 className="text-sm font-medium">Número de WhatsApp</h3>
+          <Card className="space-y-3 p-5">
+            <h3 className="text-sm font-bold tracking-tight">Número de WhatsApp</h3>
             <div className="space-y-1">
               <Label htmlFor="channel_session_id">Sessão</Label>
               <Select
@@ -503,8 +503,8 @@ export function AgentForm(props: Props) {
           </Card>
 
           {/* Limits */}
-          <Card className="space-y-3 p-4">
-            <h3 className="text-sm font-medium">Limites</h3>
+          <Card className="space-y-3 p-5">
+            <h3 className="text-sm font-bold tracking-tight">Limites</h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="max_steps">Max steps (1–25)</Label>
@@ -579,9 +579,9 @@ export function AgentForm(props: Props) {
         {/* COLUMN 2 */}
         <div className="space-y-4">
           {/* Prompt */}
-          <Card className="space-y-2 p-4">
+          <Card className="space-y-2 p-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">System prompt</h3>
+              <h3 className="text-sm font-bold tracking-tight">System prompt</h3>
               <TokenCounter
                 text={form.system_prompt}
                 contextWindow={modelMeta?.context_window ?? null}
@@ -604,8 +604,8 @@ export function AgentForm(props: Props) {
           </Card>
 
           {/* Tools */}
-          <Card className="space-y-2 p-4">
-            <h3 className="text-sm font-medium">Tools (catálogo MCP)</h3>
+          <Card className="space-y-2 p-5">
+            <h3 className="text-sm font-bold tracking-tight">Tools (catálogo MCP)</h3>
             <ToolPicker
               value={form.tool_ids}
               onChange={(ids) => patch({ tool_ids: ids })}
@@ -617,8 +617,8 @@ export function AgentForm(props: Props) {
           </Card>
 
           {/* Triggers */}
-          <Card className="space-y-2 p-4">
-            <h3 className="text-sm font-medium">Gatilhos</h3>
+          <Card className="space-y-2 p-5">
+            <h3 className="text-sm font-bold tracking-tight">Gatilhos</h3>
             <TriggerEditor
               value={form.trigger_config}
               onChange={(v) => patch({ trigger_config: v })}
@@ -627,8 +627,8 @@ export function AgentForm(props: Props) {
           </Card>
 
           {/* Handoff */}
-          <Card className="space-y-3 p-4">
-            <h3 className="text-sm font-medium">Handoff humano</h3>
+          <Card className="space-y-3 p-5">
+            <h3 className="text-sm font-bold tracking-tight">Handoff humano</h3>
             <div className="flex items-center gap-2">
               <Switch
                 id="handoff_tool_enabled"

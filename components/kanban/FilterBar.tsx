@@ -62,7 +62,7 @@ export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
   const tagLabel = filters.tag ?? "Tag: todas";
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-3 shadow-sm">
       <Input
         type="search"
         placeholder="Buscar por título…"
@@ -127,8 +127,8 @@ export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
 
       <label
         className={cn(
-          "flex cursor-pointer select-none items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm",
-          filters.overdueOnly && "border-accent bg-accent/10",
+          "flex cursor-pointer select-none items-center gap-2 rounded-full border border-border px-3.5 py-1.5 text-sm text-text-muted transition-colors",
+          filters.overdueOnly && "border-accent bg-accent-soft text-accent",
         )}
       >
         <input

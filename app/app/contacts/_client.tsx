@@ -56,8 +56,8 @@ export function ContactsListClient() {
     <div className="space-y-4 p-6">
       <header className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Contatos</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-2xl font-bold tracking-tight text-text">Contatos</h1>
+          <p className="text-sm text-text-subtle">
             Customer 360 — busque, filtre e gerencie contatos.
           </p>
         </div>
@@ -67,11 +67,11 @@ export function ContactsListClient() {
         </Button>
       </header>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface p-3 shadow-sm">
         <div className="relative">
           <MagnifyingGlass
             size={16}
-            className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-text-subtle"
             aria-hidden
           />
           <Input

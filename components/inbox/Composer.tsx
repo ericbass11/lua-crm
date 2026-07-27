@@ -60,20 +60,20 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   if (blockedReason) {
     return (
-      <div className="border-t border-border bg-muted/40 px-4 py-3 text-center text-xs text-muted-foreground">
+      <div className="border-t border-border bg-surface-elevated px-4 py-3 text-center text-xs text-text-muted">
         {blockedReason}
       </div>
     );
   }
 
   return (
-    <div className="border-t border-border bg-background px-3 py-2">
+    <div className="border-t border-border bg-surface px-3 py-2">
       <div className="flex items-end gap-2">
         <Button
           type="button"
           size="icon"
           variant="ghost"
-          className="h-9 w-9 shrink-0"
+          className="h-9 w-9 shrink-0 rounded-full"
           aria-label="Anexar"
           disabled
           title="Em breve"
@@ -91,8 +91,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           rows={1}
           placeholder="Escreva uma mensagem… (Enter envia, Shift+Enter quebra linha)"
           className={cn(
-            "min-h-9 max-h-40 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-            "placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring",
+            "min-h-9 max-h-40 flex-1 resize-none rounded-xl border border-border bg-surface-elevated px-3 py-2 text-sm text-text",
+            "placeholder:text-text-subtle focus:outline-none focus:ring-1 focus:ring-ring",
           )}
           disabled={isDisabled}
           aria-label="Mensagem"
@@ -100,7 +100,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         <Button
           type="button"
           size="icon"
-          className="h-9 w-9 shrink-0"
+          className="h-9 w-9 shrink-0 rounded-full"
           onClick={handleSubmit}
           disabled={isDisabled || !text.trim()}
           aria-label="Enviar"

@@ -118,7 +118,7 @@ export function TagsClient() {
               placeholder="ex: cliente perguntou preço, valores ou pediu orçamento"
               maxLength={300}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-text-muted">
               Este texto vai direto para a IA — quanto mais específico, melhor a precisão.
             </p>
           </div>
@@ -156,9 +156,9 @@ export function TagsClient() {
           Tags cadastradas {tags ? `(${tags.length})` : ""}
         </h2>
         {!tags ? (
-          <p className="text-sm text-muted-foreground">Carregando…</p>
+          <p className="text-sm text-text-muted">Carregando…</p>
         ) : tags.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-muted">
             Nenhuma tag ainda. Crie a primeira ao lado — a IA passa a usá-la imediatamente.
           </p>
         ) : (
@@ -174,7 +174,7 @@ export function TagsClient() {
                     {t.name}
                   </Badge>
                   {t.description && (
-                    <p className="mt-1 text-xs text-muted-foreground">{t.description}</p>
+                    <p className="mt-1 text-xs text-text-muted">{t.description}</p>
                   )}
                 </div>
                 <Button

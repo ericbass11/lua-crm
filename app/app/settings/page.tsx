@@ -13,8 +13,8 @@ export default async function SettingsHubPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
+        <p className="text-sm text-text-muted">
           Conta, organização, IA, canais e conformidade — tudo em um só lugar.
         </p>
       </header>

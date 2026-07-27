@@ -113,21 +113,21 @@ export function GoogleCalendarClient({ initialData }: { initialData: CalendarInt
         </div>
         <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-muted-foreground">Agenda</dt>
+            <dt className="text-text-muted">Agenda</dt>
             <dd className="font-medium">{existing.calendar_id}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Robô (Service Account)</dt>
+            <dt className="text-text-muted">Robô (Service Account)</dt>
             <dd className="break-all font-medium">{existing.service_account_email}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Fuso / duração da call</dt>
+            <dt className="text-text-muted">Fuso / duração da call</dt>
             <dd className="font-medium">
               {existing.timezone} · {existing.slot_minutes} min
             </dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Atendimento</dt>
+            <dt className="text-text-muted">Atendimento</dt>
             <dd className="font-medium">
               {existing.business_hours.days.map((d) => DAY_LABELS[d]).join(", ")} ·{" "}
               {existing.business_hours.start}–{existing.business_hours.end}
@@ -140,7 +140,7 @@ export function GoogleCalendarClient({ initialData }: { initialData: CalendarInt
           </p>
         ) : null}
         {!validated && !existing.validation_error ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-text-muted">
             A validação roda em segundo plano — recarregue a página em alguns segundos.
           </p>
         ) : null}
@@ -157,7 +157,7 @@ export function GoogleCalendarClient({ initialData }: { initialData: CalendarInt
     <div className="grid max-w-5xl grid-cols-1 gap-4 lg:grid-cols-2">
       <Card className="space-y-3 p-5 text-sm">
         <h2 className="text-base font-semibold">Como conectar (5 min)</h2>
-        <ol className="list-decimal space-y-2 pl-5 text-muted-foreground">
+        <ol className="list-decimal space-y-2 pl-5 text-text-muted">
           <li>
             Acesse{" "}
             <a
@@ -214,7 +214,7 @@ export function GoogleCalendarClient({ initialData }: { initialData: CalendarInt
               className="font-mono text-xs"
               required
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-text-muted">
               Cifrada antes de gravar (AES-GCM); nunca é exibida de volta.
             </p>
           </div>
@@ -228,7 +228,7 @@ export function GoogleCalendarClient({ initialData }: { initialData: CalendarInt
               placeholder="seuemail@gmail.com"
               required
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-text-muted">
               O e-mail da agenda compartilhada com o robô (passo 5 e 6).
             </p>
           </div>

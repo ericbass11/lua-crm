@@ -158,7 +158,7 @@ export function TenantForm({ initial }: Props) {
             onChange={(e) => setReasonsText(e.target.value)}
             placeholder="ex: Sem orçamento, Concorrente"
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-text-muted">
             Adicionados ao set padrão. Cada pipeline pode ter seus próprios motivos.
           </p>
         </div>

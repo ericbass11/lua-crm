@@ -16,8 +16,8 @@ export default async function ApiTokensPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">API Tokens</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight">API Tokens</h1>
+        <p className="text-sm text-text-muted">
           Tokens server-to-server. Plaintext exibido <strong>uma única vez</strong> na criação.
         </p>
       </header>

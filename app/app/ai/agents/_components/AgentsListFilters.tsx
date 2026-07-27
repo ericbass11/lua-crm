@@ -48,7 +48,7 @@ export function AgentsListFilters({
           <SelectItem value="archived">Arquivado</SelectItem>
         </SelectContent>
       </Select>
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+      <label className="flex items-center gap-2 text-xs text-text-muted">
         <input
           type="checkbox"
           checked={showArchived}

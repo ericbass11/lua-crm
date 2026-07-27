@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Button — Sage design system.
+ * Button — Indigo design system (Buzzy CRM). Primary/icon = pill.
  * Variants:
  *   - primary (default): accent fill, branded CTA
  *   - secondary: surface-elevated com border, ação neutra
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 const buttonVariants = cva(
   [
     "inline-flex items-center justify-center gap-2 whitespace-nowrap",
-    "rounded-sm font-medium",
+    "rounded-full font-medium",
     "transition-[background-color,border-color,color,box-shadow,transform]",
     "duration-fast ease-out",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
@@ -30,9 +30,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-sm",
         default:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-sm",
         secondary:
           "bg-surface-elevated text-text border border-border hover:border-accent hover:text-accent",
         outline:

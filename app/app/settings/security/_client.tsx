@@ -43,7 +43,7 @@ export function SecurityClient({ mfaEnrolled }: { mfaEnrolled: boolean }) {
     <div className="flex flex-col gap-4">
       <Card className="space-y-3 p-6">
         <h2 className="text-sm font-semibold">Códigos de recuperação</h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Use se perder acesso ao autenticador. Cada código é de uso único.
         </p>
         {codes ? (
@@ -58,7 +58,7 @@ export function SecurityClient({ mfaEnrolled }: { mfaEnrolled: boolean }) {
           </Button>
         )}
         {!mfaEnrolled && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-text-muted">
             Habilite MFA antes de gerar códigos.
           </p>
         )}
@@ -66,7 +66,7 @@ export function SecurityClient({ mfaEnrolled }: { mfaEnrolled: boolean }) {
 
       <Card className="space-y-3 p-6">
         <h2 className="text-sm font-semibold">Sessões ativas</h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-text-muted">
           Listagem de sessões — em breve. Por enquanto, deslogue todos os dispositivos:
         </p>
         <Button
