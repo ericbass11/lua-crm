@@ -4,24 +4,21 @@
  *
  * Só funciona se o caller for o atual `assigned_to_user_id` (filtro no
  * UPDATE). RLS adiciona isolamento de tenant.
+ *
+ * G3-01: a mudança de dono acontece via rpc `fn_conversation_assign`
+ * (migration 0031) — UPDATE condicional + evento `reason='release'` em
+ * `conversation_assignment_events` na MESMA transação.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import type { Conversation } from "@/lib/types/messaging";
 
 export const dynamic = "force-dynamic";
-
-const SELECT_COLS = `
-  id, organization_id, contact_id, channel_session_id, channel, status,
-  status_changed_at, assigned_to_user_id, assigned_at, last_inbound_at,
-  last_outbound_at, last_message_at, last_message_preview,
-  unread_count_for_assignee, is_group, group_chat_id, metadata,
-  created_at, updated_at
-`;
 
 interface RouteCtx {
   params: Promise<{ id: string }>;
@@ -32,36 +29,30 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const { id } = await ctx.params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
+  // spec 13 §4: escrita é agent+ (viewer é read-only).
+  const authz = await requireRole("agent", { requestId, resource: "conversations" });
+  if (!authz.ok) return authz.response;
+  const user = authz.user;
 
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("conversations")
-    .update({
-      assigned_to_user_id: null,
-      assigned_at: null,
-      status: "open",
-      status_changed_at: now,
-    })
-    .eq("id", id)
-    .eq("assigned_to_user_id", user.id)
-    .select(SELECT_COLS)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("fn_conversation_assign", {
+    p_organization_id: authz.org.orgId,
+    p_conversation_id: id,
+    // Release: volta à fila. A função aceita null (types gerados não expõem a nulabilidade do arg).
+    p_to_user_id: null as unknown as string,
+    p_reason: "release",
+    p_expected_assignee: user.id,
+    p_enforce_expected: true,
+  });
 
   if (error) {
     return fail("internal_error", error.message, 500, { requestId });
   }
-  if (!data) {
+  const row = data?.[0];
+  if (!row) {
     return fail("state_conflict", "Você não está atribuído a essa conversa.", 409, { requestId });
   }
 
-  const conv = data as unknown as Conversation;
+  const conv = row as unknown as Conversation;
 
   await audit({
     action: "conversation.released",

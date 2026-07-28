@@ -4,14 +4,27 @@ import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
+import { buildCardInput } from "@/lib/kanban/card-state";
 import { KanbanCard } from "./KanbanCard";
 
 interface StageColumnProps {
   stage: Stage;
   leads: Lead[];
   pipelineId: string;
+  /** owner_user_id → nome, resolvido no board. O dono agente vem no lead. */
+  ownerNames?: Map<string, string | null>;
+  /** ids que o radar classificou como esfriando (fonte única, não recalculada). */
+  coolingIds?: Set<string>;
+  /** Propostas de retomada vivas, por lead. */
+  reactivations?: Map<string, { proposalId: string; expiresAt: string }>;
+  /** `settings.canonical_tags` do pipeline — a única tag que fica no card. */
+  canonicalTags?: string[];
   selectedLeadIds?: Set<string>;
+  /** leadId → quantos eventos remotos já chegaram (muda = pulsa de novo). */
+  pulses?: Map<string, number>;
   onSelect?: (leadId: string, additive: boolean) => void;
+  /** Abrir o dossiê — atravessa o board até o card, como `pulses`. */
+  onOpen?: (leadId: string) => void;
 }
 
 function formatBRL(cents: number): string {
@@ -30,8 +43,14 @@ export function StageColumn({
   stage,
   leads,
   pipelineId,
+  ownerNames,
+  coolingIds,
+  reactivations,
+  canonicalTags,
   selectedLeadIds,
+  pulses,
   onSelect,
+  onOpen,
 }: StageColumnProps) {
   const totalCents = leads.reduce((sum, l) => sum + (l.value_cents ?? 0), 0);
   const accentStyle: CSSProperties | undefined = stage.color
@@ -76,11 +95,20 @@ export function StageColumn({
             {leads.map((lead, idx) => (
               <KanbanCard
                 key={lead.id}
+                card={buildCardInput(lead, {
+                  stageName: stage.name,
+                  ownerNames,
+                  coolingIds,
+                  reactivations,
+                  canonicalTags,
+                })}
                 lead={lead}
                 index={idx}
                 pipelineId={pipelineId}
                 isSelected={selectedLeadIds?.has(lead.id)}
+                pulseCount={pulses?.get(lead.id) ?? 0}
                 onSelect={onSelect}
+                onOpen={onOpen}
               />
             ))}
             {provided.placeholder}

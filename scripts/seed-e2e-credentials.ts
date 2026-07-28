@@ -1,6 +1,8 @@
 /**
- * Seed E2E test credentials: 1 org + 3 users (admin, manager, agent) + 1 ai_agents default.
- * Idempotent: re-runs upsert by email/org name.
+ * Seed E2E test credentials: 1 org + 4 users (admin, manager, agent, viewer) + 1 ai_agents default.
+ * Idempotent: re-runs upsert by email/org name. Também garante um factor TOTP
+ * verified no admin com secret CONHECIDO (gravado em .e2e-creds.json) para o
+ * Playwright passar o challenge MFA — MFA do admin nunca é desabilitado.
  *
  * Output: .e2e-creds.json (gitignored) com URLs e creds para Playwright/curl.
  *
@@ -10,6 +12,8 @@
 import { createClient } from "@supabase/supabase-js";
 import * as fs from "node:fs";
 import * as path from "node:path";
+
+import { generateTotp } from "../tests/e2e/utils/totp";
 
 // Carrega .env.local manualmente (sem next/env aqui).
 const envFile = fs.readFileSync(path.join(process.cwd(), ".env.local"), "utf8");
@@ -33,10 +37,15 @@ const ORG_NAME = "E2E Test Org";
 const ORG_SLUG = "e2e-test-org";
 const PASSWORD = "E2E!Test1234";
 
-const USERS: Array<{ email: string; role: "admin" | "manager" | "agent"; full_name: string }> = [
-  { email: "e2e-admin@lua-crm.test", role: "admin", full_name: "E2E Admin" },
-  { email: "e2e-manager@lua-crm.test", role: "manager", full_name: "E2E Manager" },
-  { email: "e2e-agent@lua-crm.test", role: "agent", full_name: "E2E Agent" },
+const USERS: Array<{
+  email: string;
+  role: "admin" | "manager" | "agent" | "viewer";
+  full_name: string;
+}> = [
+  { email: "e2e-admin@deskcomm.test", role: "admin", full_name: "E2E Admin" },
+  { email: "e2e-manager@deskcomm.test", role: "manager", full_name: "E2E Manager" },
+  { email: "e2e-agent@deskcomm.test", role: "agent", full_name: "E2E Agent" },
+  { email: "e2e-viewer@deskcomm.test", role: "viewer", full_name: "E2E Viewer" },
 ];
 
 async function ensureOrg(): Promise<string> {
@@ -154,6 +163,80 @@ async function ensureAgent(orgId: string): Promise<string> {
   return id;
 }
 
+interface AdminTotp {
+  factor_id: string;
+  secret: string;
+}
+
+/**
+ * Garante um factor TOTP verified com secret conhecido no admin (MFA é
+ * mandatório pra role admin; o e2e precisa do secret pra responder o challenge).
+ * Idempotente: reutiliza o factor gravado em .e2e-creds.json se ele ainda
+ * existir verified; senão rotaciona (delete + enroll + verify). O admin nunca
+ * fica sem MFA no estado final.
+ */
+async function ensureAdminTotp(adminUserId: string, adminEmail: string): Promise<AdminTotp> {
+  let prev: AdminTotp | null = null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(".e2e-creds.json", "utf8")) as {
+      admin_totp?: AdminTotp;
+    };
+    if (raw.admin_totp?.factor_id && raw.admin_totp.secret) prev = raw.admin_totp;
+  } catch {
+    prev = null; // sem creds anteriores — enroll do zero
+  }
+
+  const { data: listed, error: listErr } = await admin.auth.admin.mfa.listFactors({
+    userId: adminUserId,
+  });
+  if (listErr) throw new Error("listFactors: " + listErr.message);
+  const factors = listed?.factors ?? [];
+
+  if (prev && factors.some((f) => f.id === prev!.factor_id && f.status === "verified")) {
+    console.log(`[seed] admin TOTP factor reused: ${prev.factor_id}`);
+    return prev;
+  }
+
+  // Rotaciona: remove factors TOTP existentes (secret desconhecido) e re-enrolla.
+  for (const f of factors) {
+    const { error } = await admin.auth.admin.mfa.deleteFactor({ id: f.id, userId: adminUserId });
+    if (error) throw new Error(`deleteFactor ${f.id}: ${error.message}`);
+    console.log(`[seed] admin TOTP factor removed (rotating): ${f.id}`);
+  }
+
+  const anon = createClient(SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { error: signInErr } = await anon.auth.signInWithPassword({
+    email: adminEmail,
+    password: PASSWORD,
+  });
+  if (signInErr) throw new Error("admin signIn for TOTP enroll: " + signInErr.message);
+
+  const { data: enrolled, error: enrollErr } = await anon.auth.mfa.enroll({
+    factorType: "totp",
+    friendlyName: "e2e-seed",
+  });
+  if (enrollErr || !enrolled) throw new Error("mfa.enroll: " + enrollErr?.message);
+  const secret = enrolled.totp.secret;
+
+  const { data: challenge, error: chErr } = await anon.auth.mfa.challenge({
+    factorId: enrolled.id,
+  });
+  if (chErr || !challenge) throw new Error("mfa.challenge: " + chErr?.message);
+
+  const { error: verifyErr } = await anon.auth.mfa.verify({
+    factorId: enrolled.id,
+    challengeId: challenge.id,
+    code: generateTotp(secret),
+  });
+  if (verifyErr) throw new Error("mfa.verify: " + verifyErr.message);
+  await anon.auth.signOut();
+
+  console.log(`[seed] admin TOTP factor enrolled: ${enrolled.id}`);
+  return { factor_id: enrolled.id, secret };
+}
+
 async function main(): Promise<void> {
   const orgId = await ensureOrg();
 
@@ -165,6 +248,7 @@ async function main(): Promise<void> {
   }
 
   const agentId = await ensureAgent(orgId);
+  const adminTotp = await ensureAdminTotp(users.admin!.id, users.admin!.email);
 
   const creds = {
     org_id: orgId,
@@ -172,6 +256,7 @@ async function main(): Promise<void> {
     org_name: ORG_NAME,
     password: PASSWORD,
     users,
+    admin_totp: adminTotp,
     default_agent_id: agentId,
     app_url: env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     supabase_url: SUPABASE_URL,

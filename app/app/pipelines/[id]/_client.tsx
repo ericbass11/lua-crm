@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useBoard } from "@/hooks/kanban/useBoard";
 
 function formatError(err: unknown): string {
@@ -25,7 +26,7 @@ import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { Button } from "@/components/ui/button";
 import { Plus } from "@/lib/ui/icons";
 import type { LeadFilters } from "@/lib/kanban/filters";
-import { applyFilters } from "@/lib/kanban/filters";
+import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
 
 export function PipelinePageClient({
   pipelineId,
@@ -34,15 +35,45 @@ export function PipelinePageClient({
   pipelineId: string;
   initialName: string;
 }) {
-  const { data, isLoading, error } = useBoard(pipelineId);
-  const [filters, setFilters] = useState<LeadFilters>({ status: "all" });
+  const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(pipelineId);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
+  const setFilters = useCallback(
+    (next: LeadFilters) => {
+      const qs = filtersToParams(next);
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname],
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
 
   const filteredLeads = data ? applyFilters(data.leads, filters) : [];
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div
+      className="flex h-full flex-col gap-4"
+      // OBSERVÁVEL de propósito, e é a razão de existir desta linha: "a
+      // assinatura morreu" e "nada aconteceu" produzem o MESMO silêncio na
+      // tela, e sem este valor nem o produto nem o teste conseguem separar as
+      // duas famílias de causa. Com ele, quem investiga olha DURANTE a rodada
+      // que falha: `subscribed` manda procurar a montante (entrega, filtro, ou
+      // o evento nunca saiu); `channel_error`/`timed_out`/`closed` já é a
+      // resposta.
+      //
+      // Ainda NÃO religa — religar é desenho e merece bloco próprio. Isto aqui
+      // é só parar de descartar o que já era calculado.
+      data-realtime-status={realtimeStatus.toLowerCase()}
+      // A rede de segurança fica OBSERVÁVEL pelo mesmo motivo do status do
+      // canal: "a entrega morreu" e "nada aconteceu" têm a mesma aparência, que
+      // é silêncio. Aqui o número de divergências é a diferença entre os dois —
+      // e é o sinal que faltava para uma verificação poder APROVAR, e não só
+      // reprovar.
+      data-refetch-divergencias={seguranca.divergencias}
+      data-refetch-em={seguranca.ultimaVerificacao ?? ""}
+    >
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">
           {data?.pipeline.name ?? initialName}
@@ -74,6 +105,7 @@ export function PipelinePageClient({
           pipelineId={pipelineId}
           stages={data.stages}
           leads={filteredLeads}
+          pulses={pulses}
           pipeline={data.pipeline}
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}

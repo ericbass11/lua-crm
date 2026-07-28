@@ -15,8 +15,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { agentCreateSchema } from "@/lib/ai/guardrails-schema";
@@ -28,7 +27,7 @@ const AGENT_COLUMNS =
   "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, priority, published_version_id, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at";
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, status, published_at, superseded_at, created_at, created_by";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, followup, status, published_at, superseded_at, created_at, created_by";
 
 // ---------------------------------------------------------------------------
 // GET — list
@@ -37,16 +36,9 @@ const VERSION_COLUMNS =
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden", "Nenhuma organização ativa.", 403, { requestId });
-
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
-    return fail("forbidden_role", "Permissão insuficiente. Requer role >= manager.", 403, {
-      requestId,
-    });
-  }
+  const authz = await requireRole("manager", { requestId, resource: "ai_agents" });
+  if (!authz.ok) return authz.response;
+  const { org: activeOrg } = authz;
 
   const includeArchived = req.nextUrl.searchParams.get("include_archived") === "true";
 
@@ -72,16 +64,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden", "Nenhuma organização ativa.", 403, { requestId });
-
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Permissão insuficiente. Requer role admin.", 403, {
-      requestId,
-    });
-  }
+  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   let rawBody: unknown;
   try {
@@ -150,6 +135,8 @@ export async function POST(req: NextRequest): Promise<Response> {
         history_token_window: v.history_token_window,
         handoff_keywords: v.handoff_keywords,
         handoff_tool_enabled: v.handoff_tool_enabled,
+        cases_enabled: v.cases_enabled,
+        followup: v.followup,
         status: "draft",
         created_by: authUser.id,
       })

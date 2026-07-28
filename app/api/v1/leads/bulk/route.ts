@@ -10,11 +10,16 @@
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
-import { audit } from "@/lib/audit";
+import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
+import { resolveOwnerPatch } from "@/lib/leads/owner-patch";
+import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
+import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { bulkLeadActionSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -24,13 +29,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
+  // spec 13 §4: escrita é agent+ (viewer é read-only).
+  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  if (!authz.ok) return authz.response;
+  const user = authz.user;
 
   let input;
   try {
@@ -49,11 +51,60 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("bulk_too_large", `Máximo ${MAX_BULK} leads por bulk.`, 422, { requestId });
   }
 
-  // Resolve organization_id from the first lead the caller can see (RLS-scoped).
-  // Used for the aggregate event emission.
+  // G3-04: assign é reatribuição de dono em lote → piso ≥manager (spec 04 §6.5,
+  // INB-03). Gate por-action: move/tag/delete continuam agent+ (piso acima);
+  // só o assign exige manager. Reusa o helper (nada de ROLE_RANK na mão).
+  if (input.action === "assign") {
+    const mgr = await requireRole("manager", { requestId, resource: "crm_leads" });
+    if (!mgr.ok) return mgr.response;
+
+    // Novo dono tem que ser membro ativo agent+ da MESMA org (org de fonte
+    // confiável = authz, nunca body). owner_user_id null = desatribuir (válido).
+    // A RLS de user_organizations só mostra o próprio membership a um manager,
+    // por isso o admin client filtrado pela org resolvida.
+    const ownerId = input.params.owner_user_id;
+    if (ownerId !== null) {
+      // INB-09 nota 1: fail-closed. A validação de membership só roda com service
+      // role (a RLS de user_organizations não mostra membership alheio a um
+      // manager). Sem service role NÃO se pode validar o dono → recusar em vez
+      // de atribuir um owner não-verificado. Desatribuir (owner null) segue livre.
+      if (!isServiceRoleConfigured()) {
+        return fail(
+          "owner_validation_unavailable",
+          "Não foi possível validar o responsável agora. Tente novamente em instantes.",
+          422,
+          { requestId },
+        );
+      }
+      const admin = createAdminClient();
+      const { data: member, error: memberErr } = await admin
+        .from("user_organizations")
+        .select("role")
+        .eq("organization_id", authz.org.orgId)
+        .eq("user_id", ownerId)
+        .is("revoked_at", null)
+        .maybeSingle();
+      if (memberErr) return fail("internal_error", memberErr.message, 500, { requestId });
+      if (!member || member.role === "viewer") {
+        return fail(
+          "invalid_owner",
+          "Responsável não é um atendente ativo desta organização.",
+          422,
+          { requestId },
+        );
+      }
+    }
+  }
+
+  // INB-09 nota 2: org de fonte confiável = org ativa do cookie (authz), NUNCA
+  // inferida do 1º lead. A RLS já escopa por org do membro, mas um ator em 2+
+  // orgs veria leads de ambas — o filtro explícito garante que o bulk só toca a
+  // org ativa (mesmo padrão do gate de owner acima).
+  const organizationId = authz.org.orgId;
   const { data: scoped } = await supabase
     .from("crm_leads")
-    .select("id, organization_id, tags")
+    .select("id, organization_id, tags, stage_id, pipeline_id")
+    .eq("organization_id", organizationId)
     .in("id", input.lead_ids);
 
   const visible = scoped ?? [];
@@ -67,7 +118,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
   const visibleIds = visible.map((r) => r.id);
-  const organizationId = first.organization_id as string;
 
   let updatedCount = 0;
   const nowIso = new Date().toISOString();
@@ -85,14 +135,105 @@ export async function POST(req: NextRequest): Promise<Response> {
         .select("id");
       if (error) return fail("internal_error", error.message, 500, { requestId });
       updatedCount = data?.length ?? 0;
+
+      // Per-lead lead.stage_changed so the automation engine (which only
+      // consumes per-entity events) fires for bulk moves too — mirrors
+      // moveLeadHandler's payload. Skip leads already at the target stage.
+      const movedIds = new Set((data ?? []).map((r) => r.id as string));
+
+      // Wave 3 (CORE 2): mover 30 cards de uma vez é 30 mudanças de estado —
+      // cada uma entra no barramento, senão o lote inteiro fica invisível na
+      // timeline e a operação em massa vira o buraco por onde a atividade some.
+      const nomesEstagio = new Map<string, string>();
+      const { data: stageRows } = await supabase
+        .from("crm_stages")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .in("id", [input.params.stage_id, ...visible.map((r) => r.stage_id as string)]);
+      for (const s of (stageRows ?? []) as Array<{ id: string; name: string }>) {
+        nomesEstagio.set(s.id, s.name);
+      }
+
+      await Promise.all(
+        visible
+          .filter((row) => movedIds.has(row.id) && row.stage_id !== input.params.stage_id)
+          .map(async (row) => {
+            const r = await emitLeadActivity(supabase, {
+              organizationId,
+              leadId: row.id as string,
+              type: "stage_changed",
+              sourceModule: "crm",
+              sourceId: row.id as string,
+              actor: { type: "user", id: user.id },
+              reason: stageChangeReason(
+                nomesEstagio.get(row.stage_id as string) ?? null,
+                nomesEstagio.get(input.params.stage_id) ?? null,
+              ),
+              payload: {
+                from_stage_id: row.stage_id,
+                to_stage_id: input.params.stage_id,
+                pipeline_id: row.pipeline_id,
+                bulk: true,
+              },
+            });
+            if (!r.ok) {
+              // O bulk é o pior caso dos três: N leads movidos, e uma falha de
+              // atividade some junto com as outras N-1 que deram certo. Sem o
+              // aviso, o buraco na timeline não tem nem tamanho conhecido.
+              await registraFalhaDeAtividade(supabase, {
+                organizationId: row.organization_id,
+                leadId: row.id,
+                tipo: "stage_changed",
+                origem: "leads/bulk",
+                erro: r.error,
+                requestId,
+              });
+            }
+          }),
+      );
+      await Promise.all(
+        visible
+          .filter((row) => movedIds.has(row.id) && row.stage_id !== input.params.stage_id)
+          .map((row) =>
+            supabase
+              .rpc("emit_event", {
+                p_event_type: "lead.stage_changed",
+                p_entity_kind: "crm_lead",
+                p_entity_id: row.id,
+                p_payload: {
+                  pipeline_id: row.pipeline_id,
+                  from_stage_id: row.stage_id,
+                  to_stage_id: input.params.stage_id,
+                },
+                p_metadata: { request_id: requestId, actor_user_id: user.id },
+                p_organization_id: organizationId,
+              })
+              .then(({ error: emitError }) => {
+                if (emitError) console.error("[lead.bulk_moved] emit_event failed", emitError.message);
+              }),
+          ),
+      );
       break;
     }
     case "assign": {
+      // 0070: o trio de posse vem do helper compartilhado. Escrever só
+      // owner_user_id aqui quebrava de dois jeitos: lote com algum lead de dono
+      // AGENTE estourava 23514 e derrubava a operação inteira; e lead sem dono
+      // ganhava dono sem owner_kind (drift silencioso).
+      const owner = resolveOwnerPatch({ owner_user_id: input.params.owner_user_id });
+      if (!owner.ok || !owner.patch) {
+        return fail(
+          "validation_failed",
+          "Um lead tem um dono: informe owner_user_id OU owner_agent_id.",
+          422,
+          { requestId },
+        );
+      }
       const patch: Record<string, unknown> = {
-        owner_user_id: input.params.owner_user_id,
+        ...owner.patch,
         updated_at: nowIso,
       };
-      if (input.params.owner_user_id !== null) {
+      if (owner.patch.owner_kind !== null) {
         patch.assigned_at = nowIso;
       }
       const { data, error } = await supabase
@@ -117,6 +258,24 @@ export async function POST(req: NextRequest): Promise<Response> {
           .eq("id", row.id);
         if (error) return fail("internal_error", error.message, 500, { requestId });
         updatedCount += 1;
+
+        // Per-lead lead.tag_added (only-when-added), same contract as
+        // updateLeadHandler, so the automation engine fires for bulk tags too.
+        const addedTags = add.filter((t) => !current.includes(t));
+        if (addedTags.length) {
+          await supabase
+            .rpc("emit_event", {
+              p_event_type: "lead.tag_added",
+              p_entity_kind: "crm_lead",
+              p_entity_id: row.id,
+              p_payload: { added_tags: addedTags, tags: next },
+              p_metadata: { request_id: requestId, actor_user_id: user.id },
+              p_organization_id: organizationId,
+            })
+            .then(({ error: emitError }) => {
+              if (emitError) console.error("[lead.bulk_tagged] emit_event failed", emitError.message);
+            });
+        }
       }
       break;
     }
@@ -160,8 +319,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       if (error) console.error("[lead.bulk] emit_event failed", error.message);
     });
 
+  // Assign audita com action agregada dedicada (spec 04 §6.5); as demais ações
+  // mantêm o code genérico. Uma única entrada por chamada, com a contagem.
   await audit({
-    action: "lead.bulk_action",
+    action: input.action === "assign" ? "leads.bulk_assigned" : "lead.bulk_action",
     actorUserId: user.id,
     organizationId,
     resourceType: "crm_lead",
@@ -170,7 +331,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     metadata: {
       action: input.action,
       lead_ids: visibleIds,
+      count: updatedCount,
       updated_count: updatedCount,
+      ...(input.action === "assign" ? { owner_user_id: input.params.owner_user_id } : {}),
       params: "params" in input ? input.params : {},
     },
   });

@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,8 @@ import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
 import { useClearHistory } from "@/hooks/inbox/useClearHistory";
+import { ReassignDialog } from "@/components/inbox/ReassignDialog";
+import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 
 interface Props {
@@ -29,10 +32,10 @@ export function ConversationHeader({ conversation }: Props) {
   const close = useCloseConversation();
   const clearHistory = useClearHistory();
   const canClearHistory = usePermission("settings.write");
+  const [reassignOpen, setReassignOpen] = useState(false);
 
   const c = conversation.contacts ?? null;
-  const displayName =
-    c?.display_name?.trim() || c?.name?.trim() || c?.phone_number || "Sem nome";
+  const displayName = c?.display_name?.trim() || c?.name?.trim() || c?.phone_number || "Sem nome";
   const phone = c?.phone_number ?? null;
   const status = conversation.status;
   const isMineAssigned = conversation.assigned_to_user_id === user.id;
@@ -90,6 +93,17 @@ export function ConversationHeader({ conversation }: Props) {
           </Button>
         )}
         {status !== "closed" && status !== "archived" && (
+          <Button size="sm" variant="outline" onClick={() => setReassignOpen(true)}>
+            Transferir
+          </Button>
+        )}
+        {status !== "closed" && status !== "archived" && (
+          <SnoozeButton
+            conversationId={conversation.id}
+            snoozeUntil={conversation.snooze_until ?? null}
+          />
+        )}
+        {status !== "closed" && status !== "archived" && (
           <Button
             size="sm"
             variant="outline"
@@ -131,6 +145,11 @@ export function ConversationHeader({ conversation }: Props) {
           </Button>
         )}
       </div>
+      <ReassignDialog
+        conversationId={conversation.id}
+        open={reassignOpen}
+        onOpenChange={setReassignOpen}
+      />
     </div>
   );
 }

@@ -6,17 +6,20 @@
 
 Criado por **Eric Souza**.
 
-[![Next.js 15](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org)
+**AI agents that answer, qualify and sell on WhatsApp — inside an open-source CRM running on your own server.**
+**No subscription, no gated features, your data stays yours. The open alternative to Kommo, Octadesk and Intercom.**
+
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript)](https://www.typescriptlang.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%2BAuth%2BStorage-3ecf8e?logo=supabase)](https://supabase.com)
 [![Tailwind](https://img.shields.io/badge/Tailwind-CSS-38bdf8?logo=tailwindcss)](https://tailwindcss.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[**📘 Setup Guide**](docs/SETUP.md) · [**🏗️ Arquitetura**](ARCHITECTURE.md) · [**🤝 Contribuir**](CONTRIBUTING.md) · [**📋 PRDs**](docs/prd/) · [**🗺️ Roadmap**](docs/stories/epics/MASTER.md)
+[**🧭 Vision**](VISION.md) · [**📘 Setup Guide**](docs/SETUP.md) · [**🏗️ Architecture**](ARCHITECTURE.md) · [**🤝 Contributing**](CONTRIBUTING.md) · [**📋 PRDs**](docs/prd/) · [**🗺️ Roadmap**](#%EF%B8%8F-roadmap)
 
 </div>
 
----
+## ✨ What is it
 
 > ### ☁️ Rode este CRM em produção com 1 comando
 >
@@ -27,75 +30,92 @@ Criado por **Eric Souza**.
 > **[👉 Assinar a VPS HostGator com desconto da parceria](https://www.hostgator.com.br/52708-141-3-52.html)** —
 > datacenter em São Paulo, ideal pro WhatsApp rodando 24/7. *(link de parceiro — assinar por ele apoia o projeto e sai mais barato)*
 
-## ✨ O que é
+The project was born as an e-commerce CRM — and the open-source community took it much further: today it runs in **clinics, real-estate agencies, info-product businesses, agencies, stores and service providers** — any business that sells over WhatsApp. The product followed that shift and became a **sales operating system**: AI agents with per-tenant RAG answer customers, qualify leads, move them through the pipeline, trigger automations and know when to hand off to a human — with the whole CRM exposed via **MCP** so agents can truly operate it. The full story is in [`VISION.md`](VISION.md).
 
 LUA CRM unifica **atendimento humano**, **chatbot com RAG por tenant**, **gestão de pedidos** e **pipeline de pós-venda** numa única plataforma. Canal primário: **WhatsApp via WAHA**. Multi-tenant desde o dia 1. LGPD nativa.
 
-> **Modo atual:** BPO interno (uma operadora atende N tenants).
-> **Modo futuro:** SaaS direto pra lojistas.
-
-### Diferenciais
-
-- 🤖 **IA operando o atendimento** com RAG por tenant — não é chatbot decorativo, é triagem real.
-- 🛒 **E-commerce-native** — vocabulário desenhado pro ciclo *Carrinho abandonado → Pago → Enviado → Entregue → Pós-venda*.
-- 🇧🇷 **LGPD by-design** — webhooks `customer/redact` e `customer/data_request` da Nuvemshop como contrato de primeira-classe; anonimização preferida sobre delete; audit append-only com retenção 5 anos.
-- 🔌 **MCP-ready** (Fase 2) — exporta capabilities pro ecossistema de agentes.
-- 🏢 **Multi-tenant de verdade** — RLS em toda tabela tenant-aware, teste de isolamento como gate de CI.
+- 🤖 **AI agents that operate the CRM** — per-tenant RAG, sentiment analysis, audited AI→human handoff, AI as a first-class assignee and per-org budget control. Not a decorative chatbot: the agent answers, qualifies and moves the funnel.
+- 🔁 **Self-improving agents** — resolved conversations become new RAG knowledge; handoffs mark where the agent falls short; metrics close the loop. Every month of operation makes the agent better, with a human gate where it matters.
+- 🧩 **Multi-niche by design** — configurable vocabulary per pipeline: a lead becomes a *Customer*, *Patient* or *Buyer*; "won" becomes *Paid*, *Booked* or *Closed*. The same core serves e-commerce (our birthplace, with native Nuvemshop integration), clinics, real estate or info-products.
+- 🔌 **MCP-ready** — internal MCP server for the built-in agents; a public contract for external agents is in the works. The CRM as infrastructure for any AI agent.
+- 💬 **WhatsApp-native via WAHA** — multi-number, anti-ban (throttle + jitter + time windows), media via Storage, STOP detection.
+- 👥 **Support governance** — real server-side RBAC, audited assignment/transfer, queue with position, automatic routing and per-role visibility scopes.
+- 🏢 **Multi-tenant + privacy by design (LGPD)** — RLS on every tenant-aware table with an isolation test as a CI gate; anonymization preferred over deletion; append-only audit log with 5-year retention.
+- 🖥️ **Truly self-hosted** — your data on your VPS; one-command install; no paid tier, no gated features.
 
 ---
 
-## 🚀 Quickstart (5 minutos pra ver rodando)
+> ### ☁️ Run this CRM in production with one command
+>
+> DeskcommCRM is developed in **partnership with HostGator**: the [`hostgator-setup-kit/`](hostgator-setup-kit/)
+> installs the full CRM (app + WAHA + database) on a VPS with a single command, and the
+> [production runbook](docs/runbooks/waha-hostgator.md) assumes that environment.
+>
+> **[👉 Get the HostGator VPS with the partnership discount](https://www.hostgator.com.br/52708-141-3-52.html)** —
+> São Paulo datacenter, ideal for WhatsApp running 24/7. *(partner link — subscribing through it supports the project and costs you less)*
+
+### 🔌 Webhooks & Automations
+
+Every tenant can create **capture sources**: a public endpoint (`/api/v1/webhooks/in/<token>`) that receives leads from landing pages, custom forms or tools like Zapier/n8n via POST (JSON or `application/x-www-form-urlencoded`) and drops them straight into the chosen pipeline/stage — no code, no per-tenant custom integration. On top of those sources (and the other CRM events — lead changed stage, got a tag, WhatsApp message arrived), tenants build **automations**: WHEN/IF/THEN rules that add tags, move leads, assign agents, send WhatsApp messages or notify external systems via outgoing webhooks.
+
+In the UI everything lives under **Webhooks** in the sidebar (visible only to `manager`/`admin` roles). Three tabs: **Receive data** (create a source, copy the ready-made endpoint/form, fire a test lead, see recent deliveries), **Automations** (build rules, which are always born paused until reviewed and enabled) and **Activity** (a timeline of each run, with per-action results and manual retry when an external webhook call fails).
+
+Under the hood, every event becomes a row in `event_log` — no database trigger ever makes an HTTP call. The `/api/v1/cron/event-log-drain` route drains the queue every minute. On Vercel that's a managed Cron Job; **on the HostGator self-host kit** (`hostgator-setup-kit/`), `install.sh`/`update.sh` automatically configures a `crontab` line that hits the route every minute with the `INTERNAL_SECRET` from `.env`.
+
+---
+
+## 🚀 Quickstart (see it running in 5 minutes)
 
 ```bash
 # 1. Clone
 git clone https://github.com/ericbass11/lua-crm.git
 cd lua-crm
 
-# 2. Node 20 + pnpm
-nvm use                    # ou instale Node 20+
+# 2. Node 22 + pnpm
+nvm use                    # or install Node 22+
 npm install -g pnpm
 pnpm install
 
 # 3. Env vars
 cp .env.example .env.local
-# Edite .env.local — guia completo em docs/SETUP.md
+# Edit .env.local — full guide in docs/SETUP.md
 
-# 4. WAHA local (opcional em dev sem WhatsApp)
+# 4. Local WAHA (optional in dev without WhatsApp)
 docker compose up -d
 
-# 5. Migrations Supabase
-supabase link --project-ref <seu-ref>
+# 5. Supabase migrations
+supabase link --project-ref <your-ref>
 supabase db push
 
-# 6. Sobe o app
+# 6. Run the app
 pnpm dev
 ```
 
 App: <http://localhost:3000> · Health check: <http://localhost:3000/api/v1/health>
 
-> 🆕 **Primeira vez? Não pula etapa.** [`docs/SETUP.md`](docs/SETUP.md) é o tutorial completo passo a passo de **todas as integrações** (Supabase, WAHA, Anthropic, Upstash, Sentry, Resend, Nuvemshop) — feito pra quem nunca configurou nada disso antes. ~60–90 min do zero ao app rodando.
+> 🆕 **First time? Don't skip steps.** [`docs/SETUP.md`](docs/SETUP.md) is the complete step-by-step tutorial for **every integration** (Supabase, WAHA, Anthropic, Upstash, Sentry, Resend, Nuvemshop) — written for people who have never configured any of this. ~60–90 min from zero to a running app. *(Docs are in Brazilian Portuguese; translations welcome!)*
 
 ---
 
 ## 🧱 Stack
 
-| Camada | Escolha | Por quê |
+| Layer | Choice | Why |
 |---|---|---|
-| **Frontend** | Next.js 15 App Router + TypeScript estrito | Server Components + Route Handlers no mesmo repo |
-| **Estilo** | Tailwind + shadcn/ui (`new-york`, neutral) | Customizável sem lock-in |
-| **DB** | Supabase (Postgres + RLS + `vector`) | Multi-tenant nativo, embedding pra RAG |
-| **Auth** | Supabase Auth via `@supabase/ssr` | Cookie SameSite=Strict, HttpOnly |
+| **Frontend** | Next.js 16 App Router (Turbopack) + React 19 + strict TypeScript 6 | Server Components + Route Handlers in one repo |
+| **Styling** | Tailwind + shadcn/ui (`new-york`, neutral) | Customizable without lock-in |
+| **DB** | Supabase (Postgres + RLS + `vector`) | Native multi-tenancy, embeddings for RAG |
+| **Auth** | Supabase Auth via `@supabase/ssr` | SameSite=Strict, HttpOnly cookies |
 | **Realtime** | Supabase Realtime | postgres_changes + broadcast |
-| **Storage** | Supabase Storage (URLs assinadas) | Bucket privado `whatsapp-media` |
-| **WhatsApp** | WAHA Plus (engine NOWEB) | Multi-tenant, retry, S3 |
-| **Filas** | `event_log` table + workers (cron) | Sem Inngest/Trigger no MVP |
-| **Rate limit** | Upstash Redis (sliding window) | Serverless, free tier suficiente |
-| **AI** | Vercel AI Gateway (Anthropic primário, OpenAI embeddings) | Fallback automático, ZDR |
-| **Validação** | Zod | Input externo, env, payloads |
-| **Observability** | Sentry (com `beforeSend` sanitizado) | Sem PII no breadcrumb |
-| **Hospedagem** | Vercel (app) + Hostgator VPS Turing/SP (WAHA) | Edge + dedicado pra WhatsApp; datacenter Brasil |
+| **Storage** | Supabase Storage (signed URLs) | Private `whatsapp-media` bucket |
+| **WhatsApp** | WAHA Plus (NOWEB engine) | Multi-tenant, retry, S3 |
+| **Queues** | `event_log` table + workers (cron) | No Inngest/Trigger in the MVP |
+| **Rate limit** | Upstash Redis (sliding window) | Serverless, free tier is enough |
+| **AI** | Vercel AI SDK v7 (Anthropic/Google/OpenAI providers v4) via AI Gateway | Automatic fallback, ZDR |
+| **Validation** | Zod | External input, env, payloads |
+| **Observability** | Sentry (sanitized `beforeSend`) | No PII in breadcrumbs |
+| **Hosting** | Vercel (app) + HostGator VPS Turing/SP (WAHA) | Edge + dedicated box for WhatsApp; Brazil datacenter |
 
-Detalhes: [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Details: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ---
 
@@ -124,68 +144,50 @@ lua-crm/
 ## 🧪 Testes
 
 ```bash
-pnpm typecheck     # tsc --noEmit (estrito)
+pnpm typecheck     # tsc --noEmit (strict)
 pnpm lint          # eslint next/core-web-vitals
-pnpm test:unit     # Vitest
-pnpm test:e2e      # Playwright (requer dev server)
+pnpm test:unit     # Vitest (does NOT include tests/invariants/**)
+pnpm test:db       # ephemeral Postgres + baseline install/update + invariants
+pnpm test:e2e      # Playwright (requires dev server)
 ```
 
-CI roda todos antes de merge. **Teste de isolamento RLS é gate obrigatório** — cria 2 tenants e verifica não-vazamento.
+CI runs `typecheck`, `lint` and `test:unit` on every PR. A second job — **`invariants`** — boots a clean Postgres, applies `supabase/baseline.sql` in install mode (`ON_ERROR_STOP=1`) and then in update mode (proving idempotency), and runs **364 invariant tests** across 56 files covering RBAC, assignment, visibility scoping, routing, follow-up, webhooks and automations.
+
+Among them is the **RLS isolation test**: it creates 2 organizations, simulates JWT claims through the same `auth.uid()` / `fn_user_org_ids()` path production policies use, and proves a user of org A sees **zero rows** of org B in `conversations`, `messages`, `contacts` and `crm_leads`. A control case first proves org B's rows actually exist in the database — without it, the test would pass against an empty table.
 
 ---
 
-## ⌨️ Atalhos de teclado
+## 📚 Documentation
 
-- `Tab` / `Shift+Tab` — navegação focável (login, formulários, kanban cards)
-- `Enter` — confirma ações primárias
-- `Esc` — fecha dialogs/sheets
-
-Documentação completa de keyboard shortcuts vem com EPIC-04 (kanban) e EPIC-03 (inbox).
-
----
-
-## 📚 Documentação
-
-| Doc | O que tem |
+| Doc | What's in it |
 |---|---|
-| [`docs/SETUP.md`](docs/SETUP.md) | **Setup completo passo a passo** de todas as integrações |
-| [`CLAUDE.md`](CLAUDE.md) | Convenções não-negociáveis (leitura obrigatória pra contribuir) |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Visão de 1 página da arquitetura |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Fluxo PR + epic-executor |
-| [`docs/prd/`](docs/prd/) | PRDs (master, platform, customer 360, WhatsApp, pipeline, IA-RAG, Nuvemshop) |
-| [`docs/specs/`](docs/specs/) | Specs técnicas detalhadas (schema SQL, payloads exatos) |
-| [`docs/business-rules/`](docs/business-rules/) | Regras de negócio fora do código |
-| [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER.md) | Plano de execução wave-by-wave |
-| [`docs/DEPLOY-CHECKLIST.md`](docs/DEPLOY-CHECKLIST.md) | Preflight pré-go-live |
-| [`docs/runbooks/waha-hostgator.md`](docs/runbooks/waha-hostgator.md) | Runbook completo de WAHA em produção (VPS Hostgator) |
+| [`VISION.md`](VISION.md) | **Vision & positioning** — what the project is, what it believes, where it's going |
+| [`docs/SETUP.md`](docs/SETUP.md) | **Complete step-by-step setup** for every integration |
+| [`docs/white-label.md`](docs/white-label.md) | **Installing for clients** — rebranding, one-install-per-client vs shared, reseller operations |
+| [`CLAUDE.md`](CLAUDE.md) | Non-negotiable conventions (required reading to contribute) |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | One-page architecture overview |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | PR flow |
+| [`docs/prd/`](docs/prd/) | PRDs (master, platform, customer 360, WhatsApp, pipeline, AI-RAG, Nuvemshop) |
+| [`docs/specs/`](docs/specs/) | Technical specs 01–13 (SQL schema, payloads, MCP, governance) |
+| [`docs/runbooks/waha-hostgator.md`](docs/runbooks/waha-hostgator.md) | Full production runbook for WAHA (HostGator VPS) |
+
+> Most docs are written in Brazilian Portuguese — our primary community. Translation contributions are very welcome.
 
 ---
 
-## 🤝 Contribuindo
+## 🤝 Contributing
 
-Esse projeto é open source pra comunidade. Toda contribuição é bem-vinda — desde fix de typo em doc até epic novo.
+This project is open source for the community. Every contribution is welcome — from doc typo fixes to new features.
 
-**Antes de abrir PR:**
+1. Read [`CLAUDE.md`](CLAUDE.md) (~5 min) — non-negotiable conventions (multi-tenancy, RLS, audit, privacy).
+2. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch flow, commits.
+3. Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-1. Leia [`CLAUDE.md`](CLAUDE.md) (~5 min) — convenções não-negociáveis (multi-tenancy, RLS, audit, LGPD).
-2. Leia [`CONTRIBUTING.md`](CONTRIBUTING.md) — fluxo de branches, commits, epic-executor.
-3. Identifique o epic em [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER.md).
-
-**Fluxo curto:**
-
-```bash
-git checkout -b feat/EPIC-XX-short-slug
-# implementa + testes
-pnpm typecheck && pnpm lint && pnpm test:unit
-git commit -m "feat(EPIC-XX): descrição"
-# abre PR
-```
-
-**Definition of Done:** typecheck zero, lint zero, testes relevantes verdes, RLS testada se toca tabela tenant-aware, audit log emitido em mutações, sem `console.log` esquecido. Detalhes em [`CLAUDE.md`](CLAUDE.md#definition-of-done).
+**Definition of Done:** zero typecheck errors, zero lint errors, relevant tests green, RLS tested if a tenant-aware table is touched, audit log emitted on mutations, versioned migration if the schema changes.
 
 ---
 
-## 🐛 Reportando bugs
+## 🐛 Reporting bugs
 
 Abra uma [issue](https://github.com/ericbass11/lua-crm/issues) com:
 - Versão do Node, pnpm e SO.
@@ -197,17 +199,31 @@ Pra **vulnerabilidades de segurança**, **NÃO abra issue pública**. Mande emai
 
 ---
 
-## 🗺️ Roadmap (alto nível)
+## 🗺️ Roadmap
 
-- ✅ **Fase 1 — MVP (8–12 semanas)**: Auth, multi-tenancy, inbox WhatsApp, kanban, customer 360, RAG, integração Nuvemshop, LGPD.
-- 🔜 **Fase 1.5 — Hardening (+4–8 semanas)**: observability, performance, anti-banimento avançado.
-- 🔜 **Fase 2 — Escala**: MCP público, identity probabilística, integrações VTEX/Shopify, modo SaaS direto.
+### ✅ Shipped
 
-Detalhe wave-by-wave: [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER.md).
+- **Foundation & platform** — auth (MFA for admins), multi-tenancy with RLS + isolation test, 4-role RBAC, append-only audit log, tenant onboarding.
+- **WhatsApp support** — real-time 3-pane inbox, multi-number WAHA connections, media via Storage, anti-ban (throttle + jitter + time windows), STOP detection.
+- **CRM & orders** — kanban with per-niche configurable vocabulary (fractional indexing), customer 360, contacts, tags, Nuvemshop integration for e-commerce.
+- **Native AI** — agents with per-tenant RAG (pgvector), sentiment analysis, AI→human handoff, per-org budget control, internal MCP server.
+- **Privacy (LGPD)** — export and redact via workers, cascading anonymization, audited consent.
+- **Self-host** — `hostgator-setup-kit` (app + WAHA + database with one command), self-healing `baseline.sql`, production runbook.
+- **Webhooks & automation** — capture sources + WHEN/IF/THEN rules + triggers for external systems.
+- **Support governance** — server-side RBAC across the API, audited assignment/transfer (AI as a first-class assignee), per-role visibility (RLS) + per-agent metrics, automatic routing with queue and management panel, and a governance contract for external AI agents ([`docs/specs/14`](docs/specs/14-contrato-governanca-agentes-externos.md)). Epic driven by 100+ invariants (G1–G6).
+- **Visible operation** — screens that let operators understand the agent: anti-ban hold reasons translated in the conversation, a notice center with severities, send-protection controls (window/pace/cap) and flywheel proposals applicable as a new version (human-gated).
+
+### 🔮 Next
+
+- **Public MCP** — CRM capabilities exposed to the agent ecosystem: plug in any agent and it operates Deskcomm.
+- **Self-improvement flywheel** — the resolved-conversation → knowledge → better-agent loop, measured and human-gated.
+- **Niche templates** — ready-made pipelines and vocabularies for clinics, real estate, info-products and services (e-commerce already shipped).
+- **Integrations** — VTEX and Shopify via the adapter pattern (Nuvemshop already shipped).
+- **Probabilistic identity** — contact unification across channels.
 
 ---
 
-## 💬 Comunidade
+## 💬 Community
 
 - **Discussões:** [GitHub Discussions](https://github.com/ericbass11/lua-crm/discussions) — pra perguntas, ideias, showcase.
 - **Issues:** [GitHub Issues](https://github.com/ericbass11/lua-crm/issues) — bugs e tasks.
@@ -215,18 +231,15 @@ Detalhe wave-by-wave: [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER
 
 ---
 
-## 📜 Licença
+## 📜 License
 
-Distribuído sob a licença **MIT** — veja [`LICENSE`](LICENSE). Você pode usar, modificar
-e distribuir livremente, inclusive comercialmente. O software é fornecido **"como está",
-sem garantias** (ver cláusula de isenção no `LICENSE`).
+Distributed under the **MIT** license — see [`LICENSE`](LICENSE). You may use, modify and distribute freely, including commercially. The software is provided **"as is", without warranties**.
 
 ---
 
-## 🛟 Suporte & responsabilidades (self-host)
+## 🛟 Support & responsibilities (self-host)
 
-Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestrutura**
-(VPS, banco Supabase e chave de IA próprios). Isso implica:
+This is a **self-hosted** project: each person runs the CRM on their **own infrastructure** (own VPS, Supabase database and AI key). That means:
 
 - **Suporte é comunitário e "as-is".** Dúvidas e bugs entram como
   [Issues](https://github.com/ericbass11/lua-crm/issues) ou
@@ -246,14 +259,11 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
 
 ---
 
-## 🙏 Agradecimentos
+## 🙏 Acknowledgements
 
-- **WAHA** ([devlikeapro](https://waha.devlikeapro.com/)) — engine WhatsApp.
-- **Supabase** — Postgres + Auth + Storage + Realtime numa stack só.
-- **Vercel** — hosting + AI Gateway.
-- **Anthropic** (Claude) — IA conversacional.
-- **shadcn/ui** — base de componentes.
-- Comunidade brasileira de e-commerce que validou as primeiras hipóteses.
+- **WAHA** ([devlikeapro](https://waha.devlikeapro.com/)) — WhatsApp engine.
+- **Supabase**, **Vercel**, **Anthropic** (Claude), **shadcn/ui**.
+- The community that took Deskcomm from e-commerce to clinics, real estate, info-products and beyond — you defined what this project is.
 
 ---
 
@@ -268,6 +278,14 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
 ## 📒 Melhorias desta instalação (changelog local — 2026-07)
 
 > Toda melhoria feita nesta instalação DEVE ser registrada aqui (regra do guardrail no CLAUDE.md).
+
+### Sincronização com o upstream DeskcommCRM (branch `sync/upstream-2026-07`)
+| Data | Mudança |
+|---|---|
+| 28/07 | **Merge do upstream `melgarafael/DeskcommCRM` (963 commits, divergência desde 10/07).** Este repo é um clone do DeskcommCRM com `origin` re-apontado; o merge trouxe os módulos que faltavam, com 914 arquivos novos limpos e 46 conflitos resolvidos à mão. **Módulos novos:** `lib/agent-engine` (harness de IA — guardrails, pacing, spinning, flywheel, golden-candidates) + `workers/agent-worker`; `lib/leads` + `/app/radar` (score com evidência e âncora, atividades no barramento, estado de risco, relógio do silêncio, reativação); `lib/automation` + `lib/webhooks` + `/app/webhooks` (regras de automação e fontes de webhook com segredo cifrado); `lib/routing` + `/app/metrics` (distribuição por atendente, disponibilidade, métricas); `lib/messaging/media` + composer/mídia do inbox + `/app/templates` (mídia multimodal, templates, notas, snooze); fluxos de follow-up (`/app/ai/followups`), casos humanos e memória da org; `lib/branding.ts` (marca por `.env`, sem rebuild); 49 migrations e 56 arquivos de invariante de banco. **Preservado nosso:** design system Indigo, Cliente Oculto, Google Calendar, notificações, `followup_settings`, hash chain de auditoria, `tag_definitions`, "Nova conversa", excluir conexão, limpar histórico e a marca LUA CRM (agora via `APP_NAME`). **Verificação:** `typecheck` zerado, `lint` sem erros, `build` ok, `test:unit` 1070/1072 (as 2 falhas não são do merge: uma é `execFileSync("npx")` que não roda no Windows, a outra é um invariante que já está vermelho no HEAD do upstream), `test:db` **verde** (install fresh + re-apply idempotente + 364 invariantes). |
+| 28/07 | **`event_log.status` de volta ao vocabulário canônico (migration 0085).** Colisão real entre as duas linhagens de schema: nossa 0028 havia **alargado** o `event_log_status_check` para aceitar `'processed'`; o upstream consertou o mesmo bug pelo outro lado (o dispatcher passou a gravar `'done'`) e criou um invariante que exige que `'processed'`/`'failed'` sejam **rejeitados**. Com o dispatcher agora vindo do upstream, nenhum escritor grava `'processed'` — a constraint volta a fechar. Forward-fix (a 0028 já está aplicada em produção), dados migrados antes da constraint (`processed`→`done`, `failed`→`dead`). |
+| 28/07 | **Crons que faltavam no compose self-host.** `routing-worker`, `attendant-heartbeat` e `risk-watcher` existiam como rota mas não eram agendados — no upstream quem os dispara é o `vercel.ts`, e o `docker-compose.prod.yml` (nosso caminho de deploy) ficou sem. Sem cron, roteamento e radar de risco seriam código morto. Agendados: routing-worker 1min, attendant-heartbeat 5min, risk-watcher 15min (cadência sugerida pelo próprio comentário de deploy da rota). O routing-worker é no-op enquanto `settings.routing.mode` é `manual` (default). |
+| 28/07 | **Correção do nome da var de engine do WAHA.** A entrada de 15/07 abaixo dizia "compose agora seta as duas vars"; o correto é **só** `WHATSAPP_DEFAULT_ENGINE` — `WAHA_DEFAULT_ENGINE` não existe no WAHA e o upstream tem um invariante (`tests/unit/waha-engine-config.test.ts`) que proíbe o nome errado. `.env.hostgator.example` atualizado junto. |
 
 ### Redesign visual — design system "Indigo" (branch `redesign/design-system`, em andamento)
 | Data | Mudança |

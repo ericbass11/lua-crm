@@ -12,7 +12,14 @@ import {
   getConversationHandler,
 } from "@/app/api/v1/conversations/_handler";
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
+import { getQueuePositions } from "@/lib/routing/queue";
+import { resolveUserNames } from "./_users";
 import type { McpToolDefinition } from "../types";
+
+/** Conversa está na fila (visível/atribuível) = sem dono ∧ status='open'. */
+function isInQueue(c: { assigned_to_user_id: string | null; status: string }): boolean {
+  return c.assigned_to_user_id === null && c.status === "open";
+}
 
 const listInputShape = {
   contact_id: z.string().uuid().optional(),
@@ -24,7 +31,8 @@ const listInputShape = {
 export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
   name: "crm_list_conversations",
   description:
-    "Lista conversas do CRM com filtros opcionais por contato e status. Retorna preview da ultima mensagem.",
+    "Lista conversas do CRM com filtros opcionais por contato e status. Retorna preview da ultima mensagem. " +
+    "Campos de governança por conversa: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome do atendente, sem email/telefone), tags[], e queue_position (posição 1-based na fila do inbox — só quando na fila, senão null).",
   inputSchema: listInputShape,
   category: "read",
   requiresRole: "agent",
@@ -47,6 +55,14 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
     if (input.contact_id) {
       conversations = conversations.filter((c) => c.contact_id === input.contact_id);
     }
+    // Nomes (dedupe) e posições de fila (1 query cada) — sem N+1 na listagem.
+    const names = await resolveUserNames(
+      ctx.supabase,
+      conversations.map((c) => c.assigned_to_user_id),
+    );
+    const queueMap = conversations.some(isInQueue)
+      ? await getQueuePositions(ctx.supabase, ctx.organizationId)
+      : new Map<string, number>();
     return {
       conversations: conversations.map((c) => ({
         id: c.id,
@@ -54,6 +70,12 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
         channel: c.channel,
         status: c.status,
         assigned_to_user_id: c.assigned_to_user_id,
+        assignee_kind: c.assignee_kind,
+        assigned_to_user_name: c.assigned_to_user_id
+          ? (names.get(c.assigned_to_user_id) ?? null)
+          : null,
+        tags: c.tags ?? [],
+        queue_position: queueMap.get(c.id) ?? null,
         last_message_preview: c.last_message_preview,
         last_message_at: c.last_message_at,
         unread_count: c.unread_count_for_assignee,
@@ -72,7 +94,8 @@ const getInputShape = {
 export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
   name: "crm_get_conversation",
   description:
-    "Retorna detalhes de uma conversa pelo UUID. Inclui status, atribuicao, contato, ultima atividade.",
+    "Retorna detalhes de uma conversa pelo UUID. Inclui status, atribuicao, contato, ultima atividade. " +
+    "Governança: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome, sem email/telefone), tags[], e queue_position (1-based na fila do inbox — null quando não está na fila).",
   inputSchema: getInputShape,
   category: "read",
   requiresRole: "agent",
@@ -87,6 +110,10 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
       },
       input.conversation_id,
     );
+    const names = await resolveUserNames(ctx.supabase, [conv.assigned_to_user_id]);
+    const queue_position = isInQueue(conv)
+      ? ((await getQueuePositions(ctx.supabase, ctx.organizationId)).get(conv.id) ?? null)
+      : null;
     return {
       id: conv.id,
       contact_id: conv.contact_id,
@@ -94,6 +121,12 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
       channel: conv.channel,
       status: conv.status,
       assigned_to_user_id: conv.assigned_to_user_id,
+      assignee_kind: conv.assignee_kind,
+      assigned_to_user_name: conv.assigned_to_user_id
+        ? (names.get(conv.assigned_to_user_id) ?? null)
+        : null,
+      tags: conv.tags ?? [],
+      queue_position,
       assigned_at: conv.assigned_at,
       last_inbound_at: conv.last_inbound_at,
       last_outbound_at: conv.last_outbound_at,

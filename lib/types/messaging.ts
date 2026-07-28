@@ -12,6 +12,7 @@ export interface Conversation {
   status: string;
   status_changed_at: string;
   assigned_to_user_id: string | null;
+  assignee_kind: string | null;
   assigned_at: string | null;
   last_inbound_at: string | null;
   last_outbound_at: string | null;
@@ -20,9 +21,9 @@ export interface Conversation {
   unread_count_for_assignee: number;
   is_group: boolean;
   group_chat_id: string | null;
+  tags: string[];
   metadata: Record<string, unknown>;
-  /** Tags do catálogo aplicadas (pela IA via crm_tag_conversation ou manualmente). */
-  tags?: string[];
+  snooze_until: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -51,6 +52,16 @@ export interface Message {
   delivered_at: string | null;
   read_at: string | null;
   metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+/** Nota interna de conversa (Onda 5.2) — nunca vai ao cliente, tabela separada de messages. */
+export interface Note {
+  id: string;
+  conversation_id: string;
+  body: string;
+  created_by_user_id: string | null;
+  created_by_name: string | null;
   created_at: string;
 }
 

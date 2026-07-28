@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { isMfaEnrolled, loadAuthUser, requiresMfa, resolveActiveOrg } from "@/lib/auth/server";
+import { DEFAULT_VISIBILITY_MODE, type VisibilityMode } from "@/lib/auth/types";
 import { AuthProvider } from "@/hooks/auth/AuthProvider";
 import { AppShell } from "./_components/AppShell";
 import { MfaEnrollGate } from "@/components/auth/MfaEnrollGate";
@@ -18,7 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await loadAuthUser();
   if (!user) redirect("/login");
 
-  const activeOrg = await resolveActiveOrg(user);
+  let activeOrg = await resolveActiveOrg(user);
 
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
@@ -26,11 +27,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const admin = createAdminClient();
     const { data: orgRow } = await admin
       .from("organizations")
-      .select("onboarded_at, status")
+      .select("onboarded_at, status, settings")
       .eq("id", activeOrg.orgId)
       .maybeSingle();
     if (orgRow && !orgRow.onboarded_at) redirect("/onboarding");
     if (orgRow?.status === "suspended") redirect("/account-suspended");
+    // G4-02: expõe visibility_mode ao client (inbox decide visões visíveis).
+    // Fonte confiável (admin client, org do cookie validado) — nunca do body.
+    const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)
+      ?.visibility_mode;
+    activeOrg = { ...activeOrg, visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE };
   }
 
   // Read sidebar collapsed state SSR to avoid flash.
@@ -62,12 +68,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const enrolled = await isMfaEnrolled();
-  const mustEnroll = requiresMfa(activeOrg?.role, user.is_platform_admin) && !enrolled;
+  const needsMfaGate = requiresMfa(activeOrg?.role, user.is_platform_admin);
+  const shell = <AppShell sidebarCollapsed={collapsed}>{children}</AppShell>;
 
   return (
     <AuthProvider user={user} activeOrg={activeOrg}>
       <ImpersonateBanner impersonating={impersonating} />
-      {mustEnroll ? <MfaEnrollGate /> : <AppShell sidebarCollapsed={collapsed}>{children}</AppShell>}
+      {needsMfaGate ? (
+        // Gate always mounted for MFA-required roles; it latches the blocking
+        // decision client-side so the enroll Server Action's revalidation
+        // can't tear down the recovery-codes screen mid-flow.
+        <MfaEnrollGate enrolled={enrolled}>{shell}</MfaEnrollGate>
+      ) : (
+        shell
+      )}
     </AuthProvider>
   );
 }

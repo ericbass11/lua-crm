@@ -13,6 +13,7 @@ import type {
   ListConversationsQuery,
   StartConversationInput,
   UpdateConversationStatusInput,
+  PatchConversationInput,
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
@@ -22,15 +23,15 @@ type SB = SupabaseClient;
 
 const SELECT_COLS = `
   id, organization_id, contact_id, channel_session_id, channel, status,
-  status_changed_at, assigned_to_user_id, assigned_at, last_inbound_at,
+  status_changed_at, assigned_to_user_id, assignee_kind, assigned_at, last_inbound_at,
   last_outbound_at, last_message_at, last_message_preview,
-  unread_count_for_assignee, is_group, group_chat_id, metadata, tags,
-  created_at, updated_at,
+  unread_count_for_assignee, is_group, group_chat_id, tags, metadata,
+  snooze_until, created_at, updated_at,
   contacts:contact_id (id, display_name, name, phone_number, is_anonymized, tags, is_blocked)
 `;
 
 interface CursorPayload {
-  last_message_at: string | null;
+  sort: string | null;
   id: string;
 }
 
@@ -40,9 +41,12 @@ function encodeCursor(p: CursorPayload): string {
 function decodeCursor(raw: string): CursorPayload | null {
   try {
     const json = Buffer.from(raw, "base64url").toString("utf8");
-    const parsed = JSON.parse(json) as CursorPayload;
+    const parsed = JSON.parse(json) as CursorPayload & { last_message_at?: string | null };
     if (typeof parsed.id !== "string") return null;
-    return parsed;
+    // `last_message_at` é o nome legado do campo de ordenação (cursores em voo
+    // durante deploy); `sort` é o genérico atual (default OU fila).
+    const sort = parsed.sort ?? parsed.last_message_at ?? null;
+    return { sort, id: parsed.id };
   } catch {
     return null;
   }
@@ -58,9 +62,11 @@ function actorAuditPayload(actor: Actor): {
   return {
     actorUserId: null,
     metadataActor: {
-      actor_type: "ai_agent",
+      actor_type: actor.type,
       actor_id: actor.id,
-      ...(actor.api_token_id ? { actor_api_token_id: actor.api_token_id } : {}),
+      ...(actor.type === "ai_agent" && actor.api_token_id
+        ? { actor_api_token_id: actor.api_token_id }
+        : {}),
     },
   };
 }
@@ -80,16 +86,25 @@ export async function listConversationsHandler(
   ctx: HandlerCtx,
   q: ListConversationsQuery,
 ): Promise<ListConversationsResult> {
+  // Fila (assigned_to=unassigned): ordena por TEMPO DE ESPERA — quem espera há
+  // mais tempo primeiro. `last_inbound_at` = última mensagem do cliente = "há
+  // quanto tempo aguarda resposta" (não `created_at`, que pode ser uma conversa
+  // antiga reaberta). Demais visões: por atividade recente (last_message_at desc).
+  const isQueue = q.assigned_to === "unassigned";
+  const sortCol = isQueue ? "last_inbound_at" : "last_message_at";
+  const asc = isQueue;
+
   let query = supabase
     .from("conversations")
     .select(SELECT_COLS)
     .eq("organization_id", ctx.organization_id)
-    .order("last_message_at", { ascending: false, nullsFirst: false })
-    .order("id", { ascending: false })
+    .order(sortCol, { ascending: asc, nullsFirst: false })
+    .order("id", { ascending: asc })
     .limit(q.limit + 1);
 
   if (q.status) query = query.eq("status", q.status);
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
+  if (q.tag) query = query.contains("tags", [q.tag]); // tags @> array[tag] (GIN)
 
   if (q.assigned_to === "me") {
     if (ctx.actor.type !== "user") {
@@ -118,12 +133,15 @@ export async function listConversationsHandler(
     if (!c) {
       throw new ApiError(400, "invalid_cursor", undefined, ctx.requestId, "Cursor inválido.");
     }
-    if (c.last_message_at) {
+    const op = asc ? "gt" : "lt";
+    if (c.sort) {
       query = query.or(
-        `last_message_at.lt.${c.last_message_at},and(last_message_at.eq.${c.last_message_at},id.lt.${c.id})`,
+        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`,
       );
     } else {
-      query = query.is("last_message_at", null).lt("id", c.id);
+      // Página já na região de sort NULL (nulls last): pagina só por id.
+      query = query.is(sortCol, null);
+      query = asc ? query.gt("id", c.id) : query.lt("id", c.id);
     }
   }
 
@@ -138,7 +156,7 @@ export async function listConversationsHandler(
   const last = page[page.length - 1];
   const cursor =
     hasMore && last
-      ? encodeCursor({ last_message_at: last.last_message_at, id: last.id })
+      ? encodeCursor({ sort: (last[sortCol] as string | null) ?? null, id: last.id })
       : null;
 
   return { conversations: page, cursor, has_more: hasMore };
@@ -173,26 +191,33 @@ export async function getConversationHandler(
 // update status (claim/close/release)
 // ---------------------------------------------------------------------------
 
-export async function updateConversationStatusHandler(
+export async function patchConversationHandler(
   supabase: SB,
   ctx: HandlerCtx,
   conversationId: string,
-  input: UpdateConversationStatusInput,
+  input: PatchConversationInput,
 ): Promise<Conversation> {
-  const update: Record<string, unknown> = {
-    status: input.status,
-    status_changed_at: new Date().toISOString(),
-  };
-  // Atalho: status='claimed' assume o atendimento se ator for usuário humano.
-  if (input.status === "claimed" && ctx.actor.type === "user") {
-    update.assigned_to_user_id = ctx.actor.id;
-    update.assigned_at = new Date().toISOString();
+  const now = new Date().toISOString();
+  const update: Record<string, unknown> = {};
+
+  if (input.status !== undefined) {
+    update.status = input.status;
+    update.status_changed_at = now;
+    // Atalho: status='claimed' assume o atendimento se ator for usuário humano.
+    if (input.status === "claimed" && ctx.actor.type === "user") {
+      update.assigned_to_user_id = ctx.actor.id;
+      update.assigned_at = now;
+    }
+  }
+  if (input.tags !== undefined) {
+    update.tags = input.tags;
   }
 
   const { data, error } = await supabase
     .from("conversations")
     .update(update)
     .eq("id", conversationId)
+    .eq("organization_id", ctx.organization_id)
     .select(SELECT_COLS)
     .maybeSingle();
 
@@ -204,23 +229,36 @@ export async function updateConversationStatusHandler(
   }
 
   const conv = data as unknown as Conversation;
-  const action =
-    input.status === "claimed"
-      ? "conversation.claimed"
-      : input.status === "closed"
-        ? "conversation.closed"
-        : "conversation.released";
-
   const a = actorAuditPayload(ctx.actor);
-  await audit({
-    action,
-    actorUserId: a.actorUserId,
-    organizationId: conv.organization_id,
-    resourceType: "conversation",
-    resourceId: conv.id,
-    requestId: ctx.requestId,
-    metadata: { ...a.metadataActor, status: input.status },
-  });
+
+  if (input.status !== undefined) {
+    const action =
+      input.status === "claimed"
+        ? "conversation.claimed"
+        : input.status === "closed"
+          ? "conversation.closed"
+          : "conversation.released";
+    await audit({
+      action,
+      actorUserId: a.actorUserId,
+      organizationId: conv.organization_id,
+      resourceType: "conversation",
+      resourceId: conv.id,
+      requestId: ctx.requestId,
+      metadata: { ...a.metadataActor, status: input.status },
+    });
+  }
+  if (input.tags !== undefined) {
+    await audit({
+      action: "conversation.tags_changed",
+      actorUserId: a.actorUserId,
+      organizationId: conv.organization_id,
+      resourceType: "conversation",
+      resourceId: conv.id,
+      requestId: ctx.requestId,
+      metadata: { ...a.metadataActor, tags: input.tags },
+    });
+  }
 
   return conv;
 }
