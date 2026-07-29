@@ -8349,3 +8349,17 @@ alter table public.event_log
 alter table public.event_log
   add constraint event_log_status_check
   check (status = any (array['pending'::text, 'processing'::text, 'done'::text, 'dead'::text]));
+
+-- ---- warm-up: ativação do número vem da conexão (migration 0086) ----
+-- `channel_knobs.number_activated_at` é `not null default now()` e nada a preenchia,
+-- então a linha nascia com a data do 1º salvamento da tela de Proteção de envio — e o
+-- motor calcula a idade do número por ela. Número conectado há meses voltava ao degrau
+-- de 20/dia ao ter o pacing configurado (efetivo = min(warm-up, teto do CRM)).
+-- Só anda PARA TRÁS e só no caso errado: data anterior ao created_at é declaração
+-- deliberada do operador (número com reputação de outro sistema) e fica intocada.
+-- Idempotente.
+update public.channel_knobs k
+   set number_activated_at = s.created_at
+  from public.channel_sessions s
+ where s.id = k.channel_session_id
+   and k.number_activated_at > s.created_at;

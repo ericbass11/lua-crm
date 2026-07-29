@@ -50,6 +50,21 @@ export const pacingKnobsUpdateSchema = z
       .min(DAILY_LIMIT_BOUNDS.min)
       .max(DAILY_LIMIT_BOUNDS.max)
       .optional(),
+    /**
+     * Desde quando este número envia (base da idade no warm-up). Declarável porque
+     * o número pode ser mais antigo que a conexão no CRM — quem migrou de outro
+     * sistema traz reputação que o CRM não tem como saber.
+     *
+     * NÃO é nullable: a coluna é `not null default now()`, e "sem data" já tem
+     * significado no motor (linha ausente = idade 0). Data FUTURA é recusada aqui
+     * em vez de silenciosamente clampada pelo motor: quem digita 2027 errou, e
+     * saber disso é melhor que virar o degrau mais conservador sem explicação.
+     */
+    number_activated_at: z
+      .string()
+      .refine((s) => Number.isFinite(Date.parse(s)), "data inválida")
+      .refine((s) => Date.parse(s) <= Date.now(), "data no futuro")
+      .optional(),
   })
   .strict();
 

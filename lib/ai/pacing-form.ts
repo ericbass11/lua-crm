@@ -71,6 +71,32 @@ export function lerInteiro(
 }
 
 /**
+ * Campo "Número ativo desde" (`<input type="date">` → `YYYY-MM-DD`).
+ *
+ * Vazio = não mexer na data já registrada (a coluna é `not null`; quem decide o
+ * valor inicial é a rota, a partir do `created_at` da conexão). Data no futuro é
+ * recusada aqui porque o motor a clamparia para idade 0 em silêncio — o operador
+ * veria o número virar "recém-nascido" sem entender por quê.
+ *
+ * `hoje` é injetado para o teste não depender do relógio da máquina.
+ */
+export function lerDataAtivacao(raw: string, hoje: Date): LeituraCampo<string | null> {
+  const t = raw.trim();
+  if (t === "") return { ok: true, valor: null };
+  const ms = Date.parse(t);
+  if (!Number.isFinite(ms)) {
+    return { ok: false, erro: "Número ativo desde: use uma data válida (AAAA-MM-DD)." };
+  }
+  // Compara por DIA: `type="date"` devolve meia-noite UTC, e um fuso a oeste faria
+  // "hoje" parecer futuro por algumas horas.
+  const dia = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  if (dia(new Date(ms)) > dia(hoje)) {
+    return { ok: false, erro: "Número ativo desde: a data não pode estar no futuro." };
+  }
+  return { ok: true, valor: t };
+}
+
+/**
  * Erros de campo que a API devolve em `details` (flatten do Zod) viram uma linha
  * legível. Sem isto o `catch` do formulário mostrava só "Campos inválidos." e o
  * operador não tinha como saber qual campo nem qual limite — foi exatamente o

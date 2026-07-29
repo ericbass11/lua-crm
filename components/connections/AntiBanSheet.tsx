@@ -22,6 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { useUpdatePacingKnobs, type PacingKnobsItem } from "@/hooks/channels/usePacingKnobs";
 import {
   descreveErroDeValidacao,
+  lerDataAtivacao,
   lerInteiro,
   lerSegundosEmMs,
 } from "@/lib/ai/pacing-form";
@@ -42,6 +43,8 @@ interface FormState {
   daily_message_limit: string;
   allow_sunday: boolean;
   timezone: string;
+  /** `YYYY-MM-DD` do input de data; '' = manter a data já registrada. */
+  number_activated_at: string;
 }
 
 function fromItem(item: PacingKnobsItem): FormState {
@@ -57,6 +60,10 @@ function fromItem(item: PacingKnobsItem): FormState {
         : "",
     allow_sunday: o?.allow_sunday ?? item.defaults.allowSunday,
     timezone: o?.timezone ?? "",
+    // Só a parte da data: o input é `type="date"` e o banco guarda timestamptz.
+    number_activated_at: o?.number_activated_at
+      ? String(o.number_activated_at).slice(0, 10)
+      : "",
   };
 }
 
@@ -95,7 +102,8 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         item.bounds.daily_limit.max,
       ),
     ] as const;
-    const invalido = campos.find((c) => !c.ok);
+    const ativacao = lerDataAtivacao(form.number_activated_at, new Date());
+    const invalido = [...campos, ativacao].find((c) => !c.ok);
     if (invalido && !invalido.ok) {
       toast.error(invalido.erro);
       return;
@@ -122,6 +130,11 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         timezone: form.timezone.trim() === "" ? null : form.timezone.trim(),
         // Teto diário ausente do payload = não mexer (a rota só escreve se veio).
         ...(tetoDiario != null ? { daily_message_limit: tetoDiario } : {}),
+        // Idem para a ativação: campo vazio não vai no payload, então a data já
+        // registrada permanece (a rota só a define quando CRIA a linha).
+        ...(ativacao.ok && ativacao.valor != null
+          ? { number_activated_at: ativacao.valor }
+          : {}),
       });
       toast.success("Proteção de envio atualizada.");
       onClose();
@@ -287,6 +300,26 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
               Número recém-conectado envia pouco e sobe aos poucos — enviar demais no início é
               a causa nº 1 de bloqueio.
             </p>
+
+            <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+              <Label htmlFor="ativo-desde">Número ativo desde</Label>
+              <Input
+                id="ativo-desde"
+                type="date"
+                max={new Date().toISOString().slice(0, 10)}
+                value={form.number_activated_at}
+                onChange={(e) => set({ number_activated_at: e.target.value })}
+                disabled={!canWrite}
+                aria-label="Data em que o número começou a enviar"
+                className="w-44"
+              />
+              <p className="text-xs text-muted-foreground">
+                Define em que degrau do aquecimento o número está. Por padrão é a data em que
+                a conexão foi criada aqui. Só mude se o número já enviava antes por outro
+                sistema — informar data mais antiga <strong>libera limites mais altos</strong>,
+                e errar isso é assumir risco de bloqueio.
+              </p>
+            </div>
           </div>
         </div>
 

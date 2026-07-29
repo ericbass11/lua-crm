@@ -14,10 +14,12 @@ import { describe, expect, it } from "vitest";
 import { KNOB_BOUNDS } from "@/lib/agent-engine/pacing/defaults";
 import {
   descreveErroDeValidacao,
+  lerDataAtivacao,
   lerInteiro,
   lerSegundosEmMs,
   parseDecimalPtBr,
 } from "@/lib/ai/pacing-form";
+import { pacingKnobsUpdateSchema } from "@/lib/ai/pacing-knobs";
 
 const TETO = KNOB_BOUNDS.intervalMaxMs;
 
@@ -87,6 +89,69 @@ describe("parseDecimalPtBr", () => {
 
   it("Infinity não passa por número válido", () => {
     expect(parseDecimalPtBr("Infinity")).toBeUndefined();
+  });
+});
+
+describe("lerDataAtivacao — idade do número no warm-up", () => {
+  const hoje = new Date("2026-07-29T15:00:00Z");
+
+  it("vazio é null: mantém a data já registrada (a coluna é not null)", () => {
+    expect(lerDataAtivacao("", hoje)).toEqual({ ok: true, valor: null });
+  });
+
+  it("aceita data passada como veio do input type=date", () => {
+    expect(lerDataAtivacao("2026-07-14", hoje)).toEqual({ ok: true, valor: "2026-07-14" });
+  });
+
+  it("aceita HOJE — fuso a oeste não pode fazer hoje parecer futuro", () => {
+    expect(lerDataAtivacao("2026-07-29", hoje).ok).toBe(true);
+  });
+
+  it("recusa data futura em vez de deixar o motor clampar para idade 0 em silêncio", () => {
+    const r = lerDataAtivacao("2027-01-01", hoje);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.erro).toContain("futuro");
+  });
+
+  it("recusa texto que não é data", () => {
+    expect(lerDataAtivacao("ontem", hoje).ok).toBe(false);
+  });
+});
+
+describe("pacingKnobsUpdateSchema — number_activated_at (contrato da API)", () => {
+  const base = { channel_session_id: "00000000-0000-4000-8000-000000000001" };
+
+  it("aceita o payload sem o campo (retrocompatível com quem já chamava)", () => {
+    expect(pacingKnobsUpdateSchema.safeParse({ ...base, throttle_ms: 1200 }).success).toBe(true);
+  });
+
+  it("aceita data passada", () => {
+    expect(
+      pacingKnobsUpdateSchema.safeParse({ ...base, number_activated_at: "2026-07-14" }).success,
+    ).toBe(true);
+  });
+
+  it("recusa data no futuro", () => {
+    const r = pacingKnobsUpdateSchema.safeParse({ ...base, number_activated_at: "2099-01-01" });
+    expect(r.success).toBe(false);
+  });
+
+  it("recusa data inválida", () => {
+    expect(
+      pacingKnobsUpdateSchema.safeParse({ ...base, number_activated_at: "31/12/2026" }).success,
+    ).toBe(false);
+  });
+
+  it("recusa null — 'sem data' não existe nesta coluna (not null no banco)", () => {
+    expect(
+      pacingKnobsUpdateSchema.safeParse({ ...base, number_activated_at: null }).success,
+    ).toBe(false);
+  });
+
+  it("segue .strict(): campo desconhecido derruba (evita typo salvar nada em silêncio)", () => {
+    expect(
+      pacingKnobsUpdateSchema.safeParse({ ...base, numberActivatedAt: "2026-07-14" }).success,
+    ).toBe(false);
   });
 });
 

@@ -83,7 +83,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   const admin = createAdminClient();
   const { data: session } = await admin
     .from("channel_sessions")
-    .select("id")
+    .select("id, created_at")
     .eq("id", channel_session_id)
     .eq("organization_id", org.orgId)
     .maybeSingle();
@@ -124,10 +124,27 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
 
   if (Object.keys(knobFields).length > 0) {
+    // Idade do número no warm-up: na CRIAÇÃO da linha a data vem do `created_at`
+    // da conexão, não do `default now()` da coluna. Sem isto, salvar esta tela era
+    // o que definia a "idade" do número — um número conectado há meses voltava ao
+    // degrau de 20/dia por ter tido os knobs configurados hoje.
+    //
+    // Só entra quando (a) a linha ainda não existe E (b) o operador não declarou
+    // uma data. Linha existente NUNCA é sobrescrita aqui: o upsert só toca as
+    // colunas presentes no payload, e o relógio do warm-up não pode ser reiniciado
+    // por um salvamento qualquer de janela ou ritmo.
+    const criandoLinha = currentRow == null;
+    const ativacaoAusente = knobFields.number_activated_at === undefined;
+    const ativacaoInicial =
+      criandoLinha && ativacaoAusente && session.created_at
+        ? { number_activated_at: session.created_at }
+        : {};
+
     const { error: upErr } = await admin.from("channel_knobs").upsert(
       {
         organization_id: org.orgId,
         channel_session_id,
+        ...ativacaoInicial,
         ...knobFields,
       },
       { onConflict: "organization_id,channel_session_id" },
