@@ -65,8 +65,14 @@ if [ "$ok" = 1 ]; then
       ok=0
       break
     fi
+  # `/` devolve 307 desde a sincronização com o upstream (2026-07-28): a raiz
+  # deixou de ter conteúdo próprio e passou a redirecionar para /app (o proxy
+  # trata `/` como rota pública, então quem redireciona é a própria page). Por
+  # isso /login entrou na lista: é uma página que tem de RENDERIZAR de verdade,
+  # senão o portão só provaria que redirecionamentos funcionam.
   done <<'PROBES'
-/ 200
+/ 307
+/login 200
 /api/v1/integrations/calendar 401
 /api/v1/auth/realtime-token 401
 /api/v1/settings/followup 401

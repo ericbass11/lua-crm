@@ -20,6 +20,11 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useUpdatePacingKnobs, type PacingKnobsItem } from "@/hooks/channels/usePacingKnobs";
+import {
+  descreveErroDeValidacao,
+  lerInteiro,
+  lerSegundosEmMs,
+} from "@/lib/ai/pacing-form";
 import { ApiError } from "@/lib/api/types";
 
 interface Props {
@@ -55,10 +60,6 @@ function fromItem(item: PacingKnobsItem): FormState {
   };
 }
 
-const intOrNull = (s: string): number | null => (s.trim() === "" ? null : Math.round(Number(s)));
-const msOrNull = (s: string): number | null =>
-  s.trim() === "" ? null : Math.round(Number(s) * 1000);
-
 export function AntiBanSheet({ item, canWrite, onClose }: Props) {
   const update = useUpdatePacingKnobs();
   const [form, setForm] = useState<FormState | null>(null);
@@ -75,26 +76,64 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
 
   if (!item || !form) return null;
   const eff = item.effective;
+  /** Teto de intervalo na unidade do campo (o motor guarda em ms). */
+  const maxIntervalS = item.bounds.intervalMaxMs / 1000;
   const set = (patch: Partial<FormState>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
   const handleSave = async () => {
+    // Lê tudo ANTES de chamar a API: o limite de cada campo é dito na unidade do
+    // campo (segundos, hora), não em ms — o operador não pensa em milissegundos.
+    const campos = [
+      lerInteiro(form.window_start_hour, "Início da janela", 0, item.bounds.hourLastStart),
+      lerInteiro(form.window_end_hour, "Fim da janela", 1, item.bounds.hourEnd),
+      lerSegundosEmMs(form.throttle_s, "Ritmo entre envios", item.bounds.intervalMaxMs),
+      lerSegundosEmMs(form.jitter_s, "Variação do ritmo", item.bounds.intervalMaxMs),
+      lerInteiro(
+        form.daily_message_limit,
+        "Teto diário",
+        item.bounds.daily_limit.min,
+        item.bounds.daily_limit.max,
+      ),
+    ] as const;
+    const invalido = campos.find((c) => !c.ok);
+    if (invalido && !invalido.ok) {
+      toast.error(invalido.erro);
+      return;
+    }
+    const [inicio, fim, throttleMs, jitterMs, tetoDiario] = campos.map((c) =>
+      c.ok ? c.valor : null,
+    );
+
+    // Janela coerente checada aqui também: a API valida o par resultante e
+    // devolveria 422, mas dizer "20h antes de 8h" na hora é mais útil.
+    if (inicio != null && fim != null && inicio >= fim) {
+      toast.error(`Janela inválida: o início (${inicio}h) precisa ser antes do fim (${fim}h).`);
+      return;
+    }
+
     try {
       await update.mutateAsync({
         channel_session_id: item.channel_session.id,
-        window_start_hour: intOrNull(form.window_start_hour),
-        window_end_hour: intOrNull(form.window_end_hour),
-        throttle_ms: msOrNull(form.throttle_s),
-        jitter_max_ms: msOrNull(form.jitter_s),
+        window_start_hour: inicio,
+        window_end_hour: fim,
+        throttle_ms: throttleMs,
+        jitter_max_ms: jitterMs,
         allow_sunday: form.allow_sunday,
         timezone: form.timezone.trim() === "" ? null : form.timezone.trim(),
-        ...(form.daily_message_limit.trim() !== ""
-          ? { daily_message_limit: Math.round(Number(form.daily_message_limit)) }
-          : {}),
+        // Teto diário ausente do payload = não mexer (a rota só escreve se veio).
+        ...(tetoDiario != null ? { daily_message_limit: tetoDiario } : {}),
       });
       toast.success("Proteção de envio atualizada.");
       onClose();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Não foi possível salvar.");
+      if (err instanceof ApiError) {
+        // `details` traz o campo e o limite que o Zod recusou; sem isto o
+        // operador só via "Campos inválidos." e não tinha o que corrigir.
+        const detalhe = descreveErroDeValidacao(err.details);
+        toast.error(detalhe ? `${err.message} (${detalhe})` : err.message);
+        return;
+      }
+      toast.error("Não foi possível salvar.");
     }
   };
 
@@ -167,6 +206,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
               <Input
                 type="number"
                 min={0}
+                max={maxIntervalS}
                 step="0.1"
                 inputMode="decimal"
                 placeholder={String(eff.throttleMs / 1000)}
@@ -180,6 +220,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
               <Input
                 type="number"
                 min={0}
+                max={maxIntervalS}
                 step="0.1"
                 inputMode="decimal"
                 placeholder={String(eff.jitterMaxMs / 1000)}
@@ -193,7 +234,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             </div>
             <p className="text-xs text-muted-foreground">
               Intervalo mínimo entre mensagens do mesmo número, mais uma variação aleatória —
-              ritmo cravado parece robô para o WhatsApp.
+              ritmo cravado parece robô para o WhatsApp. Máximo de {maxIntervalS}s em cada campo.
             </p>
           </fieldset>
 
