@@ -138,7 +138,12 @@ services:
         0 12 * * * curl -fsS -m60 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/lgpd-sla-watcher >/dev/null 2>&1
         30 3 * * * curl -fsS -m120 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/kb-conversations-batch >/dev/null 2>&1
         EOF
-        exec crond -f -l 2
+        # -L /dev/stderr é obrigatório, não zelo: sem ele o busybox crond escreve em
+        # SYSLOG, e não há syslogd nesta imagem — o `docker logs scheduler` fica VAZIO
+        # mesmo com os crons disparando. Ponto cego caro: o README registra um caso em
+        # que o crontab ficou desatualizado por dias (o drain não rodava) e ninguém viu,
+        # porque não havia como ver. Com isto, cada execução aparece no log do container.
+        exec crond -f -l 2 -L /dev/stderr
     logging: *default-logging
     networks: [internal]
 
