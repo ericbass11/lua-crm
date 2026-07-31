@@ -8,7 +8,33 @@
  */
 import { z } from "zod";
 
+import { conversationTagSchema } from "./messaging";
+
 const LOCALES = ["pt-BR", "en-US"] as const;
+
+/**
+ * G6-02: organizations.settings.ai_dispatch_mode (edge-contract do Vendaval).
+ * 'native' (default) = o dispatcher de IA deste repo processa os eventos
+ * ai_agent.dispatch_requested. 'external' = o tenant delega o dispatch ao
+ * runtime externo (Vendaval); o dispatcher nativo PULA o evento sem tocá-lo.
+ * `.catch("native")` normaliza chave ausente/null/inválida para o default seguro.
+ */
+export const AI_DISPATCH_MODES = ["native", "external"] as const;
+export type AiDispatchMode = (typeof AI_DISPATCH_MODES)[number];
+export const aiDispatchModeSchema = z.enum(AI_DISPATCH_MODES).catch("native");
+
+/**
+ * G3-05: vocabulário canônico de tags de conversa, persistido em
+ * organizations.settings.canonical_conversation_tags (spec 13 §3.3 — org-scoped,
+ * não pipeline-scoped). Schema declarativo; usado para validar o que o inbox lê
+ * como sugestões.
+ */
+export const canonicalConversationTagsSchema = z
+  .array(conversationTagSchema)
+  .max(50)
+  .transform((tags) => Array.from(new Set(tags)))
+  .catch([]);
+export type CanonicalConversationTags = z.infer<typeof canonicalConversationTagsSchema>;
 export type Locale = (typeof LOCALES)[number];
 
 export const profileSchema = z.object({

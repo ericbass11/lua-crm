@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import {
   Select,
   SelectContent,
@@ -57,8 +58,14 @@ export function CredentialPicker({ provider, credentials, value, onChange, disab
         </SelectContent>
       </Select>
       {filtered.length === 0 ? (
-        <p className="text-xs text-text-muted">
-          Cadastre em <code>/app/ai/credentials</code>.
+        <p className="text-xs text-muted-foreground">
+          <Link
+            href="/app/ai/credentials"
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            Cadastrar credencial {provider}
+          </Link>{" "}
+          na aba Credenciais.
         </p>
       ) : null}
     </div>

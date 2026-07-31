@@ -37,6 +37,25 @@ services:
     logging: *default-logging
     networks: [internal]
 
+
+  # Worker 24/7 do agent-engine (fusão Vendaval) — cérebro do agente SDR.
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # dentro da rede do compose, o WAHA é o serviço 'waha' na porta interna 3000
+      WAHA_API_BASE_URL: http://waha:3000
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
   waha:
     # Core grátis por padrão; troque para devlikeapro/waha-plus via WAHA_IMAGE se
     # precisar de multi-número/retry/S3 (licença paga).
@@ -49,12 +68,12 @@ services:
       WHATSAPP_HOOK_URL: ${WAHA_WEBHOOK_BASE_URL}/api/v1/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message,message.any,message.ack,session.status,state.change"
       WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
-      WAHA_DEFAULT_ENGINE: ${WAHA_DEFAULT_ENGINE:-NOWEB}
-      # Alias legado: imagens do WAHA anteriores ao rename leem WHATSAPP_DEFAULT_ENGINE
-      # (e trazem WEBJS baked-in como default). Sem isto o NOWEB acima é ignorado e a
-      # sessão roda WEBJS — que quebra quando o WhatsApp Web muda (mensagens dropadas
-      # com "parseMessageIdSerialized ... undefined").
-      WHATSAPP_DEFAULT_ENGINE: ${WAHA_DEFAULT_ENGINE:-NOWEB}
+      # WAHA lê WHATSAPP_DEFAULT_ENGINE — NÃO WAHA_DEFAULT_ENGINE, que não existe
+      # no WAHA e cai silenciosamente no default WEBJS (engine com browser que
+      # trava/corrompe a sessão quando o WhatsApp Web atualiza; sintoma que já
+      # vimos aqui: mensagens dropadas com "parseMessageIdSerialized undefined").
+      # O invariante tests/unit/waha-engine-config.test.ts proíbe o nome errado.
+      WHATSAPP_DEFAULT_ENGINE: ${WHATSAPP_DEFAULT_ENGINE:-NOWEB}
       WAHA_DASHBOARD_ENABLED: "false"    # nunca expor o dashboard num template público
     volumes:
       - waha-data:/app/.sessions          # sessões pareadas (QR) — perder = re-parear
@@ -108,13 +127,23 @@ services:
         cat > /etc/crontabs/root <<EOF
         * * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/agent-dispatcher >/dev/null 2>&1
         * * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/followup-dispatcher >/dev/null 2>&1
+        * * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/followup-flow-worker >/dev/null 2>&1
         * * * * * curl -fsS -m60 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/event-log-drain >/dev/null 2>&1
+        * * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/routing-worker >/dev/null 2>&1
         */5 * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" "http://app:3000/api/v1/cron/storage-redaction?limit=50" >/dev/null 2>&1
         */5 * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/channel-health >/dev/null 2>&1
+        */5 * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/snooze-watcher >/dev/null 2>&1
+        */5 * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/attendant-heartbeat >/dev/null 2>&1
+        */15 * * * * curl -fsS -m45 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/risk-watcher >/dev/null 2>&1
         0 12 * * * curl -fsS -m60 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/lgpd-sla-watcher >/dev/null 2>&1
         30 3 * * * curl -fsS -m120 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/kb-conversations-batch >/dev/null 2>&1
         EOF
-        exec crond -f -l 2
+        # -L /dev/stderr é obrigatório, não zelo: sem ele o busybox crond escreve em
+        # SYSLOG, e não há syslogd nesta imagem — o `docker logs scheduler` fica VAZIO
+        # mesmo com os crons disparando. Ponto cego caro: o README registra um caso em
+        # que o crontab ficou desatualizado por dias (o drain não rodava) e ninguém viu,
+        # porque não havia como ver. Com isto, cada execução aparece no log do container.
+        exec crond -f -l 2 -L /dev/stderr
     logging: *default-logging
     networks: [internal]
 

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   claimConversationSchema,
+  conversationTagsSchema,
   listConversationsQuerySchema,
+  patchConversationSchema,
   sendMessageSchema,
   updateConversationStatusSchema,
 } from "./messaging";
@@ -102,5 +104,41 @@ describe("updateConversationStatusSchema", () => {
   });
   it("rejeita status desconhecido", () => {
     expect(updateConversationStatusSchema.safeParse({ status: "wat" }).success).toBe(false);
+  });
+});
+
+describe("conversationTagsSchema (G3-05 — normalização)", () => {
+  it("trim + lowercase + dedup", () => {
+    const r = conversationTagsSchema.parse(["  Reclamação ", "RECLAMAÇÃO", "Troca"]);
+    expect(r).toEqual(["reclamação", "troca"]);
+  });
+  it("rejeita mais de 20 tags", () => {
+    const many = Array.from({ length: 21 }, (_, i) => `tag${i}`);
+    expect(conversationTagsSchema.safeParse(many).success).toBe(false);
+  });
+  it("aceita exatamente 20 tags", () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => `tag${i}`);
+    expect(conversationTagsSchema.safeParse(twenty).success).toBe(true);
+  });
+  it("rejeita tag com mais de 40 chars", () => {
+    expect(conversationTagsSchema.safeParse(["a".repeat(41)]).success).toBe(false);
+  });
+  it("aceita tag com 40 chars", () => {
+    expect(conversationTagsSchema.safeParse(["a".repeat(40)]).success).toBe(true);
+  });
+  it("rejeita tag vazia após trim", () => {
+    expect(conversationTagsSchema.safeParse(["   "]).success).toBe(false);
+  });
+});
+
+describe("patchConversationSchema (G3-05)", () => {
+  it("aceita só tags", () => {
+    expect(patchConversationSchema.safeParse({ tags: ["vip"] }).success).toBe(true);
+  });
+  it("aceita só status", () => {
+    expect(patchConversationSchema.safeParse({ status: "closed" }).success).toBe(true);
+  });
+  it("rejeita corpo vazio (nem status nem tags)", () => {
+    expect(patchConversationSchema.safeParse({}).success).toBe(false);
   });
 });

@@ -20,11 +20,12 @@ export const TOOL_CATALOG: ReadonlyArray<McpToolCatalogEntry> = [
   // read
   { name: "crm_search_contacts", category: "read", description: "Busca contatos por nome/telefone/email" },
   { name: "crm_get_contact", category: "read", description: "Detalhe de um contato" },
-  { name: "crm_list_conversations", category: "read", description: "Lista conversas" },
-  { name: "crm_get_conversation", category: "read", description: "Detalhe de conversa" },
+  { name: "crm_list_conversations", category: "read", description: "Lista conversas (com assignee_kind, assigned_to_user_name, tags, queue_position)" },
+  { name: "crm_get_conversation", category: "read", description: "Detalhe de conversa (com assignee_kind, assigned_to_user_name, tags, queue_position)" },
   { name: "crm_get_conversation_history", category: "read", description: "Historico de mensagens de uma conversa" },
-  { name: "crm_list_leads", category: "read", description: "Lista leads de um pipeline" },
-  { name: "crm_get_lead", category: "read", description: "Detalhe de lead" },
+  { name: "crm_get_queue_status", category: "read", description: "Snapshot da fila de atendimento da org" },
+  { name: "crm_list_leads", category: "read", description: "Lista leads de um pipeline (com owner_user_name, stage, tags)" },
+  { name: "crm_get_lead", category: "read", description: "Detalhe de lead (com owner_user_name, stage, tags)" },
   { name: "crm_list_pipelines", category: "read", description: "Lista pipelines da org" },
   { name: "crm_check_availability", category: "read", description: "Horários livres na agenda (Google Calendar)" },
   { name: "crm_list_scheduled_meetings", category: "read", description: "Reuniões futuras agendadas pelo bot (com event_id)" },
@@ -38,6 +39,8 @@ export const TOOL_CATALOG: ReadonlyArray<McpToolCatalogEntry> = [
   { name: "crm_schedule_meeting", category: "write", description: "Agenda call na agenda da empresa (Google Calendar)" },
   { name: "crm_reschedule_meeting", category: "write", description: "Remarca uma reunião agendada pelo bot" },
   { name: "crm_cancel_meeting", category: "write", description: "Cancela uma reunião agendada pelo bot" },
+  { name: "crm_assign_conversation", category: "write", description: "Atribui/transfere/libera uma conversa" },
+  { name: "crm_manage_tags", category: "write", description: "Adiciona/remove tags em conversation/contact/lead" },
   // handoff
   { name: "crm_request_human_handoff", category: "handoff", description: "Solicita handoff para atendente humano" },
 ] as const;

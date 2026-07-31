@@ -10,8 +10,7 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +20,7 @@ const querySchema = z.object({
     .enum(["received", "processing", "completed", "failed", "pending_review"])
     .optional(),
   type: z
-    .enum(["customer_redact", "customer_data_request", "store_redact"])
+    .enum(["redact", "data_request", "store_redact"])
     .optional(),
   sla_bucket: z.enum(["overdue", "critical", "warning", "ok"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -47,36 +46,15 @@ function computeSlaBucket(dueAt: string | null, receivedAt: string): SlaBucket {
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
+  const authz = await requireRole("admin", {
+    requestId,
+    resource: "lgpd_requests",
+    allowPlatformAdmin: true,
+  });
+  if (!authz.ok) return authz.response;
+  const { org: activeOrg } = authz;
+
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
-  }
-
-  // Permission: role >= admin OR platform_admin
-  const isAllowed =
-    authUser.is_platform_admin || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
-  if (!isAllowed) {
-    return fail(
-      "forbidden_role",
-      "Apenas administradores podem acessar solicitações LGPD.",
-      403,
-      { requestId },
-    );
-  }
 
   // Parse + validate query params
   const rawParams: Record<string, string> = {};

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -70,7 +71,17 @@ export function BulkActionBar({
         lead_ids: selectedIds,
         params: { owner_user_id: ownerId },
       },
-      { onSuccess: () => onClear() },
+      {
+        onSuccess: (res) => {
+          const n = res.data.updated_count;
+          toast.success(
+            ownerId === null
+              ? `${n} lead${n > 1 ? "s" : ""} sem responsável.`
+              : `${n} lead${n > 1 ? "s" : ""} atribuído${n > 1 ? "s" : ""}.`,
+          );
+          onClear();
+        },
+      },
     );
   };
 

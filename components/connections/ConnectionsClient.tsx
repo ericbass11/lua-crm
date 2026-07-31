@@ -9,6 +9,8 @@ import {
   useChannelSessions,
   type ChannelSession,
 } from "@/hooks/channels/useChannelSessions";
+import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
+import { AntiBanSheet } from "./AntiBanSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,6 +28,7 @@ import {
   Phone,
   Plus,
   Trash,
+  ShieldCheck,
 } from "@/lib/ui/icons";
 
 type Variant = "success" | "warning" | "error" | "neutral";
@@ -57,6 +60,8 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const [creating, setCreating] = useState(false);
   const [checking, setChecking] = useState(false);
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
+  const [antiBanId, setAntiBanId] = useState<string | null>(null);
+  const pacingItems = usePacingKnobs().data?.items ?? [];
 
   const invalidate = useCallback(
     () => qc.invalidateQueries({ queryKey: ["channel-sessions"] }),
@@ -265,12 +270,22 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     <Trash size={14} aria-hidden />
                     Excluir
                   </Button>
+                  <Button variant="outline" size="sm" onClick={() => setAntiBanId(c.id)}>
+                    <ShieldCheck size={14} aria-hidden />
+                    Proteção de envio
+                  </Button>
                 </div>
               </Card>
             );
           })}
         </div>
       )}
+
+      <AntiBanSheet
+        item={pacingItems.find((i) => i.channel_session.id === antiBanId) ?? null}
+        canWrite
+        onClose={() => setAntiBanId(null)}
+      />
 
       {qr && (
         <QrDialog

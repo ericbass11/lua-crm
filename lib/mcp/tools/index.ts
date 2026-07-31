@@ -23,6 +23,11 @@ import {
 } from "./leads";
 import { crmListPipelines } from "./pipelines";
 import { crmSendWhatsappMessage } from "./messages";
+import {
+  crmAssignConversation,
+  crmManageTags,
+  crmGetQueueStatus,
+} from "./governance";
 import { crmRequestHumanHandoff } from "./handoff";
 import {
   crmCancelMeeting,
@@ -46,6 +51,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmListConversations,
   crmGetConversation,
   crmGetConversationHistory,
+  crmGetQueueStatus,
   crmListLeads,
   crmGetLead,
   crmListPipelines,
@@ -61,6 +67,8 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmScheduleMeeting,
   crmRescheduleMeeting,
   crmCancelMeeting,
+  crmAssignConversation,
+  crmManageTags,
   // handoff (special)
   crmRequestHumanHandoff,
 ] as unknown as ReadonlyArray<McpToolDefinition>;

@@ -1,4 +1,8 @@
 /**
+ * @deprecated Fase 0 da convergência (spec 2026-07-23): fora do caminho quente.
+ * O runtime canônico é lib/agent-engine (workers/agent-worker). Remoção física
+ * planejada após um ciclo de estabilidade. Não adicionar features aqui.
+ *
  * `agent-dispatcher` worker (S-13.07, Spec 10 §5).
  *
  * Pulls `ai_agent.dispatch_requested` rows from `event_log`, picks the
@@ -11,10 +15,11 @@
  * payload, never user input.
  *
  * Schema mapping note: the spec talks about `processed_at`, but `event_log`
- * uses `status` + `consumed_by[]`. We mark a successfully-handled event as
- * `status='processed'` and stamp `metadata.outcome`. Requeue (rate-limit) sets
- * `next_attempt_at = now()+5s` and keeps `status='pending'` so the next batch
- * picks it up.
+ * uses `status` + `consumed_by[]` (status ∈ pending|processing|done|dead, per
+ * event_log_status_check). We mark a successfully-handled event as
+ * `status='done'` and stamp `metadata.outcome`; a terminal failure as
+ * `status='dead'`. Requeue (rate-limit) sets `next_attempt_at = now()+5s` and
+ * keeps `status='pending'` so the next batch picks it up.
  */
 
 import { randomUUID } from "node:crypto";
@@ -22,6 +27,7 @@ import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { aiDispatchModeSchema } from "@/lib/schemas/settings";
 import { checkTenantBudget } from "./budget";
 import { checkRateLimit } from "./rate-limit";
 import {
@@ -48,6 +54,7 @@ export type DispatchOutcome =
   | "skipped_invalid_payload"
   | "skipped_missing_message"
   | "skipped_human_active"
+  | "skipped_external_dispatch"
   | "error";
 
 export interface DispatchSummary {
@@ -92,6 +99,7 @@ const EMPTY_OUTCOMES = (): Record<DispatchOutcome, number> => ({
   skipped_invalid_payload: 0,
   skipped_missing_message: 0,
   skipped_human_active: 0,
+  skipped_external_dispatch: 0,
   error: 0,
 });
 
@@ -131,9 +139,23 @@ export async function dispatchAgents(opts: DispatchOptions = {}): Promise<Dispat
   const candidateEvents = (rawEvents ?? []) as EventRow[];
   if (candidateEvents.length === 0) return summary;
 
+  // 1b. Resolve organizations.settings.ai_dispatch_mode for the batch's orgs in
+  //     one query (G6-02). 'external' orgs delegate dispatch to the Vendaval
+  //     runtime; the native dispatcher must leave their events untouched.
+  const dispatchModeByOrg = await loadDispatchModes(candidateEvents);
+
   // 2. Claim each event optimistically (CAS on status='pending'). Skip when
   //    another worker already processed/claimed it in this tick.
   for (const event of candidateEvents) {
+    // G6-02: skip BEFORE claim. Unlike the skipped_* outcomes below (which mark
+    // the event 'done' via markEventProcessed), an 'external' org's event is
+    // NOT consumed here — no claim, no status change, consumed_by intact — so
+    // the external dispatcher (Vendaval) still picks it up as pending.
+    if (dispatchModeByOrg.get(event.organization_id) === "external") {
+      summary.outcomes.skipped_external_dispatch += 1;
+      continue;
+    }
+
     const claimed = await claimEvent(event.id);
     if (!claimed) continue;
     summary.batch_size += 1;
@@ -347,6 +369,37 @@ async function processEvent(event: EventRow): Promise<DispatchOutcome> {
 }
 
 // ---------------------------------------------------------------------------
+// Dispatch-mode resolution (G6-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve organizations.settings.ai_dispatch_mode for every org present in the
+ * batch, in a single query. Orgs absent from the result (or with an
+ * absent/invalid key) resolve to the default 'native' via the schema's
+ * `.catch("native")`, i.e. they are processed as today.
+ */
+async function loadDispatchModes(events: EventRow[]): Promise<Map<string, string>> {
+  const modes = new Map<string, string>();
+  const orgIds = [...new Set(events.map((e) => e.organization_id))];
+  if (orgIds.length === 0) return modes;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("organizations").select("id, settings").in("id", orgIds);
+  if (error) {
+    logger.warn("[agent-dispatcher] loadDispatchModes failed — defaulting to native", {
+      error: error.message,
+    });
+    return modes;
+  }
+
+  for (const row of (data ?? []) as Array<{ id: string; settings: Record<string, unknown> | null }>) {
+    const raw = row.settings?.ai_dispatch_mode;
+    modes.set(row.id, aiDispatchModeSchema.parse(raw));
+  }
+  return modes;
+}
+
+// ---------------------------------------------------------------------------
 // Candidate loading
 // ---------------------------------------------------------------------------
 
@@ -425,7 +478,7 @@ async function markEventProcessed(
   const { error } = await admin
     .from("event_log")
     .update({
-      status: "processed",
+      status: "done",
       metadata,
       consumed_by: consumed,
       updated_at: new Date().toISOString(),
@@ -478,7 +531,7 @@ async function markEventFailed(event: EventRow, detail: string): Promise<void> {
   const { error } = await admin
     .from("event_log")
     .update({
-      status: "failed",
+      status: "dead",
       last_error: detail.slice(0, 500),
       metadata,
       updated_at: new Date().toISOString(),

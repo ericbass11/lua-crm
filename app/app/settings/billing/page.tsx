@@ -1,10 +1,18 @@
-import { requireAuth } from "@/lib/auth/server";
+import { redirect } from "next/navigation";
+
+import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { ROLE_RANK } from "@/lib/auth/types";
 import { Card } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
 export default async function BillingPage() {
-  await requireAuth();
+  // spec 13 §4: billing é admin-only (viewer/agent/manager = none).
+  const user = await requireAuth();
+  const activeOrg = await resolveActiveOrg(user);
+  if (!activeOrg || ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
+    redirect("/403");
+  }
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>

@@ -11,6 +11,9 @@ import { Separator } from "@/components/ui/separator";
 import { Tag, Receipt, Users, ArrowRight } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
+import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
+import { ConversationTagsEditor } from "./ConversationTagsEditor";
+import { cn } from "@/lib/utils";
 
 interface Props {
   conversation: ConversationWithContact | null;
@@ -51,6 +54,9 @@ interface ActivityRow {
   source_module: string;
   performed_at: string;
   payload: Record<string, unknown> | null;
+  /** 0071 — o porquê legível e quem agiu. */
+  reason: string | null;
+  actor_kind: string | null;
 }
 
 function formatMoney(cents: number | null, currency: string | null): string {
@@ -69,6 +75,38 @@ function shortDate(iso: string): string {
   return format(new Date(iso), "dd/MM/yy HH:mm", { locale: ptBR });
 }
 
+/**
+ * O que cada seção mostra quando não tem lista para mostrar.
+ *
+ * Peça única porque são TRÊS seções tomando a MESMA decisão — e foi por essa
+ * decisão viver repetida em três lugares que as três mentiam juntas.
+ *
+ * Fora do componente de propósito: declarada dentro do corpo, ela vira um tipo
+ * novo a cada render e o React remonta a peça inteira. O linter reprovou, com
+ * razão — e eu tinha notado o cheiro e seguido em frente.
+ *
+ * Erro sem saída também é beco, por isso o botão.
+ */
+function SemLista({
+  vazio,
+  erro,
+  onTentarDeNovo,
+}: {
+  vazio: string;
+  erro: boolean;
+  onTentarDeNovo: () => void;
+}) {
+  if (!erro) return <p className="mt-2 text-xs text-muted-foreground">{vazio}</p>;
+  return (
+    <div className="mt-2 space-y-1">
+      <p className="text-xs text-error-fg">Não consegui ler estes dados.</p>
+      <Button size="sm" variant="outline" onClick={onTentarDeNovo}>
+        Tentar de novo
+      </Button>
+    </div>
+  );
+}
+
 export function CRMSidePanel({ conversation }: Props) {
   const contact = conversation?.contacts ?? null;
   const contactId = contact?.id ?? null;
@@ -77,6 +115,14 @@ export function CRMSidePanel({ conversation }: Props) {
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [activities, setActivities] = useState<ActivityRow[] | null>(null);
   const [loading, setLoading] = useState(false);
+  /**
+   * O TERCEIRO ESTADO. Antes existiam dois — carregando e "tem N itens" — e a
+   * falha era traduzida para lista vazia, virando "Sem leads.": uma afirmação
+   * sobre o NEGÓCIO feita em cima de um erro de leitura. Distinguir "não tem"
+   * de "não consegui ler" é a diferença entre informar e mentir.
+   */
+  const [erro, setErro] = useState(false);
+  const [tentativa, setTentativa] = useState(0);
 
   useEffect(() => {
     if (!contactId) {
@@ -87,23 +133,28 @@ export function CRMSidePanel({ conversation }: Props) {
     }
     let cancelled = false;
     setLoading(true);
+    setErro(false);
 
+    // Pela ROTA, não pelo cliente de navegador: o cookie de sessão é httpOnly,
+    // então o supabase-js do browser não vê a sessão e consultava como `anon`
+    // (medido: role=anon com gerente logado). Ver o cabeçalho da rota.
     async function load() {
       try {
-        // Via API (server lê o cookie httpOnly). O client do browser não
-        // autentica no PostgREST, então RLS devolveria vazio.
-        const res = await apiClient.get<{
+        const r = await apiClient.get<{
           data: { leads: LeadRow[]; orders: OrderRow[]; activities: ActivityRow[] };
-        }>(`/api/v1/contacts/${contactId}/crm-context`);
+        }>(`/api/v1/contacts/${contactId}/crm-summary`);
         if (cancelled) return;
-        setLeads(res.data.leads ?? []);
-        setOrders(res.data.orders ?? []);
-        setActivities(res.data.activities ?? []);
+        setLeads(r.data.leads);
+        setOrders(r.data.orders);
+        setActivities(r.data.activities);
       } catch {
         if (cancelled) return;
-        setLeads([]);
-        setOrders([]);
-        setActivities([]);
+        // Falha NÃO vira lista vazia. Os dados ficam `null` e o painel diz que
+        // não conseguiu ler — nunca que não há.
+        setErro(true);
+        setLeads(null);
+        setOrders(null);
+        setActivities(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -113,7 +164,7 @@ export function CRMSidePanel({ conversation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [contactId]);
+  }, [contactId, tentativa]);
 
   const tags = contact?.tags ?? [];
   const displayName =
@@ -122,9 +173,14 @@ export function CRMSidePanel({ conversation }: Props) {
     contact?.phone_number ||
     "—";
 
+  // `erro` PRIMEIRO, e não é detalhe: as três listas voltam a `null` quando a
+  // leitura falha, e este derivado lê `null` como "ainda não chegou". Sem esta
+  // guarda o painel mostraria esqueleto para sempre e o estado de falha nunca
+  // apareceria — o mesmo colapso de significados que criou o defeito original,
+  // só que trocando "erro→vazio" por "erro→carregando".
   const sectionsLoading = useMemo(
-    () => loading || (leads === null && orders === null && activities === null),
-    [loading, leads, orders, activities],
+    () => !erro && (loading || (leads === null && orders === null && activities === null)),
+    [erro, loading, leads, orders, activities],
   );
 
   if (!conversation) {
@@ -250,6 +306,14 @@ export function CRMSidePanel({ conversation }: Props) {
         );
       })()}
 
+      <ConversationTagsEditor
+        conversationId={conversation.id}
+        orgId={conversation.organization_id}
+        tags={conversation.tags ?? []}
+      />
+
+      <Separator />
+
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Leads recentes
@@ -273,7 +337,7 @@ export function CRMSidePanel({ conversation }: Props) {
             ))}
           </ul>
         ) : (
-          <p className="mt-2 text-xs text-muted-foreground">Sem leads.</p>
+          <SemLista vazio="Sem leads." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
         )}
       </section>
 
@@ -305,7 +369,7 @@ export function CRMSidePanel({ conversation }: Props) {
             ))}
           </ul>
         ) : (
-          <p className="mt-2 text-xs text-muted-foreground">Sem pedidos.</p>
+          <SemLista vazio="Sem pedidos." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
         )}
       </section>
 
@@ -321,15 +385,32 @@ export function CRMSidePanel({ conversation }: Props) {
           <ul className="mt-2 space-y-1.5">
             {activities.map((a) => (
               <li key={a.id} className="rounded-md border border-border p-2 text-xs">
-                <div className="font-medium">{a.type}</div>
+                {/* Rótulo do vocabulário único (activity-vocabulary), nunca o
+                    tipo cru: a tela e o banco divergiram justamente por manter
+                    duas listas. Marcador por ator, forma e não cor (§5). */}
+                <div className="flex items-center gap-1.5 font-medium">
+                  <span
+                    className={cn(
+                      "h-2 w-2 shrink-0",
+                      actorShape(a.actor_kind) === "filled" && "rounded-full bg-accent",
+                      actorShape(a.actor_kind) === "ring" &&
+                        "rounded-full border border-accent bg-surface",
+                      actorShape(a.actor_kind) === "dashed" &&
+                        "rounded-full border border-dashed border-border-strong",
+                    )}
+                    aria-hidden
+                  />
+                  {activityLabel(a.type)}
+                </div>
+                {a.reason && <div className="mt-0.5 truncate text-muted-foreground">{a.reason}</div>}
                 <div className="text-muted-foreground">
-                  {a.source_module} · {shortDate(a.performed_at)}
+                  {actorLabel(a.actor_kind)} · {shortDate(a.performed_at)}
                 </div>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="mt-2 text-xs text-muted-foreground">Sem atividade.</p>
+          <SemLista vazio="Sem atividade." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
         )}
       </section>
     </aside>

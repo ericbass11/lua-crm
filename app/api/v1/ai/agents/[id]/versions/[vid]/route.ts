@@ -9,8 +9,7 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { versionPatchSchema } from "@/lib/ai/agents/validation";
@@ -18,7 +17,7 @@ import { versionPatchSchema } from "@/lib/ai/agents/validation";
 export const dynamic = "force-dynamic";
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, status, published_at, superseded_at, created_at, created_by";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, followup, status, published_at, superseded_at, created_at, created_by";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -31,13 +30,9 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "ids inválidos.", 400, { requestId });
   }
 
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden", "Sem organização ativa.", 403, { requestId });
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
-    return fail("forbidden_role", "Permissão insuficiente.", 403, { requestId });
-  }
+  const authz = await requireRole("manager", { requestId, resource: "ai_agents" });
+  if (!authz.ok) return authz.response;
+  const { org: activeOrg } = authz;
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -60,13 +55,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "ids inválidos.", 400, { requestId });
   }
 
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden", "Sem organização ativa.", 403, { requestId });
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Permissão insuficiente. Requer role admin.", 403, { requestId });
-  }
+  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   let raw: unknown;
   try {
@@ -121,6 +112,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (patch.handoff_keywords !== undefined) update.handoff_keywords = patch.handoff_keywords;
   if (patch.handoff_tool_enabled !== undefined)
     update.handoff_tool_enabled = patch.handoff_tool_enabled;
+  if (patch.cases_enabled !== undefined) update.cases_enabled = patch.cases_enabled;
+  if (patch.followup !== undefined) update.followup = patch.followup;
 
   const { data, error } = await admin
     .from("ai_agent_versions")
