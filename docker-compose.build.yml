@@ -14,3 +14,13 @@ services:
       # e os valores reais entram em runtime via env_file).
     image: ${APP_IMAGE:-lua-crm-app:local}
     pull_policy: never
+
+  # O worker do agent-engine também é buildável localmente. Ele é OBRIGATÓRIO em
+  # produção: é o único consumidor de `ai_agent.dispatch_requested`, então sem ele
+  # o agente nunca responde (e não há erro na tela — só silêncio).
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: ${WORKER_IMAGE:-lua-crm-worker:local}
+    pull_policy: never

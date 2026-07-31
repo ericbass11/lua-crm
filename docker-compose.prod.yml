@@ -40,9 +40,13 @@ services:
 
   # Worker 24/7 do agent-engine (fusão Vendaval) — cérebro do agente SDR.
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
+    # Imagem PRONTA do GHCR, mesma lógica do app: o build do projeto pede ≥4 GB e
+    # o VPS típico desta instalação tem 1 GB — compilar aqui não é opção. A tag
+    # acompanha WORKER_IMAGE (default = par do APP_IMAGE) para app e worker nunca
+    # rodarem versões diferentes. Quem tem RAM e quer buildar: acrescente
+    # `-f docker-compose.build.yml`, que reinsere o `build:`.
+    image: ${WORKER_IMAGE:-ghcr.io/ericbass11/lua-crm-worker:latest}
+    pull_policy: ${APP_PULL_POLICY:-always}
     restart: unless-stopped
     env_file: .env
     environment:
