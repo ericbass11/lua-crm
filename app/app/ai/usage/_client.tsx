@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAiUsage, type AiUsageFilters } from "@/hooks/ai/useAiUsage";
 import { UsageFilters, type UsageFiltersAgent } from "@/components/ai/UsageFilters";
 import { UsageChart } from "@/components/ai/UsageChart";
+import { formatCentsUSD } from "@/lib/money";
 
 interface Props {
   agents: UsageFiltersAgent[];
@@ -15,11 +16,6 @@ interface Props {
     to?: string;
   };
 }
-
-const brl = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-});
 
 function StatCard({
   label,
@@ -91,20 +87,33 @@ export function UsageDashboardClient({ agents, initial }: Props) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               label="Custo no período"
-              value={brl.format(q.data.totals.cost_cents / 100)}
+              // DÓLAR: esta tela mostrava o MESMO número em duas moedas — o card de
+              // orçamento logo acima em US$ e este StatCard em R$, dois centímetros abaixo.
+              value={formatCentsUSD(q.data.totals.cost_cents)}
             />
             <StatCard
-              label="Invocações"
+              label="Atendimentos com IA"
               value={q.data.totals.invocations.toLocaleString("pt-BR")}
             />
             <StatCard
-              label="Handoff rate"
+              label="Passaram para uma pessoa"
               value={`${(q.data.totals.handoff_rate * 100).toFixed(2)}%`}
+              hint="quanto mais alto, mais a IA precisou de ajuda"
             />
+            {/*
+              "p95" quer dizer: em 95 das 100 respostas o tempo foi ATÉ isso.
+              É a medida honesta para tempo de resposta (a média esconde os
+              casos ruins), mas o rótulo não pode ser a sigla — quem lê a tela
+              precisa saber o que fazer com o número, não decorar estatística.
+            */}
             <StatCard
-              label="p95 latência"
-              value={`${q.data.totals.p95_latency_ms.toLocaleString("pt-BR")} ms`}
-              hint={`p50 ${q.data.totals.p50_latency_ms.toLocaleString("pt-BR")} ms`}
+              label="Tempo de resposta"
+              value={`${(q.data.totals.p95_latency_ms / 1000).toLocaleString("pt-BR", {
+                maximumFractionDigits: 1,
+              })} s`}
+              hint={`a maioria responde em ${(
+                q.data.totals.p50_latency_ms / 1000
+              ).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s; este é o pior caso comum`}
             />
           </div>
 

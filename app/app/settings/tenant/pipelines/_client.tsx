@@ -10,6 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
 import { updateStageCriteria } from "@/app/actions/settings/updateStageCriteria";
 import type { PipelineConfigPatch } from "@/lib/schemas/settings";
+import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
+import { StagesSection, ancoraDasEtapas } from "./_stages";
 
 export interface PipelineRow {
   id: string;
@@ -50,26 +52,47 @@ function readLostReasons(settings: Record<string, unknown> | null): string[] {
 
 export function PipelinesClient({
   pipelines,
-  stages = [],
+  podeEditarConfig,
 }: {
   pipelines: PipelineRow[];
-  stages?: StageRow[];
+  /** Vocabulário/custom fields são admin (a server action recusa o resto). */
+  podeEditarConfig: boolean;
 }) {
   if (pipelines.length === 0) {
+    // ⚠️ NÃO PROMETA UM CAMINHO QUE NÃO EXISTE. Criar funil não é feito por
+    // nenhuma tela, rota ou action deste produto — só por script de instalação;
+    // e como o instalador não provisiona funil, ESTE é o estado de toda
+    // instalação nova. O texto anterior mandava "crie um no quadro", e o quadro
+    // vazio manda "Ir para Configurações": pingue-pongue fechado, com o usuário
+    // procurando um botão que não existe em lugar nenhum.
     return (
-      <Card className="p-6 text-sm text-text-muted">
-        Nenhum pipeline ativo. Crie um em Pipelines.
+      <Card className="p-6 text-sm leading-relaxed text-muted-foreground">
+        Você ainda não tem nenhum funil. Enquanto for assim, o agente atende normalmente, mas não
+        tem para onde levar o card de ninguém — não há etapas para onde mover. Criar o funil é
+        feito por quem instalou o sistema, direto no banco; depois ele aparece aqui para você
+        escolher a etapa de cada passo.
       </Card>
     );
   }
   return (
     <div className="flex flex-col gap-4">
       {pipelines.map((p) => (
-        <PipelineEditor
-          key={p.id}
-          pipeline={p}
-          stages={stages.filter((s) => s.pipeline_id === p.id)}
-        />
+        <Card key={p.id} className="space-y-6 p-6">
+          <header>
+            <h2 className="text-base font-semibold">{p.name}</h2>
+            <p className="text-xs text-muted-foreground">/{p.slug}</p>
+          </header>
+          {/* As ETAPAS vêm primeiro, e a ordem é a do raciocínio de quem
+              configura: primeiro o quadro existe do jeito da sua operação,
+              depois se decide o que o assistente faz com ele. Invertido, a
+              primeira coisa que o dono da clínica vê é um mapeamento sobre
+              colunas de e-commerce que ele nem sabia que dava para trocar. */}
+          <StagesSection pipelineId={p.id} ancoraMapeamento={ancoraDoMapeamento(p.id)} />
+          <div className="border-t border-border pt-6">
+            <AgentMappingSection pipelineId={p.id} ancoraEtapas={ancoraDasEtapas(p.id)} />
+          </div>
+          {podeEditarConfig && <PipelineEditor pipeline={p} />}
+        </Card>
       ))}
     </div>
   );
@@ -156,11 +179,8 @@ function PipelineEditor({ pipeline, stages = [] }: { pipeline: PipelineRow; stag
   }
 
   return (
-    <Card className="space-y-4 p-6">
-      <header>
-        <h2 className="text-base font-semibold">{pipeline.name}</h2>
-        <p className="text-xs text-text-muted">/{pipeline.slug}</p>
-      </header>
+    <div className="space-y-4 border-t border-border pt-6">
+      <h3 className="text-sm font-semibold">Vocabulário e campos</h3>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="space-y-1">
@@ -201,24 +221,9 @@ function PipelineEditor({ pipeline, stages = [] }: { pipeline: PipelineRow; stag
 
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={isPending}>
-          {isPending ? "Salvando…" : "Salvar"}
+          {isPending ? "Salvando…" : "Salvar vocabulário e campos"}
         </Button>
       </div>
-
-      {stages.length > 0 && (
-        <div className="space-y-2 border-t pt-4">
-          <div>
-            <Label className="text-sm font-medium">Critérios de IA por etapa</Label>
-            <p className="text-xs text-text-muted">
-              Descreva quando um lead deve estar em cada etapa. A IA usa isto para criar e mover
-              cards automaticamente. Etapa sem critério fica só na gestão manual.
-            </p>
-          </div>
-          {stages.map((s) => (
-            <StageCriteriaEditor key={s.id} stage={s} />
-          ))}
-        </div>
-      )}
-    </Card>
+    </div>
   );
 }

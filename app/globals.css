@@ -3,57 +3,56 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────
-   LUA CRM — Design System tokens (Indigo · Buzzy CRM · density Aerada)
-   Runtime source of truth (NÃO é o showcase /app/design/lib/tokens.ts).
-   Acento índigo #514ef3 extraído do Figma "Buzzy CRM". Cantos maiores + pill.
+   DeskcommCRM — Design System tokens (Sage palette · density Aerada)
+   Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
    Light + dark drawn separately (NOT inverted).
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Surfaces (light — cool) */
-  --color-bg: #f7f9fc;
+  /* Surfaces (light) */
+  --color-bg: #faf9f6;
   --color-surface: #ffffff;
-  --color-surface-elevated: #eef2f8;
-  --color-overlay: rgba(17, 24, 38, 0.42);
+  --color-surface-elevated: #f5f3ee;
+  --color-overlay: rgba(28, 26, 22, 0.42);
 
   /* Text (light) */
-  --color-text: #111826;
-  --color-text-muted: #4a5468;
-  --color-text-subtle: #6b7488;
+  --color-text: #1c1a16;
+  --color-text-muted: #5d594f;
+  --color-text-subtle: #7d786c;
 
   /* Borders (light) */
-  --color-border: #e2e8f2;
-  --color-border-strong: #cdd6e5;
+  --color-border: #e7e3da;
+  --color-border-strong: #d2cdbf;
 
-  /* Accent — Indigo (11 stops) · source: Figma "Buzzy CRM" #514ef3 */
-  --color-accent-50:  #eef0fe;
-  --color-accent-100: #e0e1fd;
-  --color-accent-200: #c5c4fb;
-  --color-accent-300: #a7a5f8;
-  --color-accent-400: #827ef5;
-  --color-accent-500: #514ef3;
-  --color-accent-600: #3f36e6;
-  --color-accent-700: #332ccb;
-  --color-accent-800: #2b27a3;
-  --color-accent-900: #272581;
-  --color-accent-950: #17154b;
-  --color-accent: var(--color-accent-500);
+  /* Accent — Sage (11 stops) */
+  --color-accent-50:  #f3f6f1;
+  --color-accent-100: #e4ebe0;
+  --color-accent-200: #c8d6c1;
+  --color-accent-300: #a4ba9a;
+  --color-accent-400: #82a077;
+  --color-accent-500: #67885d;
+  --color-accent-600: #506d48;
+  --color-accent-700: #41573b;
+  --color-accent-800: #374731;
+  --color-accent-900: #2f3c2b;
+  --color-accent-950: #171f15;
+  --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
-  --color-accent-hover: var(--color-accent-600);
+  --color-accent-hover: var(--color-accent-700);
 
-  /* Neutrals — cool gray (11 stops, light) */
-  --color-neutral-50:  #f7f9fc;
-  --color-neutral-100: #eef2f8;
-  --color-neutral-200: #e2e8f2;
-  --color-neutral-300: #cdd6e5;
-  --color-neutral-400: #97a3b8;
-  --color-neutral-500: #6b7488;
-  --color-neutral-600: #4a5468;
-  --color-neutral-700: #363e4e;
-  --color-neutral-800: #232a36;
-  --color-neutral-900: #111826;
-  --color-neutral-950: #080c14;
+  /* Neutrals — greige (11 stops, light) */
+  --color-neutral-50:  #faf9f6;
+  --color-neutral-100: #f3f1ec;
+  --color-neutral-200: #e7e3da;
+  --color-neutral-300: #d2cdbf;
+  --color-neutral-400: #a9a395;
+  --color-neutral-500: #7d786c;
+  --color-neutral-600: #5d594f;
+  --color-neutral-700: #46433b;
+  --color-neutral-800: #2e2c26;
+  --color-neutral-900: #1c1a16;
+  --color-neutral-950: #0e0d0a;
 
   /* States (light) */
   --color-success: #5a8a5f;
@@ -85,12 +84,12 @@
   --space-24: 96px;
   --space-32: 128px;
 
-  /* Radius — mais arredondado (Buzzy CRM: cards ~16-20px, botões pill) */
+  /* Radius */
   --radius-none: 0px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-full: 9999px;
 
   /* Shadows — desaturated, neutral-based */
@@ -144,51 +143,146 @@
   --radius: var(--radius-md);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Espelho do tema claro para SUBÁRVORE.
+
+   `:root` casa só o `<html>`. Medido antes de escrever: `grep -c
+   'data-theme="light"' app/globals.css` = 0 — ou seja, um `<div
+   data-theme="light">` dentro de uma página escura NÃO recebia nenhum token
+   claro; herdava os escuros do `<html>` e renderizava uma tela que mente. É
+   exatamente o que o preview lado a lado da marca precisa fazer.
+
+   Custom property herdada não tem como voltar ao valor do `:root` dentro de
+   uma subárvore (`initial`/`revert` a deixam sem valor, não com o valor de
+   cima), então redeclarar é obrigação da linguagem, não escolha. O conjunto
+   redeclarado é EXATAMENTE o que `[data-theme="dark"]` sobrescreve — 59
+   props — e um teste (`tests/unit/branding-tema-claro-escopavel.test.ts`)
+   reprova quando os dois divergem; sem ele a cópia envelhece calada.
+
+   Por que a seletor NÃO é `:root, [data-theme="light"]`, que seria a forma
+   óbvia: `extrairRegua` (lib/branding/contraste.ts) acha o bloco claro por
+   igualdade exata de seletor (`r.seletor === ":root"`), e a lista o quebraria
+   — a régua inteira, e com ela os 37 testes de contraste, deixariam de ser
+   extraídos.
+
+   As 11 paradas `--color-accent-NNN` ficam DE FORA de propósito. Elas são
+   idênticas nos dois blocos do produto, então omiti-las não muda pixel algum
+   aqui; e, na instalação que trocou a cor, a subárvore clara passa a herdar a
+   rampa do `<html>` (a do revendedor) em vez de fixar a Sage. Pelo mesmo
+   motivo os papéis abaixo mantêm a forma `var(--color-accent-NNN)`.
+
+   Buraco conhecido: `--color-accent-fg` é literal `#ffffff` e, numa subárvore
+   clara sob página escura, ficaria preso ao branco mesmo quando a marca exige
+   preto. Fechar isso pede um bloco de escopo claro no CSS injetado
+   (lib/branding/css.ts), que só ganha consumidor com a tela de marca.
+   ───────────────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --color-bg: #faf9f6;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f5f3ee;
+  --color-overlay: rgba(28, 26, 22, 0.42);
+  --color-text: #1c1a16;
+  --color-text-muted: #5d594f;
+  --color-text-subtle: #7d786c;
+  --color-border: #e7e3da;
+  --color-border-strong: #d2cdbf;
+  --color-accent: var(--color-accent-600);
+  --color-accent-fg: #ffffff;
+  --color-accent-soft: var(--color-accent-100);
+  --color-accent-hover: var(--color-accent-700);
+  --color-neutral-50: #faf9f6;
+  --color-neutral-100: #f3f1ec;
+  --color-neutral-200: #e7e3da;
+  --color-neutral-300: #d2cdbf;
+  --color-neutral-400: #a9a395;
+  --color-neutral-500: #7d786c;
+  --color-neutral-600: #5d594f;
+  --color-neutral-700: #46433b;
+  --color-neutral-800: #2e2c26;
+  --color-neutral-900: #1c1a16;
+  --color-neutral-950: #0e0d0a;
+  --color-success: #5a8a5f;
+  --color-success-bg: rgba(90, 138, 95, 0.12);
+  --color-success-fg: #41673f;
+  --color-warning: #b07a2b;
+  --color-warning-bg: rgba(176, 122, 43, 0.12);
+  --color-warning-fg: #875a1a;
+  --color-error: #a94a3c;
+  --color-error-bg: rgba(169, 74, 60, 0.12);
+  --color-error-fg: #8a3a2e;
+  --color-info: #4a7a93;
+  --color-info-bg: rgba(74, 122, 147, 0.12);
+  --color-info-fg: #355d72;
+  --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
+  --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
+  --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
+  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
+  --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  --background: var(--color-bg);
+  --foreground: var(--color-text);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-text);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-text);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--color-accent-fg);
+  --secondary: var(--color-surface-elevated);
+  --secondary-foreground: var(--color-text);
+  --muted: var(--color-surface-elevated);
+  --muted-foreground: var(--color-text-muted);
+  --accent-foreground: var(--color-accent-fg);
+  --destructive: var(--color-error);
+  --destructive-foreground: #ffffff;
+  --border: var(--color-border);
+  --input: var(--color-border);
+  --ring: var(--color-accent-500);
+}
+
 [data-theme="dark"] {
-  /* Surfaces (dark — navy) */
-  --color-bg: #0b1220;
-  --color-surface: #121b2e;
-  --color-surface-elevated: #1b2740;
-  --color-overlay: rgba(2, 6, 16, 0.62);
+  /* Surfaces (dark — drawn) */
+  --color-bg: #161510;
+  --color-surface: #1d1c17;
+  --color-surface-elevated: #272620;
+  --color-overlay: rgba(0, 0, 0, 0.55);
 
   /* Text (dark) */
-  --color-text: #eaf0fb;
-  --color-text-muted: #97a6c2;
-  --color-text-subtle: #63708c;
+  --color-text: #f5f4ef;
+  --color-text-muted: #8e8b7f;
+  --color-text-subtle: #605e54;
 
   /* Borders (dark) */
-  --color-border: #26324d;
-  --color-border-strong: #354465;
+  --color-border: #33312a;
+  --color-border-strong: #444239;
 
-  /* Accent — Indigo; default sobe pra contraste no navy */
-  --color-accent-50:  #eef0fe;
-  --color-accent-100: #e0e1fd;
-  --color-accent-200: #c5c4fb;
-  --color-accent-300: #a7a5f8;
-  --color-accent-400: #827ef5;
-  --color-accent-500: #514ef3;
-  --color-accent-600: #3f36e6;
-  --color-accent-700: #332ccb;
-  --color-accent-800: #2b27a3;
-  --color-accent-900: #272581;
-  --color-accent-950: #17154b;
+  /* Accent stays same hex stops; default shifts up for dark contrast */
+  --color-accent-50:  #f3f6f1;
+  --color-accent-100: #e4ebe0;
+  --color-accent-200: #c8d6c1;
+  --color-accent-300: #a4ba9a;
+  --color-accent-400: #82a077;
+  --color-accent-500: #67885d;
+  --color-accent-600: #506d48;
+  --color-accent-700: #41573b;
+  --color-accent-800: #374731;
+  --color-accent-900: #2f3c2b;
+  --color-accent-950: #171f15;
   --color-accent: var(--color-accent-400);
-  --color-accent-fg: #0b1220;
-  --color-accent-soft: rgba(130, 126, 245, 0.16);
+  --color-accent-fg: #161510;
+  --color-accent-soft: rgba(130, 160, 119, 0.16);
   --color-accent-hover: var(--color-accent-300);
 
-  /* Neutrals — navy (11 stops, dark) */
-  --color-neutral-50:  #eaf0fb;
-  --color-neutral-100: #d6e0f2;
-  --color-neutral-200: #aab8d4;
-  --color-neutral-300: #8494b6;
-  --color-neutral-400: #5f6e90;
-  --color-neutral-500: #435068;
-  --color-neutral-600: #2f3a52;
-  --color-neutral-700: #1f2b43;
-  --color-neutral-800: #121b2e;
-  --color-neutral-900: #0b1220;
-  --color-neutral-950: #060a13;
+  /* Neutrals — greige (11 stops, dark) */
+  --color-neutral-50:  #f5f4ef;
+  --color-neutral-100: #e6e4dc;
+  --color-neutral-200: #bbb8ac;
+  --color-neutral-300: #8e8b7f;
+  --color-neutral-400: #605e54;
+  --color-neutral-500: #444239;
+  --color-neutral-600: #33312a;
+  --color-neutral-700: #272620;
+  --color-neutral-800: #1d1c17;
+  --color-neutral-900: #161510;
+  --color-neutral-950: #0c0b08;
 
   /* States (dark) */
   --color-success: #82a077;
@@ -243,6 +337,13 @@
   [data-theme="dark"] {
     color-scheme: dark;
   }
+  /* Par do espelho de tokens acima: sem isto, uma subárvore clara dentro de uma
+     página escura recebe os tokens claros mas mantém o `color-scheme: dark` do
+     `<html>` — e o navegador continua pintando scrollbar, `<input>` e menu
+     nativo em escuro dentro de uma caixa clara. */
+  [data-theme="light"] {
+    color-scheme: light;
+  }
 
   body {
     background-color: var(--color-bg);
@@ -278,6 +379,26 @@
   }
   [data-theme="dark"] :focus-visible {
     outline-color: var(--color-accent-400);
+  }
+
+  /* Modo de alto contraste do sistema (Windows High Contrast / forced-colors).
+     Medido antes de escrever: 0 ocorrências de `forced-colors` no repo inteiro
+     e, em `app/ components/ lib/`, 18 arquivos que matam `outline`
+     (`outline-none` / `outline: none` / outline transparente) — 14 deles
+     desenhando o foco com `ring-*`, que é `box-shadow`, e o forced-colors APAGA
+     box-shadow. (Contagem com este arquivo de fora: incluí-lo devolvia 19/15,
+     porque o grep achava as palavras deste próprio comentário.) Nesses 14, o
+     indicador de foco some por completo naquele modo: quem navega por teclado
+     perde a posição do cursor. É WCAG 2.4.7 nível A, não preferência.
+
+     `Highlight` é cor de sistema (a paleta do usuário), a única que o modo não
+     substitui. `!important` porque o que precisa ser vencido é justamente o
+     `outline: none`/`outline: transparent` desses 14 arquivos. */
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline: 2px solid Highlight !important;
+      outline-offset: 2px !important;
+    }
   }
 
   /* Scrollbar — subtle greige */

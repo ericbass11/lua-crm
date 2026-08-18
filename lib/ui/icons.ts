@@ -10,6 +10,8 @@
 export {
   // navigation (inbox icon = Tray in Phosphor)
   Tray as Inbox,
+  ListChecks,
+  Plugs,
   PlugsConnected,
   QrCode,
   Kanban,
@@ -30,6 +32,8 @@ export {
   Gauge,
   WifiSlash,
   Clock,
+  // marca da instalação (o revendedor troca nome e cor do produto)
+  Palette,
   // health dashboard
   WifiHigh,
   Brain,
@@ -63,6 +67,9 @@ export {
   Eye,
   ChartBar,
   ClockCountdown,
+  // painéis de evolução / aprendizado
+  ChartLineUp,
+  Lightbulb,
   // theme
   Sun,
   Moon,
@@ -97,4 +104,14 @@ export {
   ArrowRight,
   SignOut,
   WebhooksLogo,
+  PuzzlePiece,
+  UploadSimple,
+  Signpost,
+  // atualização de versão
+  ArrowCircleUp,
+  // navegação agrupada (registro em lib/navigation/registry.ts)
+  Funnel,
+  BookOpen,
+  UserCircle,
+  ClockCounterClockwise,
 } from "@phosphor-icons/react/dist/ssr";

@@ -11,6 +11,7 @@
 import Link from "next/link";
 
 import { verifyInviteToken } from "@/lib/auth/invite-token";
+import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { acceptInviteAction } from "@/app/actions/team/acceptInvite";
 
@@ -22,6 +23,22 @@ interface PageProps {
 
 export default async function AcceptInvitePage({ params }: PageProps) {
   const { token } = await params;
+
+  // O gargalo de enumeração é AQUI, não no aceite: a rota é pública e cada
+  // GET testa um token. Sem teto, varrer o espaço de tokens sai de graça
+  // (issue #64). Barrar antes de verificar mantém a resposta indistinguível
+  // entre token válido e inválido para quem está varrendo.
+  if (await authRateLimited("invite_accept", null, AUTH_LIMITS.invite_accept)) {
+    return (
+      <Shell>
+        <h1 className="text-xl font-semibold">Muitas tentativas</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Aguarde alguns minutos e abra o link do convite de novo.
+        </p>
+      </Shell>
+    );
+  }
+
   const payload = verifyInviteToken(token);
 
   if (!payload) {
@@ -49,12 +66,27 @@ export default async function AcceptInvitePage({ params }: PageProps) {
           Para aceitar o convite como <strong>{payload.role}</strong>, faça login com o email{" "}
           <strong>{payload.email}</strong>.
         </p>
-        <Link
-          href={`/login?next=${next}`}
-          className="mt-4 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        >
-          Fazer login
-        </Link>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Link
+            href={`/login?next=${next}`}
+            className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Fazer login
+          </Link>
+          {/*
+            O caminho que faltava. Quem é convidado e ainda NÃO tem conta só
+            tinha "Fazer login" — então criava conta pelo caminho comum, e o
+            provisionamento, sem achar vínculo, abria uma empresa e o tornava
+            admin dela. O token viaja no link para que a conta nova já nasça
+            amarrada a este convite.
+          */}
+          <Link
+            href={`/signup?invite=${encodeURIComponent(token)}`}
+            className="text-sm underline underline-offset-4"
+          >
+            Ainda não tenho conta
+          </Link>
+        </div>
       </Shell>
     );
   }

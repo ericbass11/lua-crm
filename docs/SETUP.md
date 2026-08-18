@@ -113,11 +113,29 @@ supabase login
 # Conecte ao seu projeto (project-ref está na URL do dashboard)
 supabase link --project-ref <seu-project-ref>
 
-# Aplica todas as migrations do repo
-supabase db push
+# Num projeto Supabase NOVO, habilite antes as extensões que o schema usa —
+# sem elas o baseline para em `type public.vector does not exist`.
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c \
+  'create extension if not exists vector with schema public;
+   create extension if not exists citext with schema public;
+   create extension if not exists pg_trgm with schema public;'
+
+# Aplica o SCHEMA — o baseline, não a cadeia de migrations.
+# Re-aplicar é seguro e não erra: o arquivo é idempotente (issue #184).
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/baseline.sql
 ```
 
-Se não conseguir usar o CLI, copie cada arquivo de `supabase/migrations/*.sql` e cole em **SQL Editor → New query** no dashboard, em ordem alfabética. Trabalhoso mas funciona.
+> ⚠️ **Não use `supabase db push` num banco novo.** As migrations `0001`–`0009` e `0013`
+> são stubs `SELECT 1;` — o schema fundacional não está nelas, e a cadeia não sobe do
+> zero. O `db push` **passa sem erro** e te deixa com um banco vazio, e você só descobre
+> muito depois, num erro que não aponta pra cá. O `supabase/baseline.sql` é o schema real
+> e é exatamente o que o `hostgator-setup-kit/install.sh` aplica na VPS.
+>
+> As migrations continuam sendo a fonte da verdade para quem **já tem** um banco e está
+> atualizando — é o baseline que serve pra criar do zero.
+
+Se não conseguir usar o CLI, abra **SQL Editor → New query** no dashboard e cole o conteúdo
+de `supabase/baseline.sql`.
 
 ### Storage bucket
 

@@ -232,7 +232,7 @@ export async function PATCH(
   }
 
   return ok(
-    { data: { id: sourceId, ...(itemsCount !== undefined ? { items_count: itemsCount } : {}) } },
+    { id: sourceId, ...(itemsCount !== undefined ? { items_count: itemsCount } : {}) },
     { requestId },
   );
 }
@@ -281,5 +281,5 @@ export async function DELETE(
     return fail("internal_error", "Erro ao arquivar fonte.", 500, { requestId });
   }
 
-  return ok({ data: { id: sourceId, status: "archived" } }, { requestId });
+  return ok({ id: sourceId, status: "archived" }, { requestId });
 }

@@ -141,6 +141,11 @@ beforeAll(() => {
             values (v_org, v_pipe, v_stage, 'RLS invariant lead');
         end if;
 
+        if not exists (select 1 from public.org_guardrail_layers where organization_id = v_org) then
+          insert into public.org_guardrail_layers (organization_id, layer, enabled)
+            values (v_org, 'jailbreak', true);
+        end if;
+
         if not exists (select 1 from public.org_memory_versions where organization_id = v_org) then
           insert into public.org_memory_versions (organization_id, version_number, content)
             values (v_org, 1, 'RLS invariant memory doc');
@@ -150,12 +155,55 @@ beforeAll(() => {
           insert into public.org_memory_entries (organization_id, title, body, source)
             values (v_org, 'RLS invariant entry', 'RLS invariant body', 'manual');
         end if;
+
+        if not exists (select 1 from public.skill_activations where organization_id = v_org) then
+          insert into public.skill_activations (organization_id, skill_name, trigger)
+            values (v_org, 's', 'hard');
+        end if;
+
+        if not exists (select 1 from public.ai_routers where organization_id = v_org) then
+          insert into public.ai_routers (organization_id, name, channel_session_id)
+            values (v_org, 'RLS Invariant Router', v_sess);
+        end if;
+
+        if not exists (select 1 from public.ai_router_decisions where organization_id = v_org) then
+          insert into public.ai_router_decisions (organization_id, outcome)
+            values (v_org, 'no_match');
+        end if;
+
+        if not exists (select 1 from public.knowledge_searches where organization_id = v_org) then
+          insert into public.knowledge_searches (organization_id, hits, top_score, threshold)
+            values (v_org, 1, 0.81, 0.72);
+        end if;
+
+        -- contact_field_proposals (migration 0123): a fila guarda e-mail e
+        -- telefone que o cliente DITOU na conversa — PII crua, e a tabela nasce
+        -- com CRUD inteiro para "authenticated" (o ALTER DEFAULT PRIVILEGES do
+        -- baseline vale para todo objeto criado no apêndice). A única coisa
+        -- entre o tenant A e o e-mail do cliente do tenant B é a policy.
+        if not exists (select 1 from public.contact_field_proposals where organization_id = v_org) then
+          insert into public.contact_field_proposals
+            (organization_id, contact_id, campo, valor_proposto, expires_at)
+            values (v_org, v_contact, 'email', 'rls-invariant@exemplo.test', now() + interval '7 days');
+        end if;
       end loop;
     end
     $seed$;
   `);
 });
 
+/**
+ * ⚠️ LISTA FIXA — tabela tenant-aware nova que NÃO entrar aqui passa verde sem
+ * RLS. Não existe varredura genérica do tipo "toda tabela com organization_id
+ * tem relrowsecurity = true"; quem cria tabela nova acrescenta a linha aqui, no
+ * MESMO commit da migration.
+ *
+ * E conferir o catálogo (`relrowsecurity`, `pg_policy` contendo o nome da
+ * função) NÃO substitui este percurso: policy que diga
+ * `organization_id in (select fn_user_org_ids()) or true` satisfaz as duas
+ * checagens de catálogo e devolve a org inteira do vizinho. Medido — ver o
+ * cabeçalho do caso de `contact_field_proposals` abaixo.
+ */
 const TABLES = [
   "conversations",
   "messages",
@@ -163,6 +211,18 @@ const TABLES = [
   "crm_leads",
   "org_memory_versions",
   "org_memory_entries",
+  "skill_activations",
+  "ai_routers",
+  "ai_router_decisions",
+  "knowledge_searches",
+  // migration 0123 (spec 17 §4b) — guarda e-mail/telefone ditos na conversa.
+  "contact_field_proposals",
+  // migration 0142 — a escolha de camadas de segurança da organização. Entrou aqui
+  // depois de uma auditoria medir que ela NÃO tinha prova comportamental nenhuma:
+  // o teste de schema dela conecta como `postgres` (rolbypassrls = t), e com a policy
+  // sabotada para `... or true` a suíte seguia 31/31 verde num banco em que o vizinho
+  // lia e escrevia. É o modo de falha que o aviso acima descreve, encontrado vivo.
+  "org_guardrail_layers",
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {

@@ -7,7 +7,8 @@
  *        SET status='pending',
  *            bot_silenced_until='infinity',
  *            last_handoff_at=now(),
- *            last_handoff_reason=<reason>
+ *            last_handoff_reason=<reason>,
+ *            active_ai_agent_id=null, active_intent=null, active_agent_set_at=null
  *      (idempotente: se outro handoff aconteceu nos últimos 5s com mesma reason,
  *       skip — tratamento de race G2 vs G3 vs G4 simultâneos.)
  *   2. INSERT em crm_lead_activities (timeline) se houver lead_id
@@ -30,7 +31,17 @@ export type HandoffReason =
   | "low_confidence"
   | "critical_stage"
   | "legal_mention"
-  | "refund_mention";
+  | "refund_mention"
+  /**
+   * O teto de gasto com IA parou o atendimento automático. NÃO é pedido do lead —
+   * quem lê `last_handoff_reason` precisa distinguir, porque a primeira frase que
+   * o humano digita depende disso.
+   *
+   * O literal vem de `HANDOFF_REASON_ORCAMENTO` (`lib/agent-engine/edge/llm/orcamento.ts`),
+   * a MESMA constante que o engine grava: dois caminhos param a IA pelo mesmo
+   * motivo, e duas grafias fariam quem filtra por uma achar metade das conversas.
+   */
+  | "orcamento_de_ia";
 
 export interface TriggerHandoffInput {
   conversationId: string;
@@ -98,6 +109,11 @@ export async function triggerHandoff(
         last_handoff_at: nowIso,
         last_handoff_reason: input.reason,
         status_changed_at: nowIso,
+        // Fase 3 (review T5, finding 4): zera a aderência ao agente do router — se o
+        // bot for reativado, o router decide de novo (não reassume por inércia).
+        active_ai_agent_id: null,
+        active_intent: null,
+        active_agent_set_at: null,
       })
       .eq("id", input.conversationId)
       .eq("organization_id", input.organizationId);

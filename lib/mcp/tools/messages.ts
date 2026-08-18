@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { sendMessageSchema } from "@/lib/schemas/messaging";
-import { toWhatsAppText } from "@/lib/waha/format";
+import { formatOutboundText } from "@/lib/channels";
 import type { McpToolDefinition } from "../types";
 
 const ENDPOINT_TAG = "mcp:crm_send_whatsapp_message";
@@ -42,14 +42,14 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
     "Envia uma mensagem WhatsApp outbound para uma conversa existente. Forneça `idempotency_key` para evitar duplicação em retries (TTL 24h).",
   inputSchema: inputShape,
   category: "write",
-  requiresRole: "manager",
+  requiresRole: "agent",
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
     const parsed = sendMessageSchema.parse({
       conversation_id: input.conversation_id,
       type: input.type,
       // Chamado por agentes (LLM): normaliza Markdown → sintaxe WhatsApp.
-      body: input.body && input.type === "text" ? toWhatsAppText(input.body) : input.body,
+      body: input.body && input.type === "text" ? formatOutboundText(input.body) : input.body,
       media_url: input.media_url,
       media_mime: input.media_mime,
     });

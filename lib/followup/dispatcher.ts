@@ -18,7 +18,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { checkTenantBudget } from "@/lib/ai/dispatcher/budget";
+import { getBudgetStatus } from "@/lib/ai/budget/check";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -150,8 +150,8 @@ export async function runFollowupDispatcher(): Promise<FollowupStats> {
       continue;
     }
 
-    const budget = await checkTenantBudget(raw.organization_id);
-    if (!budget.ok) {
+    const budget = await getBudgetStatus(raw.organization_id);
+    if (budget.blocked_now) {
       stats.skipped_budget += 1;
       continue;
     }

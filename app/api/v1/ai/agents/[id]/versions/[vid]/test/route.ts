@@ -1,12 +1,12 @@
 /**
  * POST /api/v1/ai/agents/:id/versions/:vid/test (admin)
  *
- * Spec 10 §4.4. Cria ai_agent_runs com is_dry_run=true e dispara o runtime
- * interno. Wave 6 ainda não tem o runtime real (S-13.08 entrega) — quando
- * INTERNAL_AGENT_RUN_STUB=true, o endpoint roda um trace fake síncrono
- * direto na row pra UI conseguir renderizar test mode antes do runtime
- * landar. Quando a flag virar false (após S-13.08), o handler delega via
- * fetch para /api/internal/agents/run.
+ * Spec 10 §4.4. Cria ai_agent_runs com is_dry_run=true e executa o runtime
+ * real (S-13.08) via `callInternalRuntime` → `runAgent`. Esse é o default.
+ *
+ * INTERNAL_AGENT_RUN_STUB=true troca a execução por um trace fabricado —
+ * serve para exercitar o render da UI sem gastar token, e NÃO é o default:
+ * numa instalação nova, "Testar agente" tem que testar o agente.
  *
  * Crítico: dry_run=true → bypass do partial unique
  *   ai_agent_runs_one_running_per_conv (que filtra is_dry_run=false), por
@@ -24,6 +24,7 @@ import { env } from "@/lib/env";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
+import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
 
 export const dynamic = "force-dynamic";
 
@@ -107,14 +108,26 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       startedAt,
     });
   } else {
-    // Real runtime delega via fetch interno. S-13.08 entrega.
-    resultPayload = await callInternalRuntime({
-      runId: runRow.id,
-      orgId: activeOrg.orgId,
-      versionId: vid,
-      sampleMessage: parsed.data.sample_message,
-      sampleContact: parsed.data.sample_contact,
-    });
+    // Runtime real (S-13.08). Falha aqui é o caso comum de instalação nova —
+    // credencial de IA ausente. Um 500 cru mandaria a pessoa pro log do
+    // servidor; devolvemos o porquê legível na própria tela.
+    try {
+      resultPayload = await callInternalRuntime({
+        runId: runRow.id,
+        orgId: activeOrg.orgId,
+        versionId: vid,
+        sampleMessage: parsed.data.sample_message,
+        sampleContact: parsed.data.sample_contact,
+      });
+    } catch (err) {
+      const detalhe = err instanceof Error ? err.message : String(err);
+      return fail(
+        "internal_error",
+        `Não consegui executar o agente: ${detalhe}. Confira as credenciais de IA da organização.`,
+        500,
+        { requestId },
+      );
+    }
   }
 
   void audit({
@@ -184,6 +197,10 @@ async function runStubbedTest(args: StubArgs): Promise<Record<string, unknown>> 
     run_id: args.runId,
     status: "completed",
     final_text: finalText,
+    // O stub também passa pela avaliação: um caminho que não a tivesse voltaria
+    // a ser o "verde que não olhou para nada" — só que mais difícil de notar,
+    // porque conviveria com um caminho que olha.
+    guardrails: avaliarRespostaDeTeste(finalText),
     tool_calls: toolCalls,
     tokens_in: 0,
     tokens_out: 0,
@@ -216,5 +233,14 @@ async function callInternalRuntime(args: {
       sampleContact: args.sampleContact,
     },
   });
-  return { ...result, stub: false };
+  // O runtime desta rota é o `@deprecated`, e ele NÃO importa `runBeforeSend` —
+  // a cadeia de guardrails vive no processo do worker e está ausente do build do
+  // app. Sem a linha abaixo, o botão "Testar" mostra uma resposta que nenhum
+  // gate examinou, e o self-hoster publica achando que viu o comportamento real.
+  //
+  // A avaliação cobre o que é decidível só com o texto e DECLARA o resto (ver
+  // lib/ai/agents/avaliar-resposta-de-teste.ts): fabricar o estado do turno para
+  // rodar a cadeia toda daria um veredito inventado, que é pior do que um
+  // "não avaliado" visível.
+  return { ...result, stub: false, guardrails: avaliarRespostaDeTeste(result.final_text) };
 }

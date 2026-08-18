@@ -77,7 +77,10 @@ export async function GET(_req: NextRequest): Promise<Response> {
     return fail("internal_error", "Erro ao listar fontes de conhecimento.", 500, { requestId });
   }
 
-  return ok({ data: data ?? [] }, { requestId });
+  // `ok()` já embrulha em `{ data }`. Com `{ data: data ?? [] }` o corpo saía
+  // `{ data: { data: [...] } }` e o hook fazia `.filter` sobre o envelope —
+  // TypeError, lista de fontes só aparecia pelo SSR e nunca atualizava.
+  return ok(data ?? [], { requestId });
 }
 
 // ---------------------------------------------------------------------------
@@ -126,10 +129,14 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("not_found", "Agent não encontrado nesta organização.", 404, { requestId });
   }
 
-  // Resolve FAQ items if source_type is 'faq'.
+  // Itens de conteúdo: valem para 'faq' E 'policy'. Antes só 'faq' era tratado,
+  // e uma política enviada com markdown_blob era ACEITA e descartada em
+  // silêncio — a fonte nascia vazia, sem erro, e o indexador depois a marcava
+  // como falha sem que ninguém entendesse por quê. Os dois tipos guardam
+  // pergunta/resposta na mesma tabela.
   let faqItems: Array<{ question: string; answer: string; tags: string[]; locale: string }> = [];
 
-  if (input.source_type === "faq") {
+  if (input.source_type === "faq" || input.source_type === "policy") {
     if (input.items && input.items.length > 0) {
       faqItems = input.items.map((it) => ({
         question: it.question,
@@ -219,5 +226,5 @@ export async function POST(req: NextRequest): Promise<Response> {
     console.warn("[ai-knowledge-sources] emit_event failed (non-blocking):", emitErr.message);
   }
 
-  return ok({ data: { id: ksId, items_count: itemsCount } }, { status: 201, requestId });
+  return ok({ id: ksId, items_count: itemsCount }, { status: 201, requestId });
 }

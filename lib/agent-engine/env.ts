@@ -6,6 +6,12 @@
  */
 import { z } from 'zod';
 
+import {
+  RETORNO_MAX_AHEAD_MS_PADRAO,
+  RETORNO_MIN_AHEAD_MS_PADRAO,
+  RETORNO_STAGGER_WINDOW_MS_PADRAO,
+} from '@/lib/followup/janela';
+
 const envSchema = z.object({
   // Postgres do Supabase (connection string — Settings → Database). O motor usa
   // `pg` direto: FOR UPDATE SKIP LOCKED, advisory locks, FTS.
@@ -18,16 +24,50 @@ const envSchema = z.object({
   // ai_provider_credentials). Opcional no boot: sem ela e sem BYOK, o turno
   // falha com erro instrutivo — nunca silêncio.
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  // A irmã da de cima, e ela faltava aqui. O instalador coleta OPENAI_API_KEY, mas
+  // sem esta linha ela nunca chegava ao turno do agente: uma organização com agente
+  // OpenAI e a chave no `.env` continuava sem credencial utilizável, e a única
+  // saída era cadastrar BYOK pela tela — sem nada dizendo isso.
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  // A TERCEIRA irmã, e a que mais doía faltar: OpenRouter é a opção **[1]** do
+  // menu do instalador, a que ele chama de caminho mais simples. O ramo
+  // `provider === 'openrouter'` existe em `resolveOrgLlmConfig` e
+  // `llmEdgeConfigFromEnv` já lia `env.OPENROUTER_API_KEY` — mas o parâmetro
+  // declara a chave como opcional (typecheck passa sem ela) e `loadEnv` devolve
+  // `parsed.data`, e o Zod remove o que o schema não declara. A chave estava no
+  // `.env`, sumia no boot do worker, e TODO turno morria em
+  // `LlmNotConfiguredError` mandando cadastrar credencial pela tela.
+  // Consertar a irmã da OpenAI e deixar esta é o modo de falha desta família:
+  // ao mexer aqui, confira as três de uma vez.
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
   // Modelo default do agente quando a org não define o dela (knob, nunca constante).
   AGENT_DEFAULT_MODEL: z.string().min(1).default('claude-sonnet-4-5'),
   // Teto de conexões por pool do pg. Sem valor = pg decide (default 10).
   DB_POOL_MAX: z.coerce.number().int().positive().optional(),
-  // Knobs da fila — defaults conservadores, documentados no .env.example.
+  // Knobs da fila. (Esta linha já afirmou "documentados no .env.example" quando
+  // NENHUMA chave QUEUE_ estava lá — o autor da issue #258 teve de ler o
+  // código-fonte para achar o intervalo que estava lhe custando a cota. O que
+  // cada knob FAZ é dito aqui, que é semântica e não envelhece; onde mexer e o
+  // que medir está em docs/runbooks/custo-e-cota-do-supabase.md.)
   QUEUE_MAX_CONCURRENCY: z.coerce.number().int().positive().default(8),
   QUEUE_VISIBILITY_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
   // Porta do /healthz (bind 0.0.0.0 no container; 0 = porta efêmera em teste).
   HEALTH_PORT: z.coerce.number().int().min(0).max(65_535).default(8787),
-  QUEUE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(250),
+  // TETO de espera do laço da fila: com a fila vazia é quanto ele dorme entre uma
+  // consulta ao relógio e a próxima; com job agendado, ele acorda no vencimento e
+  // este valor só limita a soneca. Era 250 e a fila era consultada abrindo uma
+  // transação de claim inteira — 5 statements, ~17/s para sempre numa instalação
+  // que não atende ninguém (issue #258: 8,09 GB/mês de egress medidos contra uma
+  // cota de 5 GB do plano free do Supabase). O 2000 mantém o SIGNIFICADO da chave
+  // para quem já a configurou, cabe 4× dentro do INBOUND_DEBOUNCE_MS (8000) e fica
+  // abaixo do idleTimeoutMillis do pool (10s), acima do qual cada rodada reconecta.
+  QUEUE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
+  // Ritmo do "havia trabalho e eu não peguei" — cap QUEUE_MAX_CONCURRENCY cheio ou
+  // lane do contato ocupada. Aqui há job vencido esperando vaga, então recolher o
+  // ritmo custaria throughput no pico sem economizar nada no ocioso: é o único
+  // estado que segue nos 250 ms de sempre. Separar os dois é o que impede o valor
+  // que o operador escolheu para economizar de governar também o caminho ocupado.
+  QUEUE_CLAIM_RETRY_INTERVAL_MS: z.coerce.number().int().positive().default(250),
   QUEUE_REAPER_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   SHUTDOWN_GRACE_MS: z.coerce.number().int().positive().default(30_000),
   // Watchdog de sessão (Fase 4A-2) — o ÚNICO ponto do engine que fala com o
@@ -44,6 +84,20 @@ const envSchema = z.object({
   // 'engine' (default) = o drain deste worker consome; 'native' = o dispatcher
   // EPIC-13 consome e o drain daqui NÃO liga. Nunca os dois.
   AGENT_DISPATCH_CONSUMER: z.enum(['engine', 'native']).default('engine'),
+  // Kill switch do teto de gasto de IA. `on` (ausente = on) não liga nada:
+  // respeita o que cada organização escolheu. A chave só AFROUXA — 'avisar'
+  // rebaixa bloqueio a aviso, 'off' (e as grafias falsas comuns) cala tudo.
+  //
+  // ⚠️ ESTA LINHA É O QUE FAZ A ALAVANCA CHEGAR A QUEM GASTA. `loadEnv` devolve
+  // `parsed.data`, e o Zod REMOVE o que o schema não declara: a chave estaria no
+  // `.env`, sumiria no boot do worker, e o operador que puxasse a alavanca veria
+  // a IA continuar bloqueada sem nenhuma pista do porquê. É a mesma família de
+  // defeito das três chaves de provedor acima — a quarta irmã.
+  //
+  // `z.string()` cru e NUNCA `z.enum`: um valor inesperado aqui derrubaria o
+  // worker no boot, e derrubar o worker é o oposto do que um kill switch faz.
+  // Quem normaliza é `normalizarChaveDeOrcamento` (edge/llm/orcamento.ts).
+  AI_BUDGET_ENFORCEMENT: z.string().min(1).optional(),
   // Modo do gate de disclosure: 'inject' (default conservador) ou 'veto'.
   DISCLOSURE_MODE: z.enum(['inject', 'veto']).default('inject'),
   // Resposta 'queued' (sessão ≠ WORKING): job reagendado com este atraso, SEM
@@ -62,12 +116,15 @@ const envSchema = z.object({
   NUMBER_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
   // Cron persistente por contato — knobs, nunca constantes.
   CRON_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
-  CRON_STAGGER_WINDOW_MS: z.coerce.number().int().min(0).default(60_000),
+  CRON_STAGGER_WINDOW_MS: z.coerce.number().int().min(0).default(RETORNO_STAGGER_WINDOW_MS_PADRAO),
   CRON_RETRY_BASE_MS: z.coerce.number().int().positive().default(30_000),
   CRON_BATCH_SIZE: z.coerce.number().int().positive().default(100),
-  // Janela aceitável do follow-up agendado pela tool schedule_followup.
-  FOLLOWUP_MIN_AHEAD_MS: z.coerce.number().int().positive().default(300_000),
-  FOLLOWUP_MAX_AHEAD_MS: z.coerce.number().int().positive().default(15_552_000_000),
+  // Janela aceitável do retorno agendado — os DEFAULTS vêm de lib/followup/janela.ts
+  // porque o mesmo agendamento é validado aqui (worker) e dentro do Next (a
+  // capacidade que o dono liga na tela). Dois defaults fariam o MESMO horário ser
+  // aceito num caminho e recusado no outro, sem ninguém saber qual está certo.
+  FOLLOWUP_MIN_AHEAD_MS: z.coerce.number().int().positive().default(RETORNO_MIN_AHEAD_MS_PADRAO),
+  FOLLOWUP_MAX_AHEAD_MS: z.coerce.number().int().positive().default(RETORNO_MAX_AHEAD_MS_PADRAO),
   // TTL do prefixo estável de prompt cache (doutrina: 1h).
   LLM_CACHE_TTL: z.enum(['5m', '1h']).default('1h'),
   // Payload curado da tool get_lead_context.
@@ -118,7 +175,7 @@ const envSchema = z.object({
   CACHE_HIT_ALERT_MIN_RUNS: z.coerce.number().int().positive().default(20),
   // RAG/embedding das notas (recall vetorial) — opcional; sem chave, só BM25.
   RAG_TOP_K: z.coerce.number().int().positive().default(5),
-  RAG_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.72),
+  RAG_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.40),
   RAG_MAX_TOKENS: z.coerce.number().int().positive().default(2_000),
   RAG_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
   RAG_EMBEDDING_API_KEY: z.string().min(1).optional(),

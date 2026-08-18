@@ -1,9 +1,11 @@
 "use client";
+import { useState } from "react";
 import { HelpCircle, ShieldCheck, MessageSquare, Package, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SourceStatusBadge, deriveBadgeStatus } from "@/components/ai/SourceStatusBadge";
+import { NovaFonteDialog } from "@/components/ai/NovaFonteDialog";
 import type { SourceRow } from "@/hooks/ai/useKnowledgeSources";
 
 export type KnowledgeSourceType = "faq" | "policy" | "conversations" | "catalog";
@@ -13,7 +15,11 @@ interface Props {
   type: KnowledgeSourceType;
   onReindex?: () => void;
   isReindexing?: boolean;
-  /** Quando fornecido, o botão de configurar/editar fica ativo e chama isto. */
+  /** Necessário para cadastrar a fonte (a API amarra a fonte ao agente). */
+  agentId?: string;
+  /** Chamado depois de criar, para a lista recarregar. */
+  onCriada?: () => void;
+  /** Abre o editor específico da fonte quando a tela hospedeira o fornece. */
   onConfigure?: () => void;
 }
 
@@ -58,7 +64,10 @@ function formatRelative(iso: string | null): string {
   return new Date(iso).toLocaleDateString("pt-BR");
 }
 
-export function KnowledgeSourceCard({ source, type, onReindex, isReindexing, onConfigure }: Props) {
+export function KnowledgeSourceCard({
+  source, type, onReindex, isReindexing, agentId, onCriada, onConfigure,
+}: Props) {
+  const [novaAberta, setNovaAberta] = useState(false);
   const meta = TYPE_META[type];
   const Icon = meta.Icon;
 
@@ -77,14 +86,22 @@ export function KnowledgeSourceCard({ source, type, onReindex, isReindexing, onC
           <p className="text-sm text-text-muted">Nenhuma fonte configurada.</p>
         </CardContent>
         <CardFooter>
-          <Button
-            variant={onConfigure ? "primary" : "secondary"}
-            size="sm"
-            disabled={!onConfigure}
-            onClick={onConfigure ?? (() => toast.info("Em breve."))}
-          >
+          {/* Onde havia um botão `disabled` fixo com um toast "Em breve." que,
+              por estar desabilitado, nunca aparecia. A API sempre existiu;
+              faltava a tela. */}
+          <Button variant="secondary" size="sm" onClick={() => setNovaAberta(true)}>
             Configurar {meta.label}
           </Button>
+          {agentId ? (
+            <NovaFonteDialog
+              agentId={agentId}
+              tipo={type}
+              rotulo={meta.label}
+              aberto={novaAberta}
+              onFechar={() => setNovaAberta(false)}
+              onCriada={() => onCriada?.()}
+            />
+          ) : null}
         </CardFooter>
       </Card>
     );

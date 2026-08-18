@@ -12,6 +12,7 @@ import {
   PACING_DEFAULTS,
   type PacingKnobs,
 } from "@/lib/agent-engine/pacing/defaults";
+import { warmupCapFor } from "@/lib/agent-engine/pacing/engine";
 import { parseWarmupCaps } from "@/lib/agent-engine/pacing/store";
 
 function isValidTimezone(tz: string): boolean {
@@ -51,20 +52,27 @@ export const pacingKnobsUpdateSchema = z
       .max(DAILY_LIMIT_BOUNDS.max)
       .optional(),
     /**
-     * Desde quando este número envia (base da idade no warm-up). Declarável porque
-     * o número pode ser mais antigo que a conexão no CRM — quem migrou de outro
-     * sistema traz reputação que o CRM não tem como saber.
+     * Desde quando o NÚMERO é usado — não desde quando esta conexão existe.
      *
-     * NÃO é nullable: a coluna é `not null default now()`, e "sem data" já tem
-     * significado no motor (linha ausente = idade 0). Data FUTURA é recusada aqui
-     * em vez de silenciosamente clampada pelo motor: quem digita 2027 errou, e
-     * saber disso é melhor que virar o degrau mais conservador sem explicação.
+     * O warm-up mede idade, e a idade nascia do instante em que o número era
+     * pareado aqui: reconectar um número usado há meses o rebaixava a
+     * recém-nascido (teto de 20 envios/dia) sem nenhum caminho para corrigir.
+     * Data futura é recusada — ela ADIANTARIA o aquecimento, que é o oposto de
+     * proteger.
      */
     number_activated_at: z
       .string()
-      .refine((s) => Number.isFinite(Date.parse(s)), "data inválida")
-      .refine((s) => Date.parse(s) <= Date.now(), "data no futuro")
+      .datetime({ offset: true })
+      .refine((iso) => new Date(iso).getTime() <= Date.now(), "a data não pode estar no futuro")
+      .nullable()
       .optional(),
+    /**
+     * "Este número já está aquecido" — pula os degraus por completo, gravando um
+     * único degrau sem teto. Existe ao lado da data porque são perguntas
+     * diferentes: a data é um FATO que o dono conhece; isto é uma DECISÃO dele,
+     * assumindo o risco de banimento de um número que talvez não esteja pronto.
+     */
+    skip_warmup: z.boolean().optional(),
   })
   .strict();
 
@@ -104,12 +112,46 @@ export function effectiveKnobs(row: ChannelKnobsRow | null): PacingKnobs {
   };
 }
 
-/** Payload de GET para a tela: efetivo + o que é override + limites de edição. */
-export function knobsView(row: ChannelKnobsRow | null) {
+/** Forma gravada em `warmup_daily_caps` quando o dono declara o número já aquecido. */
+export const WARMUP_PULADO = [{ minAgeDays: 0, cap: null }] as const;
+
+/** A configuração de warm-up desta conexão é a de "já aquecido"? */
+export function warmupEstaPulado(row: ChannelKnobsRow | null): boolean {
+  const caps = parseWarmupCaps(row?.warmup_daily_caps);
+  return caps?.length === 1 && caps[0]?.minAgeDays === 0 && caps[0]?.cap === null;
+}
+
+/** Dias completos desde a ativação do número. Sem data = 0 (o motor é conservador). */
+export function idadeEmDias(row: ChannelKnobsRow | null, agora: Date = new Date()): number {
+  const iso = row?.number_activated_at;
+  if (!iso) return 0;
+  const ms = agora.getTime() - new Date(iso).getTime();
+  return Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 86_400_000)) : 0;
+}
+
+/**
+ * Payload de GET para a tela: efetivo + o que é override + limites de edição.
+ *
+ * `warmup` vai junto porque a tela precisava explicar um veto que ela não sabia
+ * calcular: o operador lia "número em aquecimento, limite atingido", subia o teto
+ * diário — o único campo que a tela oferecia — e nada mudava, porque quem barrava
+ * era o teto por IDADE. Agora o número que decide aparece ao lado do que o
+ * decide.
+ */
+export function knobsView(row: ChannelKnobsRow | null, agora: Date = new Date()) {
+  const efetivo = effectiveKnobs(row);
+  const dias = idadeEmDias(row, agora);
   return {
-    effective: effectiveKnobs(row),
+    effective: efetivo,
     overrides: row,
     defaults: PACING_DEFAULTS,
     bounds: { ...KNOB_BOUNDS, daily_limit: DAILY_LIMIT_BOUNDS },
+    warmup: {
+      number_activated_at: row?.number_activated_at ?? null,
+      age_days: dias,
+      skipped: warmupEstaPulado(row),
+      /** Teto de HOJE pelo aquecimento. null = sem teto (formado ou pulado). */
+      cap_today: warmupCapFor(dias, efetivo.warmupDailyCaps),
+    },
   };
 }

@@ -14,8 +14,10 @@ import type { NextRequest, NextResponse } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { dispatchWahaEvent, verifyHmacSha512, type WahaEnvelope } from "@/lib/waha/ingest";
+import { dispatchWahaEvent, type WahaEnvelope } from "@/lib/waha/ingest";
+import { authenticateWahaWebhook } from "@/lib/waha/webhook-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,13 +44,21 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
 
   const admin = createAdminClient();
 
-  const { data: session, error: sessErr } = await admin
-    .from("channel_sessions")
-    .select(
-      "id, organization_id, waha_session_name, webhook_secret_encrypted, status, is_warmup_complete, warmup_started_at, purpose",
-    )
-    .eq("webhook_path_token", token)
-    .maybeSingle();
+  // Canal ARQUIVADO não ingere: o usuário mandou excluí-lo e a sessão já foi
+  // removida do WAHA. O que ainda pode chegar é evento em voo (ou retentativa),
+  // e aceitá-lo ressuscitaria o canal no inbox — com o operador sem conseguir
+  // responder, porque o arquivamento deixa a sessão STOPPED.
+  const base = () =>
+    admin
+      .from("channel_sessions")
+      .select(
+        "id, organization_id, waha_session_name, webhook_secret_encrypted, status, is_warmup_complete, warmup_started_at",
+      )
+      .eq("webhook_path_token", token);
+  const { data: session, error: sessErr } = await queryTolerantToMissingArchived(
+    () => base().is(ARCHIVED_AT, null).maybeSingle(),
+    () => base().maybeSingle(),
+  );
 
   if (sessErr) {
     return fail("internal_error", sessErr.message, 500, { requestId });
@@ -57,32 +67,34 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     return fail("not_found", "unknown webhook token", 404, { requestId });
   }
 
-  // HMAC (best-effort: se fn_decrypt_oauth falhar — ex. seed dev sem cripto —
-  // loga e pula para o MVP).
+  // Autenticação fail-closed — regras e o porquê em lib/waha/webhook-auth.ts.
   const sigHeader = req.headers.get("x-webhook-hmac") ?? req.headers.get("X-Webhook-Hmac");
-  let validSignature = false;
-  let hmacSkipped = false;
+  let sessionSecret: string | null = null;
   try {
     const dec = await admin.rpc("fn_decrypt_oauth", {
       ciphertext: session.webhook_secret_encrypted,
     });
-    if (dec.error || !dec.data) {
-      hmacSkipped = true;
-    } else {
-      validSignature = verifyHmacSha512(rawBody, sigHeader, dec.data as string);
-    }
+    if (!dec.error && typeof dec.data === "string") sessionSecret = dec.data;
   } catch {
-    hmacSkipped = true;
+    sessionSecret = null;
   }
 
-  if (!hmacSkipped && !validSignature) {
+  const auth = authenticateWahaWebhook({ rawBody, signatureHeader: sigHeader, sessionSecret });
+  if (!auth.ok) {
     await audit({
-      action: "nuvemshop.webhook_invalid_signature",
+      action: "webhook.hmac_invalid",
       organizationId: session.organization_id,
-      metadata: { provider: "waha", session: session.waha_session_name, event: envelope.event },
+      metadata: {
+        provider: "waha",
+        session: session.waha_session_name,
+        event: envelope.event,
+        reason: auth.reason,
+        had_signature: Boolean(sigHeader),
+      },
     });
-    return fail("unauthenticated", "invalid_signature", 401, { requestId });
+    return fail("unauthenticated", auth.reason, 401, { requestId });
   }
+  const validSignature = auth.signatureVerified;
 
   const eventType = envelope.event ?? "unknown";
   const externalId = envelope.payload?.id ?? null;
@@ -103,7 +115,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     raw_body: rawBody,
     payload_parsed: envelope as unknown as Record<string, unknown>,
     signature_header: sigHeader ?? null,
-    valid_signature: validSignature || hmacSkipped,
+    valid_signature: validSignature,
     event_type: eventType,
     external_id: externalId,
     status: "received",

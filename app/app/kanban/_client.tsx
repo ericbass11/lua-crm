@@ -1,277 +1,386 @@
 "use client";
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
 
-import { Plus, Trash } from "@/lib/ui/icons";
+import { EmptyPipeline } from "@/components/empty";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { createPipeline } from "@/app/actions/settings/createPipeline";
-import { deletePipeline } from "@/app/actions/settings/deletePipeline";
+import { ApiError } from "@/lib/api/types";
+import { Archive, CaretDown, CaretUp, Check, PencilSimple, Plus } from "@/lib/ui/icons";
+import { useArquivarFunil, useCriarFunil, useEditarFunil } from "@/hooks/pipelines/usePipelines";
 
-export interface PipelineListItem {
+export interface FunilDaLista {
   id: string;
   name: string;
   slug: string;
-  is_default: boolean;
   description: string | null;
-  lead_count: number;
+  position: number;
+  is_default: boolean;
 }
 
-export function KanbanPipelinesClient({
-  pipelines,
-  canManage,
+/**
+ * O vizinho DE CIMA depois de mover o funil uma casa (`null` = primeiro da lista).
+ *
+ * É o que o PATCH espera: quem clica na seta sabe onde o funil vai parar, não
+ * qual fração de `position` isso vira. Subir uma casa é "passar a ficar depois de
+ * quem estava DUAS casas acima" — daí o `i - 2`.
+ */
+export function vizinhoAoMover(
+  funis: FunilDaLista[],
+  i: number,
+  direcao: "subir" | "descer",
+): string | null {
+  if (direcao === "subir") return funis[i - 2]?.id ?? null;
+  return funis[i + 1]?.id ?? null;
+}
+
+/**
+ * A mensagem que a rota escreveu, ou uma frase honesta quando não há nenhuma.
+ *
+ * ⚠️ NUNCA INVENTAR TEXTO NO LUGAR DA RECUSA. As mensagens de
+ * `lib/pipelines/pipeline-editing.ts` são a única coisa que explica ao dono da
+ * operação POR QUE o funil não pode ser arquivado (formulário apontando para ele,
+ * automação ativa, funil padrão). Trocá-las por "erro ao arquivar" transformaria
+ * uma instrução acionável em um beco sem saída.
+ */
+function textoDoErro(e: unknown): string {
+  if (e instanceof ApiError) return e.message;
+  if (e instanceof Error && e.message) return e.message;
+  return "Não consegui completar essa ação. Tente de novo.";
+}
+
+export function FunisClient({
+  funis: funisDoServidor,
+  podeGerenciar,
 }: {
-  pipelines: PipelineListItem[];
-  canManage: boolean;
+  funis: FunilDaLista[];
+  /** Espelha o `requireRole("manager")` das rotas — ver o comentário da page. */
+  podeGerenciar: boolean;
 }) {
-  const router = useRouter();
-  const [newOpen, setNewOpen] = useState(false);
-  const [toDelete, setToDelete] = useState<PipelineListItem | null>(null);
+  /**
+   * ⚠️ A LISTA VEM DO SERVIDOR E É ATUALIZADA PELO CORPO DA RESPOSTA.
+   *
+   * As rotas releem os funis do banco antes de responder, então aplicar o corpo
+   * é mostrar o que o banco tem — sem depender de o `router.refresh()` vencer a
+   * corrida contra os prefetches RSC da barra lateral (medido: numa rodada o
+   * rename apareceu em 0,6s, noutra não apareceu em 7s, mesmo build). O ajuste
+   * abaixo mantém as props no comando quando é o SERVIDOR que traz novidade —
+   * navegação, refresh, outra aba.
+   */
+  const [funis, setFunis] = useState<FunilDaLista[]>(funisDoServidor);
+  const [ultimoDoServidor, setUltimoDoServidor] = useState<FunilDaLista[]>(funisDoServidor);
+  // Ajuste DURANTE o render, não em efeito: é o padrão do React para "a prop
+  // mudou, reponha o estado" e não dispara render em cascata (o efeito
+  // equivalente dispara — o compilador avisa, e com razão).
+  if (funisDoServidor !== ultimoDoServidor) {
+    setUltimoDoServidor(funisDoServidor);
+    setFunis(funisDoServidor);
+  }
+
+  const criar = useCriarFunil();
+  const editar = useEditarFunil();
+  const arquivar = useArquivarFunil();
+
+  const [novo, setNovo] = useState<string | null>(null);
+  const [renomeando, setRenomeando] = useState<{ id: string; nome: string } | null>(null);
+  const [arquivando, setArquivando] = useState<{ id: string; erro: string | null } | null>(null);
+  const [erro, setErro] = useState<{ id: string | null; texto: string } | null>(null);
+
+  const ocupado = criar.isPending || editar.isPending || arquivar.isPending;
+
+  function criarFunil() {
+    const nome = (novo ?? "").trim();
+    if (!nome) return;
+    setErro(null);
+    criar.mutate(nome, {
+      onSuccess: (r) => {
+        setFunis(r.data.pipelines);
+        setNovo(null);
+      },
+      onError: (e) => setErro({ id: null, texto: textoDoErro(e) }),
+    });
+  }
+
+  function aplicar(id: string, patch: Parameters<typeof editar.mutate>[0]["patch"]) {
+    setErro(null);
+    editar.mutate(
+      { id, patch },
+      {
+        onSuccess: (r) => {
+          setFunis(r.data.pipelines);
+          setRenomeando(null);
+        },
+        onError: (e) => setErro({ id, texto: textoDoErro(e) }),
+      },
+    );
+  }
+
+  function pedirArquivamento(id: string, definitivo: boolean) {
+    setErro(null);
+    arquivar.mutate(
+      { id, definitivo },
+      {
+        onSuccess: (r) => {
+          setFunis(r.data.pipelines);
+          setArquivando(null);
+        },
+        // A recusa fica NO PAINEL, não numa faixa longe do botão: ela é a
+        // resposta à pergunta que o usuário acabou de fazer.
+        onError: (e) => setArquivando({ id, erro: textoDoErro(e) }),
+      },
+    );
+  }
+
+  const formularioDeCriacao = novo !== null && (
+    <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center" data-testid="form-novo-funil">
+      <Input
+        autoFocus
+        value={novo}
+        onChange={(e) => setNovo(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") criarFunil();
+          if (e.key === "Escape") setNovo(null);
+        }}
+        placeholder="Nome do funil — ex.: Consultas, Obras, Matrículas"
+        aria-label="Nome do novo funil"
+        data-testid="nome-do-novo-funil"
+        disabled={ocupado}
+      />
+      <div className="flex gap-2">
+        <Button onClick={criarFunil} disabled={ocupado || !novo.trim()} data-testid="confirmar-novo-funil">
+          Criar funil
+        </Button>
+        <Button variant="ghost" onClick={() => setNovo(null)} disabled={ocupado}>
+          Cancelar
+        </Button>
+      </div>
+    </Card>
+  );
+
+  if (funis.length === 0) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4">
+        {formularioDeCriacao}
+        {novo === null && (
+          // ⚠️ O BOTÃO CRIA AQUI MESMO. O texto anterior mandava "Ir para
+          // Configurações", e lá a tela de funis mandava de volta para o quadro:
+          // pingue-pongue fechado, com o usuário procurando um botão que não
+          // existia em lugar nenhum. Este é o estado de toda instalação em que o
+          // gatilho de seed não rodou.
+          <EmptyPipeline
+            primary={
+              podeGerenciar
+                ? { label: "Criar meu primeiro funil", onClick: () => setNovo("") }
+                : undefined
+            }
+          />
+        )}
+        {erro && (
+          <p className="text-sm text-destructive" data-testid="erro-geral">
+            {erro.texto}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">Pipelines</h1>
-        </div>
-        {canManage && (
-          <Button size="sm" className="gap-1.5" onClick={() => setNewOpen(true)}>
-            <Plus size={16} weight="bold" aria-hidden />
-            Novo pipeline
-          </Button>
-        )}
-      </header>
-
-      {pipelines.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-          <p>Nenhum pipeline ainda.</p>
-          {canManage && (
-            <Button onClick={() => setNewOpen(true)} className="gap-1.5">
-              <Plus size={16} weight="bold" aria-hidden />
-              Criar o primeiro pipeline
+    <div className="flex flex-col gap-4">
+      {podeGerenciar && (
+        <div className="flex justify-end">
+          {novo === null ? (
+            <Button onClick={() => setNovo("")} disabled={ocupado} data-testid="novo-funil">
+              <Plus size={16} className="mr-2" aria-hidden /> Novo funil
             </Button>
-          )}
+          ) : null}
         </div>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {pipelines.map((p) => (
-            <li
-              key={p.id}
-              className="flex items-center gap-2 rounded-xl border border-border bg-surface shadow-sm transition hover:border-border-strong hover:shadow-md"
-            >
-              <Link href={`/app/pipelines/${p.id}`} className="flex flex-1 items-center justify-between px-4 py-3">
-                <div className="flex flex-col">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{p.name}</span>
-                    {p.is_default && (
-                      <Badge variant="secondary" className="text-[10px]">
-                        Default
-                      </Badge>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {p.lead_count} {p.lead_count === 1 ? "lead" : "leads"}
-                    </span>
-                  </div>
-                  {p.description && (
-                    <span className="text-xs text-muted-foreground">{p.description}</span>
-                  )}
-                </div>
-                <span className="text-xs text-muted-foreground">/{p.slug}</span>
-              </Link>
-              {canManage && (
-                <div className="pr-2">
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-muted-foreground hover:text-error-fg"
-                    aria-label={`Excluir ${p.name}`}
-                    disabled={p.lead_count > 0}
-                    title={
-                      p.lead_count > 0
-                        ? `Não é possível excluir: ${p.lead_count} lead(s) neste pipeline`
-                        : "Excluir pipeline"
-                    }
-                    onClick={() => setToDelete(p)}
-                  >
-                    <Trash size={16} aria-hidden />
-                  </Button>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
       )}
 
-      <NewPipelineDialog
-        open={newOpen}
-        onOpenChange={setNewOpen}
-        onCreated={(id) => router.push(`/app/pipelines/${id}`)}
-      />
-      <DeletePipelineDialog
-        pipeline={toDelete}
-        onOpenChange={(v) => !v && setToDelete(null)}
-        onDeleted={() => {
-          setToDelete(null);
-          router.refresh();
-        }}
-      />
+      {formularioDeCriacao}
+
+      {erro?.id === null && (
+        <p className="text-sm text-destructive" data-testid="erro-geral">
+          {erro.texto}
+        </p>
+      )}
+
+      <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+        {funis.map((funil, i) => {
+          const renomeandoAqui = renomeando?.id === funil.id ? renomeando : null;
+          const arquivandoAqui = arquivando?.id === funil.id ? arquivando : null;
+          const erroDaLinha = erro?.id === funil.id ? erro.texto : null;
+
+          return (
+            <li key={funil.id} className="flex flex-col gap-3 p-4" data-testid={`funil-${funil.id}`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                {podeGerenciar && (
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Subir «${funil.name}» na lista`}
+                      data-testid={`subir-${funil.id}`}
+                      disabled={ocupado || i === 0}
+                      onClick={() => aplicar(funil.id, { depois_de: vizinhoAoMover(funis, i, "subir") })}
+                    >
+                      <CaretUp size={16} aria-hidden />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Descer «${funil.name}» na lista`}
+                      data-testid={`descer-${funil.id}`}
+                      disabled={ocupado || i === funis.length - 1}
+                      onClick={() => aplicar(funil.id, { depois_de: vizinhoAoMover(funis, i, "descer") })}
+                    >
+                      <CaretDown size={16} aria-hidden />
+                    </Button>
+                  </div>
+                )}
+
+                <div className="min-w-0 flex-1">
+                  {renomeandoAqui ? (
+                    <div className="flex gap-2">
+                      <Input
+                        autoFocus
+                        value={renomeandoAqui.nome}
+                        onChange={(e) => setRenomeando({ id: funil.id, nome: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") aplicar(funil.id, { name: renomeandoAqui.nome });
+                          if (e.key === "Escape") setRenomeando(null);
+                        }}
+                        aria-label={`Novo nome de «${funil.name}»`}
+                        data-testid={`nome-${funil.id}`}
+                        disabled={ocupado}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => aplicar(funil.id, { name: renomeandoAqui.nome })}
+                        disabled={ocupado || !renomeandoAqui.nome.trim()}
+                        data-testid={`salvar-nome-${funil.id}`}
+                      >
+                        Salvar
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setRenomeando(null)} disabled={ocupado}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  ) : (
+                    <Link
+                      href={`/app/pipelines/${funil.id}`}
+                      className="group flex flex-col"
+                      data-testid={`abrir-${funil.id}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="text-sm font-medium group-hover:underline">{funil.name}</span>
+                        {funil.is_default && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            Padrão
+                          </Badge>
+                        )}
+                      </span>
+                      {funil.description && (
+                        <span className="text-xs text-muted-foreground">{funil.description}</span>
+                      )}
+                    </Link>
+                  )}
+                </div>
+
+                <span className="shrink-0 text-xs text-muted-foreground">/{funil.slug}</span>
+
+                {podeGerenciar && !renomeandoAqui && (
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setRenomeando({ id: funil.id, nome: funil.name })}
+                      disabled={ocupado}
+                      data-testid={`renomear-${funil.id}`}
+                    >
+                      <PencilSimple size={16} className="mr-1" aria-hidden /> Renomear
+                    </Button>
+                    {!funil.is_default && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => aplicar(funil.id, { is_default: true })}
+                        disabled={ocupado}
+                        data-testid={`padrao-${funil.id}`}
+                      >
+                        <Check size={16} className="mr-1" aria-hidden /> Tornar padrão
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setErro(null);
+                        setArquivando({ id: funil.id, erro: null });
+                      }}
+                      disabled={ocupado}
+                      data-testid={`arquivar-${funil.id}`}
+                    >
+                      <Archive size={16} className="mr-1" aria-hidden /> Arquivar
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {erroDaLinha && (
+                <p className="text-sm leading-relaxed text-destructive" data-testid={`erro-${funil.id}`}>
+                  {erroDaLinha}
+                </p>
+              )}
+
+              {arquivandoAqui && (
+                <Card className="space-y-3 p-4" data-testid={`arquivar-painel-${funil.id}`}>
+                  {arquivandoAqui.erro ? (
+                    // A recusa da rota, INTEIRA: é ela que diz qual formulário ou
+                    // automação está no caminho, e o que fazer antes de tentar de novo.
+                    <p className="text-sm leading-relaxed" data-testid={`arquivar-erro-${funil.id}`}>
+                      {arquivandoAqui.erro}
+                    </p>
+                  ) : (
+                    <p className="text-sm leading-relaxed">
+                      Arquivar «{funil.name}»? Ele sai desta lista e para de receber negócio novo. O
+                      histórico continua guardado, e nada é apagado.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => pedirArquivamento(funil.id, false)}
+                      disabled={ocupado}
+                      data-testid={`arquivar-confirmar-${funil.id}`}
+                    >
+                      Arquivar
+                    </Button>
+                    {/* Excluir de vez só passa no funil que NUNCA recebeu negócio.
+                        A tela não sabe disso antes de perguntar — e não precisa
+                        saber: a rota recusa explicando, e a explicação aparece
+                        aqui mesmo. Fazer a tela adivinhar exigiria uma segunda
+                        contagem, que discordaria da do servidor. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => pedirArquivamento(funil.id, true)}
+                      disabled={ocupado}
+                      data-testid={`excluir-${funil.id}`}
+                    >
+                      Excluir de vez
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setArquivando(null)} disabled={ocupado}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </Card>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </div>
-  );
-}
-
-function NewPipelineDialog({
-  open,
-  onOpenChange,
-  onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  onCreated: (id: string) => void;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [pending, start] = useTransition();
-
-  function submit() {
-    if (name.trim().length < 2) return;
-    start(async () => {
-      const res = await createPipeline({
-        name: name.trim(),
-        description: description.trim() || undefined,
-      });
-      if (res.ok) {
-        toast.success("Pipeline criado com as etapas padrão.");
-        setName("");
-        setDescription("");
-        onOpenChange(false);
-        onCreated(res.id);
-      } else {
-        toast.error(`Não foi possível criar: ${res.error}`);
-      }
-    });
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Novo pipeline</DialogTitle>
-          <DialogDescription>
-            Cria um funil com as etapas padrão (Novo · Em andamento · Ganhou · Perdido). Você ajusta
-            os critérios de cada etapa em Configurações → Pipelines.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="np-name">Nome</Label>
-            <Input
-              id="np-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ex.: Vendas B2B"
-              autoFocus
-              maxLength={60}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="np-desc">Descrição (opcional)</Label>
-            <Textarea
-              id="np-desc"
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              maxLength={280}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
-            Cancelar
-          </Button>
-          <Button type="button" onClick={submit} disabled={pending || name.trim().length < 2}>
-            {pending ? "Criando…" : "Criar pipeline"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function DeletePipelineDialog({
-  pipeline,
-  onOpenChange,
-  onDeleted,
-}: {
-  pipeline: PipelineListItem | null;
-  onOpenChange: (v: boolean) => void;
-  onDeleted: () => void;
-}) {
-  const [pending, start] = useTransition();
-
-  function confirm() {
-    if (!pipeline) return;
-    start(async () => {
-      const res = await deletePipeline(pipeline.id);
-      if (res.ok) {
-        toast.success("Pipeline excluído.");
-        onDeleted();
-      } else if (res.error === "has_leads") {
-        toast.error(
-          `Não é possível excluir: há ${res.lead_count ?? ""} lead(s) neste pipeline. Mova ou remova os leads primeiro.`,
-        );
-      } else {
-        toast.error(`Falha ao excluir: ${res.error}`);
-      }
-    });
-  }
-
-  return (
-    <AlertDialog open={!!pipeline} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Excluir “{pipeline?.name}”?</AlertDialogTitle>
-          <AlertDialogDescription>
-            As etapas deste pipeline serão removidas. Esta ação não pode ser desfeita. Só é possível
-            excluir pipelines sem nenhum lead.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              confirm();
-            }}
-            disabled={pending}
-          >
-            {pending ? "Excluindo…" : "Excluir"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }

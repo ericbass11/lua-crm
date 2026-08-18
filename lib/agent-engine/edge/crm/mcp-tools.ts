@@ -26,8 +26,14 @@ import type { Logger } from '../../obs/logger';
 import type { CrmEdgeConfig } from './mcp-client';
 import type { PublishedAgentConfig } from '../../agent/agent-config';
 
-/** Tools do catálogo que jamais entram no turno do engine (ver doc acima). */
-const BLOCKED_TOOL_IDS = new Set(['crm_send_whatsapp_message', 'crm_request_human_handoff']);
+/**
+ * Tools do catálogo que jamais entram num turno do engine (ver doc acima).
+ *
+ * Exportado para ser ASSERÍVEL: a garantia de que o papel Operador não tem canal
+ * (spec 16 §3.2) depende desta lista, e uma garantia que nenhum teste consegue
+ * ler é uma garantia que ninguém percebe quando some.
+ */
+export const BLOCKED_TOOL_IDS = new Set(['crm_send_whatsapp_message', 'crm_request_human_handoff']);
 
 export interface McpTurnTools {
   tools: Record<string, Tool>;
@@ -64,15 +70,23 @@ export async function buildMcpTurnTools(
 
   const ctx: McpContext = {
     organizationId: ids.organizationId,
-    role: 'agent',
-    actor: { type: 'ai_agent', id: agentConfig.agentId, role: 'agent', api_token_id: ephemeral.id },
+    role: 'ai_operator',
+    // `agent_id` explícito porque é ele que vai para colunas com FK (atividade
+    // da timeline); `id` continua sendo a identidade de correlação do audit.
+    actor: {
+      type: 'ai_agent',
+      id: agentConfig.agentId,
+      agent_id: agentConfig.agentId,
+      role: 'ai_operator',
+      api_token_id: ephemeral.id,
+    },
     apiTokenId: ephemeral.id,
     requestId: ids.jobId,
     supabase: cfg.supabase,
   };
   const auth: McpAuthResult = {
     organizationId: ids.organizationId,
-    role: 'agent',
+    role: 'ai_operator',
     actor: ctx.actor,
     apiTokenId: ephemeral.id,
     scopes: ['mcp:read', 'mcp:write', 'actor:ai_agent'],
@@ -87,6 +101,12 @@ export async function buildMcpTurnTools(
     toolIds: allowed,
     handoffToolEnabled: false,
     handoffSignal,
+    // "Em que negócios ele pode mexer" — o campo é OPCIONAL na interface, e
+    // omiti-lo não é neutro: `escopo ?? []` e vazio significa NENHUM. Este
+    // turno, que é o de produção, montava as capacidades de CRM sem escopo, e
+    // por isso TODA escrita de lead era recusada — com a capacidade ligada na
+    // tela e o card parado. Quem passava era só o dispatcher antigo.
+    pipelineIds: agentConfig.pipelineIds,
   });
 
   return {

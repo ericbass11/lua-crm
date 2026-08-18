@@ -92,14 +92,25 @@ interface QueuedRow {
   body: string | null;
   waha_session_name: string;
   wa_identity: string | null;
+  wa_lid: string | null;
   phone_number: string | null;
   is_group: boolean;
   group_chat_id: string | null;
 }
 
-/** chatId do WAHA a partir da identidade do contato (mesma regra do lib/waha/send). */
+/**
+ * chatId do WAHA a partir da identidade do contato — MESMA REGRA de
+ * `resolveWahaChatId` (lib/waha/send.ts), e as duas precisam continuar iguais:
+ * este caminho reenvia o que aquele deixou preso, e divergir aqui faria o
+ * redrive mandar a mensagem para um endereço diferente do envio original.
+ *
+ * `wa_lid` na frente pelo motivo da 0122: `wa_identity` é GERADA com o telefone
+ * antes do lid, então o contato @lid que ganhou número passa a bater na linha do
+ * `phone:` e a conversa mudaria de canal no reenvio.
+ */
 function chatIdOf(m: QueuedRow): string | null {
   if (m.is_group && m.group_chat_id) return m.group_chat_id;
+  if (m.wa_lid) return `${m.wa_lid}@lid`;
   if (m.wa_identity?.startsWith('lid:')) return `${m.wa_identity.slice(4)}@lid`;
   if (m.wa_identity?.startsWith('phone:+')) return `${m.wa_identity.slice(7)}@c.us`;
   if (m.phone_number) return `${m.phone_number.replace('+', '')}@c.us`;
@@ -114,7 +125,7 @@ export async function redriveQueued(
 ): Promise<number> {
   const { rows } = await pool.query<QueuedRow>(
     `select m.id, m.organization_id, m.body, s.waha_session_name,
-            c.wa_identity, c.phone_number, v.is_group, v.group_chat_id
+            c.wa_identity, c.wa_lid, c.phone_number, v.is_group, v.group_chat_id
      from messages m
      join channel_sessions s on s.id = m.channel_session_id
      join conversations v on v.id = m.conversation_id
@@ -122,11 +133,44 @@ export async function redriveQueued(
      where m.sent_via = 'ai' and m.status = 'queued'
        and s.status = 'WORKING'
        and c.is_blocked = false
+       -- ─── Só as sessões que ESTE resgate consegue alcançar ───────────────
+       --
+       -- Este worker fala um transporte só, direto, e não resolve adapter: ele
+       -- e processo separado, com pg cru, sem o seam. Sem este filtro a
+       -- consulta trazia mensagem de QUALQUER canal e postava com
+       -- session nula — a coluna e nula fora deste transporte. Na melhor
+       -- hipótese o provedor recusa e a mensagem fica presa para sempre com um
+       -- warn por tique; na pior, um envio sai pelo número errado.
+       --
+       -- Deixar de fora NÃO é resolver: é parar de fazer a coisa errada. Quem
+       -- conta as que ficaram sem resgate é o bloco logo abaixo — silêncio aqui
+       -- é o que fez este defeito durar.
+       and s.waha_session_name is not null
        and m.created_at < now() - make_interval(secs => $1 / 1000.0)
      order by m.created_at
      limit $2`,
     [cfg.redriveMinAgeMs, cfg.redriveBatchSize],
   );
+
+  // As que este resgate NÃO alcança. Não são reenviadas daqui — enviar em dobro
+  // é pior que não enviar, e este processo não tem como saber se o outro
+  // caminho já mandou. O que elas não podem continuar sendo é INVISÍVEIS.
+  const { rows: foraDoAlcance } = await pool.query<{ n: string }>(
+    `select count(*)::text as n
+     from messages m
+     join channel_sessions s on s.id = m.channel_session_id
+     where m.sent_via = 'ai' and m.status = 'queued'
+       and s.status = 'WORKING'
+       and s.waha_session_name is null
+       and m.created_at < now() - make_interval(secs => $1 / 1000.0)`,
+    [cfg.redriveMinAgeMs],
+  );
+  const presas = Number(foraDoAlcance[0]?.n ?? '0');
+  if (presas > 0) {
+    log.warn('watchdog: mensagens presas em canal que este resgate não alcança', {
+      quantidade: presas,
+    });
+  }
 
   let sent = 0;
   for (const m of rows) {

@@ -9,8 +9,16 @@
  */
 import { z } from "zod";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools/catalog";
+import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
+import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
 
-export const PROVIDERS = ["anthropic", "openai", "google"] as const;
+/**
+ * Derivado de `lib/ai/pontos/provedores.ts` (a lista única desde a 0127). Como
+ * cópia à mão, esta constante mantinha `agent_turn`/`operator_turn` fora do
+ * alcance da OpenRouter — justamente os dois pontos que a abertura do
+ * vocabulário existia para atender.
+ */
+export const PROVIDERS = IDS_DE_PROVEDOR;
 export type Provider = (typeof PROVIDERS)[number];
 
 const UUID = z.string().uuid();
@@ -62,10 +70,29 @@ const versionShapeSchema = z
     system_prompt: z.string().trim().min(10).max(20000),
     provider: z.enum(PROVIDERS),
     model: z.string().trim().min(1).max(120),
-    credential_id: UUID,
+    /**
+     * `null` = usar a chave que veio na INSTALAÇÃO.
+     *
+     * Era UUID obrigatório, e isso trancava a porta para o cenário mais comum do
+     * produto: quem instala pelo kit cola a chave no `.env` e nunca abre a tela
+     * de Credenciais — não existe uma única linha em `ai_provider_credentials`.
+     * O runtime SEMPRE soube lidar com isso (`chaveDePlataforma` em
+     * `lib/ai/runtime/agent.ts`, mesma precedência de `resolveOrgLlmConfig`); só
+     * o editor não deixava salvar. O efeito: o agente do onboarding tinha de
+     * nascer `rag_bot`, no editor legado, e as capacidades ficavam invisíveis
+     * para o dono.
+     *
+     * ⚠️ QUEM ACEITA `null` PRECISA CONFERIR QUE A CHAVE EXISTE. O schema é de
+     * FORMA, não de ambiente: nulo aqui significa "usa a da instalação", e se ela
+     * não existir o agente é publicado para morrer em toda mensagem. A guarda
+     * mora na rota de versões, que é quem conhece o `process.env` do servidor.
+     */
+    credential_id: UUID.nullable(),
     tool_ids: z
       .array(z.string().min(1).max(80))
-      .max(20)
+      // O mesmo teto que a tela mostra ("13 de 20") é o que o servidor recusa —
+      // ver `lib/mcp/tools/selecao-por-pacote.ts` para o porquê do número.
+      .max(TETO_TOOLS_POR_AGENTE)
       .default([])
       .refine(
         (ids) => ids.every((id) => (VALID_TOOL_IDS as readonly string[]).includes(id)),
@@ -84,7 +111,40 @@ const versionShapeSchema = z
       .default(["falar com humano", "atendente", "pessoa real"]),
     handoff_tool_enabled: z.boolean().default(true),
     cases_enabled: z.boolean().default(false),
+    // Onda 4 — quebra a resposta em bolhas curtas (splitIntoBubbles) espaçadas
+    // pelo pacing anti-ban. Defaults espelham a migration 0059.
+    split_messages: z.boolean().default(false),
+    split_max_chars: z.number().int().min(80).max(4000).default(600),
     followup: followupConfigSchema,
+    // ── Papel OPERADOR (spec 16 §3.2) ───────────────────────────────────────
+    // Todos com `.default(...)`, e é o que mantém retrocompatível: agent e
+    // version que já existem, e qualquer payload que não conheça o papel,
+    // seguem válidos e leem o papel como DESLIGADO.
+    operator_enabled: z.boolean().default(false),
+    // `.nullable()` e não opcional: null é o valor que SIGNIFICA "herda o modelo
+    // do Conversador". Omitir seria indistinguível de "ainda não decidi".
+    operator_model: z.string().trim().min(1).max(120).nullable().default(null),
+    // Teto PRÓPRIO, não compartilhado com `tool_ids`: é assim que separar os
+    // papéis resolve o estouro do teto por divisão em vez de aumentar o número.
+    operator_tool_ids: z
+      .array(z.string().min(1).max(80))
+      .max(TETO_TOOLS_POR_AGENTE)
+      .default([])
+      .refine(
+        (ids) => ids.every((id) => (VALID_TOOL_IDS as readonly string[]).includes(id)),
+        { message: "tool_id_invalid" },
+      ),
+    /**
+     * Funis em que este agente pode ESCREVER (spec 17 passo 3). Vazio = NENHUM.
+     *
+     * ⚠️ Sem `.refine()` de existência, ao contrário de `operator_tool_ids` logo
+     * acima — e a diferença não é descuido. Aquele valida contra uma CONSTANTE
+     * em código, que o cliente também tem; funil é linha de tabela, e checar
+     * existência é consulta cross-row. Um schema compartilhado com o browser não
+     * pode fazer isso, então a validação de que o funil existe (e é desta
+     * organização) mora no servidor, junto do resto.
+     */
+    pipeline_ids: z.array(z.string().uuid()).default([]),
   })
   .strict();
 

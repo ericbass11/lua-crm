@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useStartConversation } from "@/hooks/inbox/useStartConversation";
+import { nomeDoCanal } from "@/lib/channels/estado";
 import { normalizeToE164 } from "@/lib/phone";
 
 interface Props {
@@ -60,7 +61,7 @@ export function NewConversationDialog({ open, onOpenChange, onCreated }: Props) 
   const needsChannelChoice = workingChannels.length > 1;
 
   function channelLabel(c: (typeof workingChannels)[number]): string {
-    return c.display_name || c.phone_number || c.waha_session_name;
+    return nomeDoCanal(c);
   }
 
   async function onSubmit() {

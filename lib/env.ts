@@ -60,10 +60,24 @@ const schema = z.object({
    */
   AI_CRED_AES_KEY: required("AI_CRED_AES_KEY"),
 
+  // Postgres direto do Supabase (Settings → Database) — só as rotas de skills
+  // instaláveis (import/install) usam `pg` cru (mesmo pool do agent-engine).
+  SUPABASE_DB_URL: required("SUPABASE_DB_URL"),
+
   // WAHA
   WAHA_API_BASE_URL: required("WAHA_API_BASE_URL"),
   WAHA_API_KEY: required("WAHA_API_KEY"),
   WAHA_WEBHOOK_BASE_URL: required("WAHA_WEBHOOK_BASE_URL"),
+  // Segredo com que o WAHA assina os webhooks. O compose já o entrega ao
+  // contêiner do WAHA; o app precisa dele para CONFERIR a assinatura — e não o
+  // declarava aqui, então nunca teve como verificar nada.
+  WAHA_HMAC_SECRET: z.string().optional().default(""),
+  // "true" exige assinatura válida em todo webhook do WAHA. Fica desligado por
+  // padrão porque o WAHA Core não assina (medido: 2026.7.2 CORE manda os
+  // eventos sem header mesmo com WHATSAPP_HOOK_HMAC configurado), e exigir
+  // derrubaria a ingestão de mensagens. Ligue se usa WAHA Plus ou um proxy que
+  // assine — aí a verificação passa a ser obrigatória.
+  WAHA_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional().default("false"),
 
   // Upstash Redis
   UPSTASH_REDIS_REST_URL: required("UPSTASH_REDIS_REST_URL"),
@@ -73,6 +87,11 @@ const schema = z.object({
   // when AI_GATEWAY_API_KEY is absent, so production boot must not be fatal.
   AI_GATEWAY_API_KEY: z.string().optional().default(""),
   AI_GATEWAY_BASE_URL: z.string().optional().default(""),
+  // OpenRouter: alternativa ao gateway da Vercel, compatível com a API da
+  // OpenAI. Opcional — sem ela nada muda; com ela o chat passa a ser roteado
+  // por lá. Ver resolveLanguageModel() em lib/ai/gateway.ts.
+  OPENROUTER_API_KEY: z.string().optional().default(""),
+  OPENROUTER_BASE_URL: z.string().optional().default(""),
   VERCEL_AI_GATEWAY_URL: z.string().optional().default(""),
   ANTHROPIC_API_KEY: z.string().optional().default(""),
   OPENAI_API_KEY: z.string().optional().default(""),
@@ -84,6 +103,27 @@ const schema = z.object({
   // duplicado ou perdido (bug real da fusão).
   AGENT_DISPATCH_CONSUMER: z.enum(["engine", "native"]).optional().default("engine"),
 
+  /**
+   * Kill switch do teto de gasto de IA — a alavanca que o operador da VPS puxa
+   * às 2h da manhã quando a IA parou e ele não sabe SQL.
+   *
+   * `on` (default) NÃO LIGA NADA: significa "respeite o que cada organização
+   * escolheu na tela". A chave só sabe AFROUXAR — `avisar` rebaixa qualquer
+   * bloqueio a aviso, e `off|false|0|no|nao|não|disabled` cala a proteção
+   * inteira. É essa monotonicidade que a torna um kill switch de verdade.
+   *
+   * ⚠️ `z.string()` E JAMAIS `z.enum`, e o motivo é o modo de falha deste
+   * arquivo: `safeParse` abaixo LANÇA quando o schema recusa, e no Next isso
+   * acontece na primeira requisição — com healthcheck TCP puro, o contêiner
+   * fica `healthy` com 100% das requisições em 500. Um `z.enum` transformaria a
+   * alavanca de EMERGÊNCIA no derrubador do app inteiro no dia em que o
+   * operador escrevesse `false`. A normalização (que aceita as grafias falsas
+   * comuns como desligado, e resolve lixo para o lado seguro) mora em
+   * `normalizarChaveDeOrcamento`, em lib/agent-engine/edge/llm/orcamento.ts.
+   * Mesmo raciocínio de APP_ACCENT_HEX, algumas linhas abaixo.
+   */
+  AI_BUDGET_ENFORCEMENT: z.string().optional().default("on"),
+
   // Workers — opt-in via env so dev doesn't run loops. Production cron sets it.
   EVENT_LOG_WORKER_ENABLED: z
     .enum(["true", "false"])
@@ -91,17 +131,44 @@ const schema = z.object({
     .default("false")
     .transform((v) => v === "true"),
 
-  // EPIC-13 wave 6: enquanto S-13.08 (runtime real) não landa, o endpoint
-  // :test devolve um trace fake quando esta flag = 'true'. Default 'true' em
-  // dev, deve virar 'false' em produção quando a wave 8 estiver mergeada.
+  // O endpoint :test devolve um trace fake quando esta flag = 'true'.
+  // Default 'false' desde que a S-13.08 landou: `callInternalRuntime` executa
+  // o `runAgent` real, então quem instala do zero testa o agente de verdade.
+  // Ligue 'true' só para exercitar o render da UI sem gastar token.
   INTERNAL_AGENT_RUN_STUB: z
     .enum(["true", "false"])
     .optional()
-    .default("true")
+    .default("false")
     .transform((v) => v === "true"),
 
   // Sentry
   SENTRY_DSN: z.string().optional().default(""),
+
+  /**
+   * Resend — o transporte de TODO e-mail transacional (convite, LGPD, alarme).
+   *
+   * Estavam lidas de `process.env` CRU dentro de `lib/email/resend.ts`, fora do
+   * Zod e fora do `.env.example` (medido: `grep -n RESEND lib/env.ts` → nada;
+   * `grep -c -i resend .env.example` → 0). Duas consequências que só apareciam
+   * na VPS: o `env-example-sync` nunca cobrou a documentação da chave, e o
+   * `install.sh` não a gravava — como o `.env` é escrito com truncamento
+   * (`} > .env`), a chave posta à mão era DESCARTADA na instalação seguinte,
+   * num script que o README vende como idempotente.
+   *
+   * `RESEND_FROM_EMAIL` vazio NÃO cai num domínio nosso: ver `fromAddress()`.
+   */
+  RESEND_API_KEY: z.string().optional().default(""),
+  RESEND_FROM_EMAIL: z.string().optional().default(""),
+
+  /**
+   * E-mail de suporte que a instalação mostra ao CLIENTE FINAL (tela de conta
+   * suspensa, tela de cobrança).
+   *
+   * Vazio = a tela não mostra endereço nenhum. É deliberado: cair no nosso
+   * endereço numa tela de suspensão manda o cliente do revendedor escrever
+   * para quem não suspendeu a conta dele e não tem como resolvê-la.
+   */
+  SUPPORT_EMAIL: z.string().optional().default(""),
 
   // EPIC-11 Impersonate cookie HMAC secret. Optional at boot (route returns
   // 503 at runtime if missing/short); required in prod for the feature to
@@ -140,6 +207,19 @@ const schema = z.object({
   // O <PublicEnvScript/> injeta os valores em runtime.
   APP_NAME: z.string().optional().default(""),
   APP_LOGO_URL: z.string().optional().default(""),
+  /**
+   * Cor da marca — um hex (`#506d48`), do qual `lib/branding/` deriva a rampa
+   * inteira. Vazio = o produto se pinta com a cor dele.
+   *
+   * `optional().default("")` e NUNCA `required()`, e o motivo é o modo de falha,
+   * não a preguiça: `lib/env.ts` lança no import do módulo, que no Next
+   * acontece na PRIMEIRA REQUISIÇÃO, não no boot. E o healthcheck do contêiner é
+   * um probe TCP puro (`docker-compose.prod.yml:44`, deliberadamente — /health
+   * derrubaria o app quando o WAHA cai). Somando os dois: o Docker mostraria
+   * `healthy` com 100% das requisições em 500. Uma var de COR não pode ter esse
+   * poder; a validação do valor é do resolvedor, que degrada e diz o motivo.
+   */
+  APP_ACCENT_HEX: z.string().optional().default(""),
 });
 
 let parsed = schema.safeParse(process.env);
@@ -169,14 +249,24 @@ export const env = parsed.data;
 
 // Soft warning for env-gated AI keys (worker degrades gracefully but operators
 // should know when the bot is silent for config reasons).
-if (!env.AI_GATEWAY_API_KEY && !env.ANTHROPIC_API_KEY) {
+// `OPENROUTER_API_KEY` entra na condição porque `isAiGatewayConfigured()`
+// (lib/ai/gateway.ts) e `resolveLanguageModel` a tratam como configuração
+// VÁLIDA. Sem ela aqui, a instalação que escolhe OpenRouter — a primeira opção
+// que o `install.sh` oferece — gritava no primeiro boot que a IA ia ficar muda,
+// e ela não ia. O operador ia atrás de um problema que não existe, ou pior:
+// cadastrava uma chave da Anthropic que não precisava, só para calar o aviso.
+// O texto era verdadeiro enquanto a Anthropic era a única chave que o
+// instalador pedia; o menu novo o tornou falso.
+if (!env.AI_GATEWAY_API_KEY && !env.ANTHROPIC_API_KEY && !env.OPENROUTER_API_KEY) {
   console.warn(
-    "[env] No AI_GATEWAY_API_KEY or ANTHROPIC_API_KEY set — ai-response-worker will skip with reason='ai_gateway_key_missing'.",
+    "[env] Nenhuma chave de IA configurada (AI_GATEWAY_API_KEY, ANTHROPIC_API_KEY ou OPENROUTER_API_KEY) — " +
+      "o agente vai pular toda resposta com reason='ai_gateway_key_missing'.",
   );
 }
 if (!env.OPENAI_API_KEY) {
   console.warn(
-    "[env] No OPENAI_API_KEY set — RAG embedding will be unavailable; bot answers without retrieved context.",
+    "[env] No OPENAI_API_KEY set — RAG embedding unavailable (bot answers without retrieved context) " +
+      "AND voice-note transcription is off (the agent will ask leads to resend audio as text).",
   );
 }
 if (!env.IMPERSONATE_COOKIE_SECRET || env.IMPERSONATE_COOKIE_SECRET.length < 32) {

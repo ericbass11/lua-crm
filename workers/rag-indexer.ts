@@ -15,6 +15,7 @@ import { isEmbeddingProviderConfigured } from "@/lib/ai/gateway";
 import { embedText } from "@/lib/ai/embed";
 import { acquireDebounce } from "@/lib/ai/rag/debounce";
 import { chunkText, computeContentHash } from "@/lib/ai/rag/chunker";
+import { estimateTokens } from "@/lib/ai/runtime/history";
 import { formatProductForRag, type NuvemshopProduct } from "@/lib/ai/rag/format-product";
 import {
   createKnowledgeVersion,
@@ -220,6 +221,9 @@ async function handleProductSynced(
           position: i,
           content,
           content_hash: contentHash,
+          // NOT NULL no banco. Nenhum dos dois caminhos preenchia, e todo
+          // insert morria com "null value in column token_count".
+          token_count: estimateTokens(content),
           embedding: embedding as unknown as string,
           metadata: {
             source_type: "nuvemshop_product",
@@ -227,7 +231,14 @@ async function handleProductSynced(
           },
         },
         {
-          onConflict: "organization_id,kb_version_id,content_hash",
+          // A constraint que existe no banco e ai_chunks_position_unique
+          // (knowledge_source_id, kb_version_id, position). O alvo antigo
+          // (organization_id, kb_version_id, content_hash) nao existe, e o
+          // Postgres respondia "there is no unique or exclusion constraint
+          // matching the ON CONFLICT specification" — TODO chunk falhava ao
+          // gravar. Como cada reindexacao cria uma versao nova, na pratica
+          // nunca ha conflito; o alvo certo e o que faz o insert passar.
+          onConflict: "knowledge_source_id,kb_version_id,position",
           ignoreDuplicates: true,
         },
       );
@@ -243,6 +254,15 @@ async function handleProductSynced(
     }
   }
 
+  // NUNCA ativar versão vazia. Se todos os chunks falharem, marcar 'ready' com
+  // zero e ativar troca uma base que funcionava por uma base VAZIA — o agente
+  // perde o RAG em silêncio, que é pior que a indexação ter falhado. Falhando
+  // aqui, a versão anterior continua ativa.
+  if (successCount === 0) {
+    await markVersionFailed(versionId, row.organization_id, "nenhum chunk gravado");
+    return { type: "error", detail: "no_chunks_written" };
+  }
+
   await markVersionReady(versionId, row.organization_id, successCount);
   await activateVersion({
     agentId,
@@ -253,16 +273,25 @@ async function handleProductSynced(
   return { type: "ok", versionId, chunkCount: successCount };
 }
 
+
 /**
- * Reindexes a knowledge source's content into a fresh KB version and activates it.
+ * Reindexa a base de conhecimento do tenant (FAQ, política) — S-06.05/06/07.
  *
- * Only `source_type = 'faq'` is implemented: each Q&A becomes one atomic chunk
- * ("Pergunta: … / Resposta: …") so retrieval can surface a single relevant answer.
- * Other source types (policy/conversations/catalog) are skipped (deferred), never
- * errored, so the drain marks the event processed and moves on.
+ * Decisão de arquitetura: **reconstrói UMA versão com TODAS as fontes**, em vez
+ * de uma versão por fonte. A busca (`retrieve_top_k_chunks`) recebe um único
+ * `kb_version_id`, e o agente aponta para uma única versão ativa
+ * (`ai_agents.active_kb_version_id`). Se cada fonte criasse a própria versão,
+ * ativar o FAQ desativaria o catálogo e vice-versa — o RAG degradaria em
+ * silêncio, que é pior que não ter.
  *
- * On success the source row's counters are updated so the UI badge flips to
- * "Pronto" (status='ready' + chunks_count>0).
+ * Custo: re-embeddar tudo a cada mudança. Para a base de um tenant (dezenas de
+ * itens) são centavos, e a alternativa incremental exigiria diferenciar chunk a
+ * chunk. Caminho de evolução, quando a base crescer: reaproveitar os chunks
+ * cujo `content_hash` não mudou da versão anterior.
+ *
+ * A versão só é ATIVADA depois de todos os chunks entrarem: se algo falhar no
+ * meio, a versão anterior continua valendo e o agente segue respondendo com a
+ * base antiga em vez de ficar sem base nenhuma.
  */
 async function handleKnowledgeSourceUpdated(
   row: EventRow,
@@ -270,141 +299,125 @@ async function handleKnowledgeSourceUpdated(
 ): Promise<ProcessResult> {
   const admin = createAdminClient();
 
-  // entity_id is the trusted source id; payload mirror is a fallback.
-  const sourceId = String(row.payload["knowledge_source_id"] ?? row.entity_id ?? "");
-  if (!sourceId) return skip("missing_knowledge_source_id");
-
-  // Load the source (tenant-filtered — never trust the body).
-  const { data: sourceRow, error: srcErr } = await admin
+  const { data: sourceRows, error: srcErr } = await admin
     .from("ai_knowledge_sources")
-    .select("id, source_type, status")
-    .eq("id", sourceId)
+    .select("id, source_type, name")
     .eq("organization_id", row.organization_id)
-    .maybeSingle();
-  if (srcErr) return { type: "error", detail: `source_fetch_failed: ${srcErr.message}` };
-  if (!sourceRow) return skip("source_not_found");
+    .eq("agent_id", agentId)
+    .eq("status", "ready");
+  if (srcErr) return { type: "error", detail: `sources_query_failed: ${srcErr.message}` };
 
-  const sourceType = (sourceRow as { source_type: string }).source_type;
-  if (sourceType !== "faq") {
-    return skip(`source_type_deferred:${sourceType}`);
-  }
+  const sources = (sourceRows ?? []) as { id: string; source_type: string; name: string }[];
+  if (sources.length === 0) return skip("no_sources");
 
-  // Load FAQ items for this source.
-  const { data: itemsData, error: itemsErr } = await admin
+  const { data: itemRows, error: itemErr } = await admin
     .from("ai_faq_items")
-    .select("id, question, answer, tags, locale, position")
-    .eq("knowledge_source_id", sourceId)
+    .select("knowledge_source_id, question, answer, position")
     .eq("organization_id", row.organization_id)
+    .in("knowledge_source_id", sources.map((s) => s.id))
     .order("position", { ascending: true });
-  if (itemsErr) return { type: "error", detail: `faq_items_fetch_failed: ${itemsErr.message}` };
+  if (itemErr) return { type: "error", detail: `items_query_failed: ${itemErr.message}` };
 
-  const faqItems = (itemsData ?? []) as Array<{
-    id: string;
-    question: string | null;
-    answer: string | null;
-    tags: string[] | null;
-    locale: string | null;
-  }>;
+  const items = (itemRows ?? []) as {
+    knowledge_source_id: string;
+    question: string;
+    answer: string;
+  }[];
+  if (items.length === 0) return skip("no_content_to_index");
 
-  const entries = faqItems
-    .map((it) => {
-      const q = (it.question ?? "").trim();
-      const a = (it.answer ?? "").trim();
-      if (!q || !a) return null;
-      return { item: it, text: `Pergunta: ${q}\nResposta: ${a}` };
-    })
-    .filter((v): v is { item: (typeof faqItems)[number]; text: string } => v !== null);
-
-  const nowIso = new Date().toISOString();
-
-  if (entries.length === 0) {
-    // No usable items — record an empty index state, don't create a version.
-    await admin
-      .from("ai_knowledge_sources")
-      .update({
-        last_index_status: "empty",
-        last_index_error: null,
-        chunks_count: 0,
-        last_indexed_at: nowIso,
-      })
-      .eq("id", sourceId)
-      .eq("organization_id", row.organization_id);
-    return skip("no_faq_items");
+  // Um chunk por par pergunta/resposta: a unidade de recuperação é a resposta
+  // inteira. `chunkText` só entra quando a resposta é longa demais para um
+  // chunk — assim uma FAQ curta nunca é picada no meio.
+  const porFonte = new Map(sources.map((s) => [s.id, s]));
+  const pedacos: { content: string; sourceId: string; sourceType: string }[] = [];
+  for (const it of items) {
+    const fonte = porFonte.get(it.knowledge_source_id);
+    if (!fonte) continue;
+    const texto = `Pergunta: ${it.question}\nResposta: ${it.answer}`;
+    for (const c of chunkText(texto)) {
+      pedacos.push({ content: c, sourceId: fonte.id, sourceType: fonte.source_type });
+    }
   }
+  if (pedacos.length === 0) return skip("no_chunks_generated");
 
-  // New version in 'building'.
-  const { versionId } = await createKnowledgeVersion({
+  const { versionId, versionNumber } = await createKnowledgeVersion({
     agentId,
     organizationId: row.organization_id,
-    sourceType: "faq",
+    sourceType: "knowledge_source",
   });
+  console.warn(
+    `[rag-indexer] reconstruindo base: versão ${versionNumber} (${versionId}), ` +
+      `${sources.length} fonte(s), ${pedacos.length} chunk(s)`,
+  );
 
-  let successCount = 0;
-  let position = 0;
-  for (const entry of entries) {
-    const contentHash = computeContentHash(entry.text);
-
+  let gravados = 0;
+  const gravadosPorFonte = new Map<string, number>();
+  for (let i = 0; i < pedacos.length; i++) {
+    const p = pedacos[i]!;
+    const contentHash = computeContentHash(p.content);
     let embedding: number[];
     try {
-      const result = await embedText(entry.text, { organizationId: row.organization_id });
-      embedding = result.embedding;
+      const r = await embedText(p.content, { organizationId: row.organization_id });
+      embedding = r.embedding;
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      await markVersionFailed(versionId, row.organization_id, detail).catch(() => {
-        // best-effort
-      });
-      await admin
-        .from("ai_knowledge_sources")
-        .update({ last_index_status: "failed", last_index_error: detail, last_indexed_at: nowIso })
-        .eq("id", sourceId)
-        .eq("organization_id", row.organization_id);
-      return { type: "error", detail: `embed_failed at item ${position}: ${detail}` };
+      await markVersionFailed(versionId, row.organization_id, `embed_failed@${i}: ${detail}`);
+      return { type: "error", detail: `embed_failed at chunk ${i}: ${detail}` };
     }
-
-    const { error: upsertErr } = await admin.from("ai_chunks").upsert(
+    const { error: upErr } = await admin.from("ai_chunks").upsert(
       {
         organization_id: row.organization_id,
         kb_version_id: versionId,
-        knowledge_source_id: sourceId,
-        position,
-        content: entry.text,
+        knowledge_source_id: p.sourceId,
+        position: i,
+        content: p.content,
         content_hash: contentHash,
+        token_count: estimateTokens(p.content),
         embedding: embedding as unknown as string,
-        metadata: {
-          source_type: "faq",
-          faq_item_id: entry.item.id,
-          tags: entry.item.tags ?? [],
-          locale: entry.item.locale ?? "pt-BR",
-        },
+        metadata: { source_type: p.sourceType },
       },
-      { onConflict: "organization_id,kb_version_id,content_hash", ignoreDuplicates: true },
+      // Ver comentario no caminho de produto: esta e a constraint que existe.
+      { onConflict: "knowledge_source_id,kb_version_id,position", ignoreDuplicates: true },
     );
-
-    if (upsertErr) {
-      console.warn(`[rag-indexer] faq chunk upsert error at position ${position}:`, upsertErr.message);
+    if (upErr) {
+      console.warn(`[rag-indexer] chunk upsert error at ${i}:`, upErr.message);
     } else {
-      successCount++;
+      gravados++;
+      gravadosPorFonte.set(p.sourceId, (gravadosPorFonte.get(p.sourceId) ?? 0) + 1);
     }
-    position++;
   }
 
-  await markVersionReady(versionId, row.organization_id, successCount);
+  // NUNCA ativar versão vazia. Se todos os chunks falharem, marcar 'ready' com
+  // zero e ativar troca uma base que funcionava por uma base VAZIA — o agente
+  // perde o RAG em silêncio, que é pior que a indexação ter falhado. Falhando
+  // aqui, a versão anterior continua ativa.
+  if (gravados === 0) {
+    await markVersionFailed(versionId, row.organization_id, "nenhum chunk gravado");
+    return { type: "error", detail: "no_chunks_written" };
+  }
+
+  await markVersionReady(versionId, row.organization_id, gravados);
   await activateVersion({ agentId, versionId, organizationId: row.organization_id });
 
-  // Flip the source row to "ready" so the UI badge reflects the indexed state.
-  await admin
-    .from("ai_knowledge_sources")
-    .update({
-      status: "ready",
-      last_index_status: successCount > 0 ? "done" : "empty",
-      last_index_error: null,
-      chunks_count: successCount,
-      last_indexed_at: new Date().toISOString(),
-    })
-    .eq("id", sourceId)
-    .eq("organization_id", row.organization_id);
+  // Estado por fonte: a tela mostra "Chunks indexados" e a última indexação.
+  const agora = new Date().toISOString();
+  for (const s of sources) {
+    // O que REALMENTE entrou, nao o que eu pretendia gravar: contar o planejado
+    // fazia a tela anunciar "4 chunks indexados" com zero chunks no banco.
+    const doFonte = gravadosPorFonte.get(s.id) ?? 0;
+    await admin
+      .from("ai_knowledge_sources")
+      .update({
+        last_index_status: doFonte > 0 ? "success" : "failed",
+        last_index_error: doFonte > 0 ? null : "nenhum chunk foi gravado nesta indexação",
+        last_indexed_at: agora,
+        chunks_count: doFonte,
+      })
+      .eq("id", s.id)
+      .eq("organization_id", row.organization_id);
+  }
 
-  return { type: "ok", versionId, chunkCount: successCount };
+  return { type: "ok", versionId, chunkCount: gravados };
 }
 
 // ---------------------------------------------------------------------------

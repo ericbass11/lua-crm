@@ -24,6 +24,14 @@ export interface Conversation {
   tags: string[];
   metadata: Record<string, unknown>;
   snooze_until: string | null;
+  /**
+   * Até quando o atendimento automático está desligado nesta conversa
+   * (`'infinity'` depois de passar para uma pessoa). A tela precisa disto para
+   * saber SE existe algo a devolver — sem o campo, o botão de retomar não teria
+   * como aparecer só quando faz sentido, e a rota ficaria sem porta.
+   */
+  bot_silenced_until: string | null;
+  last_handoff_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -52,6 +60,14 @@ export interface Message {
   delivered_at: string | null;
   read_at: string | null;
   metadata: Record<string, unknown>;
+  /**
+   * Quando o AUTOR editou no aplicativo (migration 0143). `body` já é a versão
+   * nova; este campo existe para a tela poder DIZER que houve edição — ler um
+   * combinado sem saber que ele mudou é como o erro começa.
+   */
+  edited_at: string | null;
+  /** Quando o AUTOR apagou para todos. A linha fica; o texto não é mostrado. */
+  revoked_at: string | null;
   created_at: string;
 }
 

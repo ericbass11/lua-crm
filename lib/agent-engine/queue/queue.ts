@@ -16,7 +16,7 @@
  */
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 
-export type JobKind = 'inbound_turn' | 'followup_turn' | 'watchdog' | 'flywheel' | 'case_reply_turn';
+export type JobKind = 'inbound_turn' | 'followup_turn' | 'watchdog' | 'flywheel' | 'case_reply_turn' | 'operator_turn';
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'dead';
 
 export interface JobRow {
@@ -146,6 +146,48 @@ const CLAIM_SQL = `
  * ponytail: cap é do daemon único; se um dia houver N daemons em bancos separados,
  * vira knob agregado por daemon.
  */
+/**
+ * Quantos MILISSEGUNDOS faltam até o próximo job ficar claimável — `null` quando
+ * não há nenhum `pending`. É o relógio que o loop consulta ANTES de abrir o claim.
+ *
+ * Um `select` só, sem `connect`, sem `begin` e sem advisory lock: o claim custa 5
+ * statements e 638 B de egress por rodada (medido no protocolo, fila vazia), e
+ * numa instalação ociosa ele rodava 4×/s para sempre — a issue #258. Este aqui
+ * custa 1 statement e 54 B, e é servido por `idx_job_queue_claim` (o parcial de
+ * `status='pending'` que já existe): Index Only Scan, 1 buffer, 0,010 ms medidos
+ * com 50 mil linhas na tabela — não degrada com o histórico.
+ *
+ * A garantia não é "o claim nunca perde um job por causa desta leitura". Ela é
+ * MAIS FRACA e é a verdadeira: como a leitura é uma FOTO (o `now()` dela é o
+ * instante da própria transação), um job que vence entre a foto e o despertar
+ * fica esperando — mas só até a próxima foto, porque nada no produto tira uma
+ * linha de `pending`+vencida. Ou seja: **a foto nunca esconde um job por mais de
+ * um `QUEUE_POLL_INTERVAL_MS`**. Medido: 1.300 estados de fronteira em fuzz
+ * diferencial contra o `claimJobs` real, zero casos de job escondido.
+ *
+ * Três armadilhas, todas com caso em tests/invariants/queue-relogio.test.ts:
+ *   - o `case when` é OBRIGATÓRIO: `greatest(NULL, 0)` no Postgres devolve 0, não
+ *     NULL — sem ele a fila VAZIA se disfarçaria de "job vencido" e o loop
+ *     voltaria a girar no ritmo curto, que é exatamente o defeito da issue;
+ *   - o `least(..., 86400000)` segura `run_after = 'infinity'`, que o hold do
+ *     session-watchdog grava, e que estouraria o `int4` do cast;
+ *   - o `::int` faz o pg devolver `number`; sem ele viria `string` de `numeric`.
+ */
+export async function faltaParaOProximoJob(pool: Pool): Promise<number | null> {
+  const { rows } = await pool.query<{ falta_ms: number | null }>(
+    `select case
+              when min(run_after) is null then null
+              else least(
+                     greatest(extract(epoch from (min(run_after) - now())) * 1000, 0),
+                     86400000
+                   )::int
+            end as falta_ms
+       from job_queue
+      where status = 'pending'`,
+  );
+  return rows[0]?.falta_ms ?? null;
+}
+
 export async function claimJobs(pool: Pool, opts: ClaimOptions): Promise<JobRow[]> {
   const client = await pool.connect();
   try {
@@ -235,7 +277,14 @@ export async function failJob(
        insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        select organization_id, 'job_dead', 'critical',
               'Job descartado após esgotar tentativas',
-              'kind=' || kind || '; attempts=' || attempts, 'job_queue', id
+              -- O erro que matou o job vai JUNTO. Antes o corpo era só
+              -- 'kind=...; attempts=5' e jogava fora a única informação que
+              -- resolveria: o aviso existia, e não dizia nada. Caso real desta
+              -- VPS: 16 alertas críticos idênticos enquanto o erro guardado em
+              -- last_error dizia exatamente o que configurar.
+              'kind=' || kind || '; attempts=' || attempts
+                || coalesce(chr(10) || 'Motivo: ' || left(last_error, 400), ''),
+              'job_queue', id
        from updated
        where status = 'dead'
      )
@@ -309,13 +358,24 @@ export async function reapExpiredJobs(
            locked_by = null, locked_at = null,
            last_error = coalesce(last_error, 'visibility timeout excedido (worker morto?)')
        where status = 'running' and locked_at < now() - ($1 * interval '1 millisecond')
-       returning id, organization_id, kind, attempts, status
+       -- last_error PRECISA sair no returning: a CTE do alerta abaixo só
+       -- enxerga as colunas devolvidas aqui, não as da tabela. Faltando ela, a
+       -- query inteira morre com "column last_error does not exist" — e como
+       -- este reap roda no BOOT do worker, o worker não subia.
+       returning id, organization_id, kind, attempts, status, last_error
      ),
      alert as (
        insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        select organization_id, 'job_dead', 'critical',
               'Job descartado após esgotar tentativas',
-              'kind=' || kind || '; attempts=' || attempts, 'job_queue', id
+              -- O erro que matou o job vai JUNTO. Antes o corpo era só
+              -- 'kind=...; attempts=5' e jogava fora a única informação que
+              -- resolveria: o aviso existia, e não dizia nada. Caso real desta
+              -- VPS: 16 alertas críticos idênticos enquanto o erro guardado em
+              -- last_error dizia exatamente o que configurar.
+              'kind=' || kind || '; attempts=' || attempts
+                || coalesce(chr(10) || 'Motivo: ' || left(last_error, 400), ''),
+              'job_queue', id
        from expired
        where status = 'dead'
      )

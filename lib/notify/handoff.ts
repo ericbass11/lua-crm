@@ -2,14 +2,20 @@
  * Notificação de handoff ao time — best-effort, nunca lança (não pode quebrar
  * o handoff). Dois canais, ambos opcionais e configuráveis por org:
  *  - webhook (Slack/Discord/n8n/custom): POST JSON.
- *  - WhatsApp: mensagem enviada pelo número do negócio (WAHA) para o número do
+ *  - WhatsApp: mensagem enviada pelo canal do negócio para o número do
  *    time cadastrado.
  * Ambos levam motivo + link + resumo da conversa (campo `resumo` do lead, com
  * fallback para a última mensagem do cliente).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { getWahaClient } from "@/lib/waha/client";
+import {
+  CHANNEL_SESSION_REF_COLUMNS,
+  DEFAULT_CHANNEL_PROVIDER,
+  getAdapter,
+  resolveSessionRef,
+  type ChannelSessionRef,
+} from "@/lib/channels";
 
 export interface HandoffNotifyInput {
   organizationId: string;
@@ -62,11 +68,6 @@ async function buildSummary(
     .maybeSingle();
   const body = (msg as { body: string | null } | null)?.body;
   return body ? `Última mensagem do cliente: "${body.slice(0, 200)}"` : null;
-}
-
-function toChatId(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  return `${digits}@c.us`;
 }
 
 export async function notifyHandoff(
@@ -131,23 +132,32 @@ export async function notifyHandoff(
     }
   }
 
-  // Canal 2 — WhatsApp: número do negócio (WAHA) → número do time.
+  // Canal 2 — WhatsApp: número do negócio → número do time.
   if (whatsappNumber) {
     try {
       const { data: sess } = await admin
         .from("channel_sessions")
-        .select("waha_session_name")
+        .select(CHANNEL_SESSION_REF_COLUMNS)
         .eq("organization_id", input.organizationId)
         .eq("status", "WORKING")
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      const sessionName = (sess as { waha_session_name: string } | null)?.waha_session_name;
-      const waha = getWahaClient();
-      if (sessionName && waha) {
+      const session = sess as unknown as ChannelSessionRef | null;
+      if (session) {
+        const adapter = getAdapter(session.provider ?? DEFAULT_CHANNEL_PROVIDER);
+        const sessionRef = resolveSessionRef(session);
+        if (!adapter.isConfigured()) return;
         // Múltiplos números separados por vírgula.
         for (const num of whatsappNumber.split(",").map((n) => n.trim()).filter(Boolean)) {
-          await waha.sendMessage(sessionName, toChatId(num), text);
+          const recipient = adapter.resolveRecipient({
+            isGroup: false,
+            groupChatId: null,
+            phoneNumber: num,
+            waIdentity: null,
+          });
+          if (!recipient) continue;
+          await adapter.send({ sessionRef, to: recipient, kind: "text", body: text });
         }
       }
     } catch {

@@ -15,11 +15,12 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { versionCreateSchema } from "@/lib/ai/agents/validation";
+import { lerAmbiente } from "@/lib/instalacao/ambiente";
 
 export const dynamic = "force-dynamic";
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, followup, status, published_at, superseded_at, created_at, created_by";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -104,6 +105,20 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       .limit(1)
       .maybeSingle();
 
+    // ⚠️ FALHA FECHADA: `credential_id: null` significa "usa a chave da
+    // instalação". Se ela não existir para este provedor, a versão seria
+    // publicada para morrer em toda mensagem — e o dono só descobriria com o
+    // primeiro cliente. O schema valida FORMA; quem conhece o ambiente do
+    // servidor é esta rota.
+    if (v.credential_id === null && lerAmbiente().chavesDeProvedor[v.provider] !== true) {
+      return fail(
+        "credential_required",
+        `Esta instalação não tem chave de ${v.provider} no ambiente. Cadastre uma chave em IA › Credenciais ou escolha outra empresa de inteligência artificial.`,
+        422,
+        { requestId },
+      );
+    }
+
     const nextNumber = (maxRow?.version_number ?? 0) + 1;
 
     const { data, error } = await admin
@@ -127,6 +142,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         handoff_keywords: v.handoff_keywords,
         handoff_tool_enabled: v.handoff_tool_enabled,
         cases_enabled: v.cases_enabled,
+        split_messages: v.split_messages,
+        split_max_chars: v.split_max_chars,
         followup: v.followup,
         status: "draft",
         created_by: authUser.id,

@@ -73,13 +73,40 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("internal_error", detail, 500, { requestId });
   }
 
-  void audit({
-    action: "followup.worker_run",
-    organizationId: null,
-    bypassedRls: true,
-    metadata: { ...summary },
-    requestId,
-  });
+  // Só audita tick que MEXEU em alguma coisa. Auditar toda batida enchia o
+  // api_audit_log — que é append-only e tem retenção de 5 anos — de linhas
+  // vazias: numa instalação parada, medido nesta VPS, 95% das entradas eram
+  // heartbeat de cron (1.175 de 1.236 em ~9h), afogando as ações reais na tela
+  // de auditoria. Liveness de worker é assunto de log/monitoramento, não de
+  // trilha de auditoria.
+  //
+  // `claim_falhou` entra na condição porque é o ÚNICO caso em que todos os
+  // contadores são zero e ainda assim algo aconteceu: o claim não chegou ao
+  // banco. Sem esta cláusula o tick que falhou é idêntico, na trilha, ao tick de
+  // uma instalação sem nada a fazer.
+  //
+  // O emissor NUNCA foi o buraco: `claim_falhou` e o `logger.error` existem em
+  // `runFollowupTick` desde f66f0ddb, com teste. O que faltava era o outro lado
+  // — anti-pattern 3 do CLAUDE.md, evento sem consumer: o campo criado para
+  // separar "o banco não respondeu" de "não havia nada a fazer" era emitido e
+  // ninguém o lia. Quem vier depois precisa saber onde estava o defeito, senão
+  // vai procurar no lugar que já estava certo.
+  if (
+    summary.claim_falhou ||
+    summary.claimed ||
+    summary.advanced ||
+    summary.scheduled ||
+    summary.failed ||
+    summary.dead
+  ) {
+    void audit({
+      action: "followup.worker_run",
+      organizationId: null,
+      bypassedRls: true,
+      metadata: { ...summary },
+      requestId,
+    });
+  }
 
   try {
     const sweepSummary = await runSilenceSweep({
@@ -87,13 +114,15 @@ async function handle(req: NextRequest): Promise<Response> {
       gateDb: createSupabaseFollowupGateDb(admin),
       clock: () => new Date(),
     });
-    void audit({
-      action: "followup.silence_sweep_run",
-      organizationId: null,
-      bypassedRls: true,
-      metadata: { ...sweepSummary },
-      requestId,
-    });
+    if (sweepSummary.enrolled || sweepSummary.pointers_gated_out || sweepSummary.skipped_existing) {
+      void audit({
+        action: "followup.silence_sweep_run",
+        organizationId: null,
+        bypassedRls: true,
+        metadata: { ...sweepSummary },
+        requestId,
+      });
+    }
   } catch (err) {
     // Sweep falhando NUNCA aborta o tick — a resposta abaixo já reflete o
     // resultado de runFollowupTick, que rodou (e foi auditado) antes disto.

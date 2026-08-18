@@ -44,7 +44,83 @@ interface TestResponse {
     latency_ms?: number;
     would_send_to?: { session?: string | null; chat_id?: string | null };
     stub?: boolean;
+    /** Ver lib/ai/agents/avaliar-resposta-de-teste.ts. */
+    guardrails?: {
+      passou: boolean;
+      categorias: string[];
+      termos: string[];
+      naoAvaliados: Array<{ gate: string; porque: string }>;
+    };
   };
+}
+
+/**
+ * O que as verificações disseram sobre a resposta — e o que elas NÃO puderam
+ * dizer.
+ *
+ * Antes disto, o teste mostrava a resposta e mais nada: nenhum gate a examinava
+ * (o runtime desta tela não importa a cadeia), então o usuário publicava achando
+ * que tinha visto o comportamento real. Mostrar "não verificado" em voz alta é o
+ * conserto — silêncio que parece aprovação foi o defeito.
+ */
+function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]> }) {
+  return (
+    <div className="space-y-2" data-testid="teste-verificacoes">
+      {g.passou ? (
+        <p
+          data-testid="teste-vazamento-limpo"
+          className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs"
+        >
+          A resposta não usa palavras internas do sistema.
+        </p>
+      ) : (
+        <div
+          data-testid="teste-vazamento-achado"
+          className="rounded-md border border-destructive/50 bg-destructive/5 p-2 text-xs"
+        >
+          <p className="font-medium text-destructive">
+            Esta resposta usa palavras que o cliente não deveria ver.
+          </p>
+          <p className="mt-1 text-muted-foreground">
+            Em produção ela seria barrada e o assistente teria que reescrever. Encontrado:{" "}
+            <span className="font-mono">{g.termos.join(", ")}</span>
+          </p>
+        </div>
+      )}
+
+      {/*
+        A lista do que NÃO foi checado. Ela é o que separa este conserto de uma
+        mentira mais bonita: as verificações que dependem do turno real não podem
+        ser avaliadas aqui, e inventá-las daria um veredito com aparência de
+        prova. O usuário precisa saber a diferença entre "passou em tudo" e
+        "passou no que dava para checar sem uma conversa de verdade".
+
+        (O texto dizia "os seis gates" enquanto a lista renderizava nove — número
+        que já foi verdade para um subconjunto e envelheceu. A contagem agora sai
+        da própria lista, logo abaixo, e não de prosa.)
+
+        Esta lista responde "o que este teste NÃO checou"; a aba "Confere antes de
+        enviar" responde "o que é checado, e o que cada uma protege". São
+        perguntas diferentes, e por isso há um ponteiro em vez de uma cópia — as
+        duas saem da mesma cadeia, cada uma com o seu teste de casamento.
+      */}
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer" data-testid="teste-nao-verificado">
+          O teste não consegue verificar tudo ({g.naoAvaliados.length} verificações ficam de fora)
+        </summary>
+        <ul className="mt-2 space-y-1 pl-4">
+          {g.naoAvaliados.map((n) => (
+            <li key={n.gate}>— {n.porque}</li>
+          ))}
+        </ul>
+        <p className="mt-2">
+          Estas só acontecem numa conversa real, com um cliente de verdade do outro lado. Para ver
+          a lista inteira do que é conferido — e o que cada verificação protege — abra a aba{" "}
+          <span className="font-medium text-foreground">Confere antes de enviar</span>.
+        </p>
+      </details>
+    </div>
+  );
 }
 
 export function TestPanel({ agent, draft, published, readOnly }: Props) {
@@ -208,6 +284,8 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
               finalText={result.final_text ?? null}
               emptyMessage="Sem tool calls (resposta direta do LLM)."
             />
+
+            {result.guardrails ? <Verificacoes g={result.guardrails} /> : null}
           </>
         ) : null}
       </div>

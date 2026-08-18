@@ -6,6 +6,7 @@
  * mostra o valor); preenchido = override desta conexão.
  */
 import { useEffect, useMemo, useState } from "react";
+import { FUSOS_OFERECIDOS } from "@/lib/tempo/fusos";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import {
   lerSegundosEmMs,
 } from "@/lib/ai/pacing-form";
 import { ApiError } from "@/lib/api/types";
+import { nomeDoCanal } from "@/lib/channels/estado";
 
 interface Props {
   item: PacingKnobsItem | null;
@@ -43,8 +45,9 @@ interface FormState {
   daily_message_limit: string;
   allow_sunday: boolean;
   timezone: string;
-  /** `YYYY-MM-DD` do input de data; '' = manter a data já registrada. */
-  number_activated_at: string;
+  /** `yyyy-mm-dd` do input date; '' = não declarado (o motor trata como idade 0). */
+  numero_em_uso_desde: string;
+  pular_aquecimento: boolean;
 }
 
 function fromItem(item: PacingKnobsItem): FormState {
@@ -60,10 +63,10 @@ function fromItem(item: PacingKnobsItem): FormState {
         : "",
     allow_sunday: o?.allow_sunday ?? item.defaults.allowSunday,
     timezone: o?.timezone ?? "",
-    // Só a parte da data: o input é `type="date"` e o banco guarda timestamptz.
-    number_activated_at: o?.number_activated_at
-      ? String(o.number_activated_at).slice(0, 10)
+    numero_em_uso_desde: item.warmup.number_activated_at
+      ? item.warmup.number_activated_at.slice(0, 10)
       : "",
+    pular_aquecimento: item.warmup.skipped,
   };
 }
 
@@ -77,8 +80,10 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
 
   const label = useMemo(() => {
     if (!item) return "";
-    const s = item.channel_session;
-    return s.display_name || s.phone_number || s.waha_session_name || "Conexão";
+    // Mesma cadeia que vazava `org_xxxx` no seletor do editor de agente: o
+    // identificador do transporte era o penúltimo degrau, então uma conexão sem
+    // apelido e sem número aparecia com ele no título do painel.
+    return nomeDoCanal(item.channel_session);
   }, [item]);
 
   if (!item || !form) return null;
@@ -102,7 +107,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         item.bounds.daily_limit.max,
       ),
     ] as const;
-    const ativacao = lerDataAtivacao(form.number_activated_at, new Date());
+    const ativacao = lerDataAtivacao(form.numero_em_uso_desde, new Date());
     const invalido = [...campos, ativacao].find((c) => !c.ok);
     if (invalido && !invalido.ok) {
       toast.error(invalido.erro);
@@ -132,9 +137,13 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         ...(tetoDiario != null ? { daily_message_limit: tetoDiario } : {}),
         // Idem para a ativação: campo vazio não vai no payload, então a data já
         // registrada permanece (a rota só a define quando CRIA a linha).
-        ...(ativacao.ok && ativacao.valor != null
-          ? { number_activated_at: ativacao.valor }
-          : {}),
+        // O input trabalha com dia; a API canônica recebe ISO-8601 com offset.
+        // Meio-dia UTC evita que o dia recue nos fusos a oeste.
+        number_activated_at:
+          ativacao.ok && ativacao.valor
+            ? new Date(`${ativacao.valor}T12:00:00.000Z`).toISOString()
+            : null,
+        skip_warmup: form.pular_aquecimento,
       });
       toast.success("Proteção de envio atualizada.");
       onClose();
@@ -162,6 +171,43 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         </SheetHeader>
 
         <div className="flex flex-col gap-5 px-4 py-2" data-testid="anti-ban-form">
+          <fieldset className="flex flex-col gap-2" data-testid="aquecimento">
+            <Label htmlFor="numero-em-uso-desde">Este número é usado desde</Label>
+            <Input
+              id="numero-em-uso-desde"
+              type="date"
+              max={new Date().toISOString().slice(0, 10)}
+              value={form.numero_em_uso_desde}
+              onChange={(e) => set({ numero_em_uso_desde: e.target.value })}
+              disabled={!canWrite || form.pular_aquecimento}
+              className="w-48"
+            />
+            <p className="text-xs text-muted-foreground">
+              A conexão pode ser nova sem que o número seja. O aquecimento conta a idade do
+              NÚMERO — se você deixar em branco, ele é tratado como recém-criado e começa
+              liberando pouco por dia.
+            </p>
+
+            <div className="mt-1 flex items-center gap-2">
+              <Switch
+                id="pular-aquecimento"
+                checked={form.pular_aquecimento}
+                onCheckedChange={(v) => set({ pular_aquecimento: v })}
+                disabled={!canWrite}
+              />
+              <Label htmlFor="pular-aquecimento" className="font-normal">
+                Este número já está aquecido — pular o aquecimento
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {form.pular_aquecimento
+                ? "Vale só o teto diário abaixo. Use apenas se o número já envia há semanas: pular o aquecimento num número novo é o caminho mais rápido para o bloqueio."
+                : item.warmup.cap_today === null
+                  ? `Número com ${item.warmup.age_days} dia(s) de uso — já formado. Vale só o teto diário abaixo.`
+                  : `Hoje o aquecimento libera ${item.warmup.cap_today} envio(s) — o número tem ${item.warmup.age_days} dia(s) de uso. Enquanto esse número for menor que o teto diário, é ELE que limita, e mexer no teto diário não muda nada.`}
+            </p>
+          </fieldset>
+
           <fieldset className="flex flex-col gap-2">
             <Label>Janela de envio (horário local)</Label>
             <div className="flex items-center gap-2">
@@ -273,13 +319,24 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
 
           <fieldset className="flex flex-col gap-2">
             <Label>Fuso horário da janela</Label>
-            <Input
-              placeholder={eff.timezone}
+            {/* LISTA, e não texto livre. A API já REJEITA fuso inválido — mas
+                rejeitar é devolver um erro a quem digitou certo na cabeça e
+                errado no teclado (`America/Asunción`, com o acento que um
+                hispanofalante escreve natural). Escolher não erra. */}
+            <select
               value={form.timezone}
               onChange={(e) => set({ timezone: e.target.value })}
               disabled={!canWrite}
               aria-label="Fuso horário IANA"
-            />
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+            >
+              <option value="">Usar o padrão ({eff.timezone})</option>
+              {FUSOS_OFERECIDOS.map((f) => (
+                <option key={f.codigo} value={f.codigo}>
+                  {f.rotulo} — {f.codigo}
+                </option>
+              ))}
+            </select>
             <p className="text-xs text-muted-foreground">
               A janela de envio é avaliada neste fuso (ex.: America/Sao_Paulo).
             </p>
@@ -301,25 +358,6 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
               a causa nº 1 de bloqueio.
             </p>
 
-            <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
-              <Label htmlFor="ativo-desde">Número ativo desde</Label>
-              <Input
-                id="ativo-desde"
-                type="date"
-                max={new Date().toISOString().slice(0, 10)}
-                value={form.number_activated_at}
-                onChange={(e) => set({ number_activated_at: e.target.value })}
-                disabled={!canWrite}
-                aria-label="Data em que o número começou a enviar"
-                className="w-44"
-              />
-              <p className="text-xs text-muted-foreground">
-                Define em que degrau do aquecimento o número está. Por padrão é a data em que
-                a conexão foi criada aqui. Só mude se o número já enviava antes por outro
-                sistema — informar data mais antiga <strong>libera limites mais altos</strong>,
-                e errar isso é assumir risco de bloqueio.
-              </p>
-            </div>
           </div>
         </div>
 

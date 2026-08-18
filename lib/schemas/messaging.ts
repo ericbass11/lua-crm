@@ -26,6 +26,10 @@ export const messageTypeSchema = z.enum([
   "video",
   "location",
   "contact",
+  // Envio de template aprovado (canal oficial, fora da janela de 24h). Não é
+  // "texto com outro nome": o tipo é o que carrega custo, conformidade de janela e
+  // o que o contato de fato viu (cabeçalho, rodapé, botões).
+  "template",
 ]);
 
 export const messageStatusSchema = z.enum([
@@ -47,6 +51,16 @@ export const sendMessageSchema = z
     media_mime: z.string().optional(),
     media_size_bytes: z.number().int().positive().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
+    /** Só em `type: "template"`. Nome exato aprovado na Meta. */
+    template_name: z.string().min(1).max(512).optional(),
+    /** Só em `type: "template"`. `pt_BR` e `pt` são templates DISTINTOS. */
+    template_language: z.string().min(2).max(16).optional(),
+    /**
+     * Só em `type: "template"`. Valor por slot, chaveado por `slotKey`
+     * (`lib/channels/meta/build-components.ts`) — a MESMA função que o formulário
+     * da tela usa. Chave montada de outro jeito é o mismatch voltando.
+     */
+    template_values: z.record(z.string(), z.string()).optional(),
   })
   .refine((d) => !!d.body || !!d.media_url || !!d.media_storage_path, {
     message: "body, media_url or media_storage_path required",
@@ -60,7 +74,7 @@ export type SendMessageInput = z.infer<typeof sendMessageSchema>;
  *
  * O operador digita um número, uma mensagem e (opcional) o nome do contato.
  * O handler normaliza o telefone (lib/phone), resolve/cria contato+conversa via
- * as RPCs de ingestão WAHA, envia a mensagem e adiciona o contato ao funil
+ * as RPCs de ingestão do canal, envia a mensagem e adiciona o contato ao funil
  * padrão. `channel_session_id` é opcional — auto-seleciona o único canal
  * WORKING quando omitido; obrigatório informar quando há mais de um.
  */
@@ -119,8 +133,26 @@ export const patchConversationSchema = z
 
 export type PatchConversationInput = z.infer<typeof patchConversationSchema>;
 
+/**
+ * Estados TERMINAIS: a conversa acabou e não volta sozinha.
+ *
+ * Vive aqui, e não espalhado em cada `.not(...)`, porque "acabou" é uma decisão
+ * de produto — se um dia `resolved` deixar de ser legado e passar a valer, o
+ * lugar de dizer isso é um só.
+ */
+export const CONVERSATION_TERMINAL_STATUSES = ["closed", "archived"] as const;
+
 export const listConversationsQuerySchema = z.object({
   status: conversationStatusSchema.optional(),
+  /**
+   * Esconde as conversas terminais (fechada/arquivada).
+   *
+   * Existe porque "Minhas" filtrava SÓ por dono e `Fechar` não solta o dono
+   * (de propósito: quem atendeu é histórico que vale). Sem isto, tudo que o
+   * atendente já fechou ficava na aba dele para sempre, e ela deixava de
+   * significar "meu trabalho" para virar "tudo que já toquei".
+   */
+  exclude_finished: z.boolean().optional(),
   assigned_to: z.union([z.string().uuid(), z.literal("me"), z.literal("unassigned")]).optional(),
   channel_session_id: z.string().uuid().optional(),
   tag: conversationTagSchema.optional(),

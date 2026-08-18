@@ -1,42 +1,64 @@
 /**
- * GET /api/v1/cron/channel-health
+ * channel-health — o vigia que PERGUNTA se a conexão está de pé.
  *
- * Watchdog do canal WhatsApp — detecta as falhas SILENCIOSAS que o health
- * check não vê (o /api/v1/health só testa se o WAHA responde HTTP):
+ * ─── Por que perguntar, se o webhook já conta ──────────────────────────────
  *
- *  1. Engine errado: sessão rodando fora do NOWEB (ex.: WEBJS por env legada
- *     WHATSAPP_DEFAULT_ENGINE) → mensagens podem ser dropadas sem erro visível
- *     ("parseMessageIdSerialized ... undefined"). Incidente CRITICAL.
- *  2. Sessão divergente: channel_sessions diz WORKING mas o WAHA reporta outro
- *     estado (ou a sessão sumiu do WAHA, ex.: troca de engine/volume). Corrige
- *     o status no banco (acende o ConnectionHealthDot na sidebar) e abre
- *     incidente WARNING.
+ * Porque o webhook emudece exatamente quando mais falta. Ele avisa em segundos
+ * enquanto o transporte está vivo; quando o transporte morre, o container cai ou
+ * a assinatura do webhook se perde, não chega evento nenhum — e "nenhum evento"
+ * é indistinguível de "tudo bem". A coluna segue dizendo `WORKING` para sempre.
  *
- * Incidentes são deduplicados por `type` enquanto houver um aberto.
- * Auth: Bearer INTERNAL_CRON_SECRET (fallback INTERNAL_SECRET), fail-closed —
- * mesmo padrão de storage-redaction.
+ * Foi assim que uma desconexão real passou horas despercebida numa instalação de
+ * verdade: nada quebrou, nada alertou, e o dono só descobriu ao estranhar que
+ * ninguém escrevia e ir olhar por conta própria.
+ *
+ * Este cron fecha esse buraco pelo único jeito que existe: fazendo a pergunta.
+ * Silêncio deixa de ser resposta.
+ *
+ * ─── O que ele NÃO faz ─────────────────────────────────────────────────────
+ *
+ * Não reinicia sessão. Religar sozinho uma conexão que caiu por bloqueio da
+ * plataforma é a receita para transformar uma suspensão temporária em definitiva
+ * — e reconectar exige, com frequência, um humano com o celular na mão. O vigia
+ * informa; a decisão é de quem lê.
+ *
+ * Auth: Bearer INTERNAL_CRON_SECRET|INTERNAL_SECRET (fail-closed), como os demais.
+ *
+ * NOTA DE DEPLOY: o agendamento vive no serviço `scheduler` do
+ * `docker-compose.prod.yml` — não há `vercel.json` neste repo (self-host).
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
-import { ok, fail } from "@/lib/api/wrappers";
+import { fail, ok } from "@/lib/api/wrappers";
+import {
+  CHANNEL_SESSION_REF_COLUMNS,
+  DEFAULT_CHANNEL_PROVIDER,
+  getAdapter,
+  resolveSessionRef,
+  type ChannelProvider,
+  type ChannelSessionRef,
+} from "@/lib/channels";
+import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
 import { env } from "@/lib/env";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getWahaClient } from "@/lib/waha/client";
 
 export const dynamic = "force-dynamic";
 
-const EXPECTED_ENGINE = "NOWEB";
+/** Teto por rodada. Cada sessão é uma chamada de rede ao transporte. */
+const LIMITE = 50;
 
-interface CheckStats {
-  waha_reachable: boolean;
-  sessions_in_waha: number;
-  engine_mismatches: number;
-  sessions_diverged: number;
-  incidents_created: number;
-}
+type LinhaDeSessao = ChannelSessionRef & {
+  id: string;
+  organization_id: string;
+  status: string | null;
+  display_name: string | null;
+  phone_number: string | null;
+  archived_at: string | null;
+};
 
-export async function GET(req: NextRequest): Promise<Response> {
+async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   const auth = req.headers.get("authorization") ?? "";
@@ -46,118 +68,75 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
-  const stats: CheckStats = {
-    waha_reachable: false,
-    sessions_in_waha: 0,
-    engine_mismatches: 0,
-    sessions_diverged: 0,
-    incidents_created: 0,
-  };
-
-  const waha = getWahaClient();
   const admin = createAdminClient();
 
-  let wahaSessions: Array<{ name: string; status: string; engine?: { engine?: string } }> = [];
-  if (waha) {
-    try {
-      wahaSessions = await waha.listSessions();
-      stats.waha_reachable = true;
-      stats.sessions_in_waha = wahaSessions.length;
-    } catch {
-      // WAHA fora do ar já aparece no /health e derruba o dot — não duplicar.
-      return ok(stats, { requestId });
-    }
-  } else {
-    return ok(stats, { requestId });
-  }
-
-  // ── 1. Engine mismatch (global, não por tenant) ────────────────────────────
-  const badEngine = wahaSessions.filter(
-    (s) => s.engine?.engine && s.engine.engine.toUpperCase() !== EXPECTED_ENGINE,
-  );
-  stats.engine_mismatches = badEngine.length;
-  if (badEngine.length > 0) {
-    stats.incidents_created += await openIncidentOnce(admin, {
-      type: "waha_engine_mismatch",
-      severity: "critical",
-      payload: {
-        expected: EXPECTED_ENGINE,
-        sessions: badEngine.map((s) => ({ name: s.name, engine: s.engine?.engine })),
-        hint: "Engine fora do NOWEB dropa mensagens silenciosamente. Confira WAHA_DEFAULT_ENGINE/WHATSAPP_DEFAULT_ENGINE no compose e recrie o container waha.",
-      },
-    });
-  }
-
-  // ── 2. Sessões que o banco acha WORKING mas o WAHA discorda ───────────────
-  const { data: dbSessions } = await admin
+  // Arquivada não é vigiada: ela foi desligada de propósito, e avisar que uma
+  // conexão aposentada está parada é exatamente o ruído que faz o operador
+  // ignorar a Central.
+  const { data, error } = await admin
     .from("channel_sessions")
-    .select("id, organization_id, waha_session_name, status")
-    .eq("status", "WORKING");
+    .select(
+      `id, organization_id, status, display_name, phone_number, archived_at, ${CHANNEL_SESSION_REF_COLUMNS}`,
+    )
+    .is("archived_at", null)
+    .limit(LIMITE);
 
-  const byName = new Map(wahaSessions.map((s) => [s.name, s]));
-  for (const row of (dbSessions ?? []) as Array<{
-    id: string;
-    organization_id: string;
-    waha_session_name: string;
-    status: string;
-  }>) {
-    const actual = byName.get(row.waha_session_name);
-    const actualStatus = actual?.status ?? "STOPPED";
-    if (actualStatus === "WORKING") continue;
-
-    stats.sessions_diverged += 1;
-    // Corrige o status → sidebar/Conexões passam a refletir a realidade.
-    await admin
-      .from("channel_sessions")
-      .update({ status: actualStatus, updated_at: new Date().toISOString() })
-      .eq("id", row.id)
-      .eq("organization_id", row.organization_id);
-
-    stats.incidents_created += await openIncidentOnce(admin, {
-      type: "channel_session_down",
-      severity: "warning",
-      organizationId: row.organization_id,
-      payload: {
-        waha_session_name: row.waha_session_name,
-        db_status: row.status,
-        waha_status: actualStatus,
-        hint: "Sessão do WhatsApp não está WORKING no WAHA. Reconecte em /app/connections (QR code).",
-      },
-    });
-  }
-
-  return ok(stats, { requestId });
-}
-
-/** Cria incidente apenas se não houver outro aberto do mesmo type. Retorna 0|1. */
-async function openIncidentOnce(
-  admin: ReturnType<typeof createAdminClient>,
-  input: {
-    type: string;
-    severity: "info" | "warning" | "critical";
-    payload: Record<string, unknown>;
-    organizationId?: string;
-  },
-): Promise<number> {
-  const { data: existing } = await admin
-    .from("incidents")
-    .select("id")
-    .eq("type", input.type)
-    .eq("status", "open")
-    .limit(1)
-    .maybeSingle();
-  if (existing) return 0;
-
-  const { error } = await admin.from("incidents").insert({
-    organization_id: input.organizationId ?? null,
-    type: input.type,
-    severity: input.severity,
-    status: "open",
-    payload: input.payload,
-  });
   if (error) {
-    console.error("[channel-health] incident insert failed", error.message);
-    return 0;
+    logger.error("[channel-health] query falhou", { detail: error.message, requestId });
+    return fail("internal_error", error.message, 500, { requestId });
   }
-  return 1;
+
+  const sessoes = (data ?? []) as LinhaDeSessao[];
+  let verificadas = 0;
+  const desfechos: Record<string, number> = {};
+
+  for (const s of sessoes) {
+    // Pergunta ao CANAL, não ao provider: quem tem sessão para consultar
+    // implementa `checkHealth`; quem não tem simplesmente não o expõe, e o vigia
+    // segue adiante sem nunca perguntar QUEM ele é — o invariante 1 da doutrina.
+    const adapter = getAdapter((s.provider ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider);
+    const sessionRef = resolveSessionRef(s);
+    if (!adapter.checkHealth || !sessionRef) continue;
+
+    try {
+      const saude = await adapter.checkHealth({ sessionRef });
+      verificadas++;
+
+      // O status novo vale para o banco, mas SÓ quando deu para perguntar:
+      // gravar por cima com um erro de rede transitório trocaria informação boa
+      // por ruído, e é o mesmo cuidado que a tela de conexões já toma.
+      let statusFinal = s.status;
+      if (saude.reachable && saude.status && saude.status !== s.status) {
+        statusFinal = saude.status;
+        const agora = new Date().toISOString();
+        await admin
+          .from("channel_sessions")
+          .update({ status: saude.status, last_status_change_at: agora })
+          .eq("id", s.id)
+          .eq("organization_id", s.organization_id);
+      }
+
+      const apelido = s.display_name ?? s.phone_number ?? "sem nome";
+      const desfecho = await sincronizarSaudeDaConexao(
+        admin,
+        { id: s.id, organization_id: s.organization_id, status: statusFinal },
+        saude,
+        apelido,
+      );
+      desfechos[desfecho] = (desfechos[desfecho] ?? 0) + 1;
+    } catch (err) {
+      // Uma sessão problemática não derruba o lote — as outras ainda precisam
+      // ser vigiadas, e é justamente numa rodada assim que alguma pode ter caído.
+      logger.warn("[channel-health] falhou numa sessão", {
+        sessionId: s.id,
+        detail: err instanceof Error ? err.message : "erro",
+        requestId,
+      });
+    }
+  }
+
+  return ok({ sessoes: sessoes.length, verificadas, ...desfechos }, { requestId });
 }
+
+export const GET = handle;
+export const POST = handle;

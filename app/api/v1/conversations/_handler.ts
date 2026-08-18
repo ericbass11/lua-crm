@@ -9,6 +9,7 @@ import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { normalizeToE164 } from "@/lib/phone";
+import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
 import type {
   ListConversationsQuery,
   StartConversationInput,
@@ -27,7 +28,9 @@ const SELECT_COLS = `
   last_outbound_at, last_message_at, last_message_preview,
   unread_count_for_assignee, is_group, group_chat_id, tags, metadata,
   snooze_until, created_at, updated_at,
-  contacts:contact_id (id, display_name, name, phone_number, is_anonymized, tags, is_blocked)
+  bot_silenced_until, last_handoff_at,
+  contacts:contact_id (id, display_name, name, phone_number, is_anonymized, tags, is_blocked, avatar_storage_path, force_human),
+  channel_sessions:channel_session_id (phone_number, display_name, provider)
 `;
 
 interface CursorPayload {
@@ -103,6 +106,12 @@ export async function listConversationsHandler(
     .limit(q.limit + 1);
 
   if (q.status) query = query.eq("status", q.status);
+  // Depois do `status` de propósito: pedir um status terminal E `exclude_finished`
+  // é contradição, e a resposta certa para uma contradição é lista vazia — não
+  // um dos dois lados escolhido em silêncio.
+  if (q.exclude_finished) {
+    query = query.not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
+  }
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
   if (q.tag) query = query.contains("tags", [q.tag]); // tags @> array[tag] (GIN)
 
@@ -450,7 +459,7 @@ export async function startConversationHandler(
     );
   }
 
-  // Envia a 1ª mensagem pelo caminho de produção (grava row + dispara WAHA +
+  // Envia a 1ª mensagem pelo caminho de produção (grava row + chama o adapter +
   // ack). Client RLS do usuário — a conversa recém-criada pertence à org ativa.
   const message = await sendMessageHandler(supabase, ctx, {
     conversation_id: conversationId as unknown as string,

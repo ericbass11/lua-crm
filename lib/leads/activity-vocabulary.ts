@@ -18,11 +18,18 @@
  * aceita; quem escreve daqui é que fica preso ao vocabulário.
  */
 export type ActivityType =
+  // Spec 17: o lead nasceu da primeira mensagem. Sem esta linha na timeline, o
+  // card aparece no kanban sem que ninguém saiba de onde veio — e "apareceu
+  // sozinho" é como se perde a confiança num automatismo.
+  | "lead_created"
   | "stage_changed"
+  /** Um humano desfez ou redirecionou o que a IA tinha movido (spec 17 passo 5). */
+  | "agent_move_corrected"
   | "note"
   | "ai_turn"
   | "send_vetoed"
   | "handoff_triggered"
+  | "handoff_resolved"
   | "next_action_approved"
   | "next_action_dismissed"
   | "lead_edited"
@@ -30,14 +37,34 @@ export type ActivityType =
   | "lead_reactivated"
   | "reactivation_accepted"
   | "reactivation_dismissed"
-  | "reactivation_expired";
+  | "reactivation_expired"
+  | "followup_scheduled"
+  | "followup_cancelled"
+  /**
+   * As quatro formas de INTERVIR num follow-up em andamento, sem matá-lo.
+   * Antes delas, a única saída era cancelar — e quem lesse a timeline via o
+   * fluxo sumir sem saber se alguém desistiu ou se ele terminou.
+   */
+  | "followup_paused"
+  | "followup_resumed"
+  | "followup_snoozed"
+  | "followup_step_skipped"
+  | "demand_closed"
+  | "promise_unowned";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
+  lead_created: "Entrou pelo WhatsApp",
   stage_changed: "Mudou de estágio",
+  agent_move_corrected: "Correção do que o assistente tinha feito",
   note: "Anotação",
   ai_turn: "Atendimento da IA",
   send_vetoed: "Envio bloqueado",
   handoff_triggered: "Passou para humano",
+  // A IDA existia e a VOLTA não: a linha do tempo mostrava o cliente saindo para
+  // uma pessoa e nunca voltando, como se o atendimento tivesse parado ali. Meia
+  // continuidade lida como continuidade — e é justamente na volta que quem lê
+  // precisa saber que o combinado com a pessoa foi repassado ao agente.
+  handoff_resolved: "Voltou para o atendimento automático",
   // A RECUSA é sinal, não ausência de sinal: "o humano viu e disse não" é o que
   // impede o agente de repropor o mesmo. Ignorar sem registro faz a IA insistir
   // no que já foi negado — por isso os dois lados geram atividade.
@@ -60,6 +87,36 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   reactivation_accepted: "Retomada de contato aprovada",
   reactivation_dismissed: "Retomada de contato descartada",
   reactivation_expired: "Sugestão de retomada venceu sem decisão",
+  // O RETORNO É O ANTI-MORTE (invariante 4): marcar e desmarcar são os dois
+  // acontecimentos que decidem se a demanda continua viva. Sem as duas linhas,
+  // o negócio some do radar (ou volta a ele) e a timeline não sabe explicar por
+  // quê — e é justamente o cancelamento que o agente precisa enxergar ao
+  // retomar, para não repropor o que uma pessoa já desmarcou.
+  followup_scheduled: "Retorno agendado",
+  followup_cancelled: "Retorno cancelado",
+  // PAUSAR NÃO É CANCELAR, e a diferença importa para quem pega o atendimento
+  // depois: cancelado é decisão fechada, pausado é o fluxo parado esperando uma
+  // pessoa. Sem as duas linhas, quem lê a timeline não sabe se o silêncio do
+  // agente é desistência ou espera — e, no caso do adiamento, nem que existe
+  // uma data combinada.
+  followup_paused: "Follow-up pausado",
+  followup_resumed: "Follow-up retomado",
+  followup_snoozed: "Follow-up adiado",
+  followup_step_skipped: "Passo do follow-up pulado",
+  // PROMESSA SEM RESPONSÁVEL. Entra na timeline pelo mesmo critério do
+  // `diffCheckpoint`: só o que muda o que alguém faria a seguir. Turno em que o
+  // Operador AGIU não gera linha própria — as ferramentas dele já geram as delas
+  // (`stage_changed`, `followup_scheduled`), e uma segunda linha dizendo "o
+  // Operador trabalhou" é o ruído que o diff existe para matar.
+  //
+  // O rótulo não diz "não cumprida": o sistema não apura cumprimento, apura se
+  // alguém assumiu.
+  promise_unowned: "Promessa sem responsável",
+  // ENCERRAR É O OUTRO LADO do invariante 4: uma demanda aberta precisa de
+  // próximo passo OU de desfecho registrado. Fechar como ganho ou perdido era
+  // invisível na timeline — só existia em audit e event_log, que ninguém lê na
+  // tela — e o dossiê de um negócio fechado terminava sem dizer que fechou.
+  demand_closed: "Demanda encerrada",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

@@ -126,7 +126,7 @@ export function MysteryClient({
       <Tabs defaultValue="auditoria">
         <TabsList>
           <TabsTrigger value="auditoria">Nova auditoria</TabsTrigger>
-          <TabsTrigger value="kanban">Kanban</TabsTrigger>
+          <TabsTrigger value="funil">Funil</TabsTrigger>
         </TabsList>
 
         <TabsContent value="auditoria" className="flex flex-col gap-4 pt-4">
@@ -137,7 +137,7 @@ export function MysteryClient({
           )}
         </TabsContent>
 
-        <TabsContent value="kanban" className="pt-4">
+        <TabsContent value="funil" className="pt-4">
           <ProspectFunnel prospects={prospects} onChange={() => router.refresh()} />
         </TabsContent>
       </Tabs>
@@ -222,7 +222,7 @@ function NewAuditCard({
       } else {
         const msg: Record<string, string> = {
           target_not_on_whatsapp: "Esse número não está no WhatsApp. Confira o número da empresa avaliada.",
-          whatsapp_check_failed: "Não consegui verificar o número no WhatsApp (WAHA indisponível?). Tente de novo.",
+          whatsapp_check_failed: "Não consegui verificar o número no canal. Tente de novo.",
           session_not_working: "O número do oculto não está conectado (status WORKING).",
           no_llm_credential: "Nenhum agente de IA publicado com credencial na organização.",
           campaign_already_running: "Já existe uma auditoria em andamento para essa empresa nesse número do oculto.",
@@ -425,7 +425,7 @@ function ConnectDialog({
       });
       setSessionId(res.data.id);
     } catch {
-      toast.error("Falha ao criar a sessão. O WhatsApp (WAHA) está no ar?");
+      toast.error("Falha ao criar a sessão. O serviço do canal está no ar?");
     } finally {
       setCreating(false);
     }
@@ -462,7 +462,7 @@ function ConnectDialog({
                 : `Status: ${current?.status ?? "STARTING"} — aguardando leitura do QR…`}
             </p>
             {/* Só mostra o QR enquanto NÃO está conectado — evita 422 do proxy
-                (a WAHA não tem QR quando a sessão já está WORKING). */}
+                (o provedor não exibe QR quando a sessão já está conectada). */}
             {current?.status !== "WORKING" && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -505,7 +505,7 @@ function ProspectFunnel({
   prospects: ProspectItem[];
   onChange: () => void;
 }) {
-  const [view, setView] = useState<"kanban" | "lista">("kanban");
+  const [view, setView] = useState<"funil" | "lista">("funil");
   const [q, setQ] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
@@ -554,7 +554,7 @@ function ProspectFunnel({
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-bold tracking-tight">Funil de prospecção</h2>
         <div className="flex rounded-xl border border-border p-0.5">
-          {(["kanban", "lista"] as const).map((v) => (
+          {(["funil", "lista"] as const).map((v) => (
             <button
               key={v}
               type="button"
@@ -603,7 +603,7 @@ function ProspectFunnel({
           Nenhuma empresa auditada ainda. Ao concluir uma auditoria, a empresa entra aqui como
           &quot;Auditado&quot;.
         </p>
-      ) : view === "kanban" ? (
+      ) : view === "funil" ? (
         <div className="flex gap-3 overflow-x-auto pb-2">
           {MYSTERY_STAGES.map((st) => {
             const items = prospects.filter((p) => p.stage === st.key);

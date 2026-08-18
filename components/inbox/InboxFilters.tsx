@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { useEffect, useState } from "react";
 import { MagnifyingGlass } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
+import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
 import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
@@ -52,6 +53,7 @@ interface Props {
 }
 
 export function InboxFilters({ value, onChange }: Props) {
+  const t = useT();
   const [searchInput, setSearchInput] = useState(value.search);
   const { data: channels } = useChannelSessions({ refetchInterval: 30_000 });
   const { activeOrg } = useAuth();
@@ -66,8 +68,16 @@ export function InboxFilters({ value, onChange }: Props) {
     mine: counts?.mine,
     all: counts?.all,
   };
+  // Filtrar por um número que saiu da lista (o operador acabou de excluir o
+  // canal) deixa o inbox mostrando um subconjunto — às vezes vazio — sem nada na
+  // tela dizendo que há filtro. O número some do dropdown junto com o canal, e o
+  // alternador inteiro sumiria com ele se sobrasse menos de dois.
+  const filtroForaDaLista =
+    value.channel_session_id != null &&
+    channels != null &&
+    !channels.some((c) => c.id === value.channel_session_id);
   // Alternador só aparece com 2+ números — com um só não há o que alternar.
-  const showChannelSwitch = (channels?.length ?? 0) >= 2;
+  const showChannelSwitch = (channels?.length ?? 0) >= 2 || filtroForaDaLista;
 
   // Debounce search input → propagate to parent.
   useEffect(() => {
@@ -92,7 +102,7 @@ export function InboxFilters({ value, onChange }: Props) {
         <Input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Buscar mensagens…"
+          placeholder={t("Buscar mensagens…")}
           className="h-8 pl-8 text-sm"
           aria-label="Buscar conversas"
         />
@@ -106,13 +116,16 @@ export function InboxFilters({ value, onChange }: Props) {
           }
         >
           <SelectTrigger className="h-8 text-sm" aria-label="Filtrar por número de WhatsApp">
-            <SelectValue placeholder="Todos os números" />
+            <SelectValue placeholder={t("Todos os números")} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os números</SelectItem>
+            {filtroForaDaLista && value.channel_session_id != null && (
+              <SelectItem value={value.channel_session_id}>Número removido</SelectItem>
+            )}
             {channels?.map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.display_name || c.phone_number || c.waha_session_name}
+                {channelLabel(c)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -125,7 +138,7 @@ export function InboxFilters({ value, onChange }: Props) {
           onValueChange={(v) => onChange({ ...value, tag: v === "all" ? undefined : v })}
         >
           <SelectTrigger className="h-8 text-sm" aria-label="Filtrar por tag">
-            <SelectValue placeholder="Todas as tags" />
+            <SelectValue placeholder={t("Todas as tags")} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas as tags</SelectItem>
@@ -164,8 +177,8 @@ export function InboxFilters({ value, onChange }: Props) {
       </Tabs>
 
       <div className="flex items-center justify-between">
-        <Label htmlFor="only-unread" className="text-xs text-text-muted">
-          Apenas não lidos
+        <Label htmlFor="only-unread" className="text-xs text-muted-foreground">
+          {t("Apenas não lidos")}
         </Label>
         <Switch
           id="only-unread"

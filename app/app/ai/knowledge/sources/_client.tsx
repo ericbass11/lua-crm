@@ -84,7 +84,9 @@ export function KnowledgeSourcesClient({ agentId, initialSources }: Props) {
               source={source ?? null}
               isReindexing={isReindexing}
               onReindex={source ? () => reindex.mutate(source.id) : undefined}
-              onConfigure={slot === "faq" ? () => setFaqOpen(true) : undefined}
+              agentId={agentId}
+              onCriada={onChange}
+              onConfigure={slot === "faq" && source ? () => setFaqOpen(true) : undefined}
             />
           );
         })}
@@ -95,7 +97,7 @@ export function KnowledgeSourcesClient({ agentId, initialSources }: Props) {
         sourceId={bySlot.faq?.id ?? null}
         open={faqOpen}
         onOpenChange={setFaqOpen}
-        onSaved={() => qc.invalidateQueries({ queryKey: sourcesQueryKey(agentId) })}
+        onSaved={onChange}
       />
     </>
   );

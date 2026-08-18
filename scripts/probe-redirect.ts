@@ -4,16 +4,11 @@
  * Run: npx tsx scripts/probe-redirect.ts <email> <password>
  */
 import { createClient } from "@supabase/supabase-js";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { carregarEnvLocal } from "../scripts/lib/env-de-teste";
 
 async function main() {
-  const env: Record<string, string> = {};
-  for (const line of fs.readFileSync(path.join(process.cwd(), ".env.local"), "utf8").split("\n")) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m) env[m[1]!] = m[2]!.replace(/^"(.*)"$/, "$1");
-  }
-  const email = process.argv[2] ?? "demo@lua-crm.example";
+  const env = carregarEnvLocal();
+  const email = process.argv[2] ?? "demo@deskcomm.com.br";
   const password = process.argv[3] ?? "Demo!Live2026";
 
   const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {

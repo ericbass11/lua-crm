@@ -43,7 +43,8 @@ const MODULOS_PUROS = ["@/lib/leads/timeline-query"] as const;
 /** Importa o módulo num processo filho SEM as variáveis do app. */
 function importaComAmbienteLimpo(modulo: string): { ok: boolean; erro: string } {
   const script = `import(${JSON.stringify(modulo)}).then(()=>{console.log("OK")},(e)=>{console.log("ERRO:"+String(e && e.message).split("\\n")[0]);});`;
-  // Só PATH e HOME: PATH para achar o `npx`, HOME para o cache dele. Nenhuma
+  // Só PATH e HOME: o processo filho usa o mesmo Node e resolve o loader `tsx`
+  // a partir do repositório. Nenhuma
   // variável do app — é justamente a ausência delas que o teste mede.
   // `NODE_ENV` fica de fora de propósito; o cast existe porque o tipo do Node o
   // exige e aqui a omissão é o ponto.
@@ -52,7 +53,7 @@ function importaComAmbienteLimpo(modulo: string): { ok: boolean; erro: string } 
     HOME: process.env.HOME ?? "",
   } as unknown as NodeJS.ProcessEnv;
   try {
-    const saida = execFileSync("npx", ["tsx", "--eval", script], {
+    const saida = execFileSync(process.execPath, ["--import", "tsx", "--eval", script], {
       cwd: RAIZ,
       env: limpo,
       encoding: "utf8",
@@ -66,16 +67,23 @@ function importaComAmbienteLimpo(modulo: string): { ok: boolean; erro: string } 
 }
 
 describe("módulo de função pura importa sem ambiente", () => {
-  it("o aparato consegue detectar o defeito (controle positivo)", () => {
-    // Sem isto, um `npx tsx` que falhasse por qualquer motivo daria "ok:false"
+  // Timeout explícito: estes dois casos abrem um PROCESSO FILHO (Node + `tsx`), que
+  // custa ~5s em máquina livre e mais em máquina carregada — acima do padrão de
+  // 5s do vitest. O timeout interno do execFileSync já é 120s; quem estourava
+  // era o do vitest, e o teste ficava vermelho por LENTIDÃO, não por defeito.
+  // Justamente o estrago que o cabeçalho deste arquivo descreve: main vermelha
+  // travando PR de quem não mexeu em nada (aconteceu no PR #81, que só mexia em
+  // documentação).
+  it("o aparato consegue detectar o defeito (controle positivo)", { timeout: 60_000 }, () => {
+    // Sem isto, um Node + `tsx` que falhasse por qualquer motivo daria "ok:false"
     // e o teste principal ficaria vermelho pelo motivo errado — ou, pior, um
     // script que sempre imprime OK deixaria tudo verde medindo nada.
-    // `@/lib/env` DEVE falhar sem ambiente: é literalmente o trabalho dele.
+  // `@/lib/env` DEVE falhar sem ambiente: é literalmente o trabalho dele.
     const controle = importaComAmbienteLimpo("@/lib/env");
     expect(controle.ok, `esperava @/lib/env FALHAR sem env, veio: ${controle.erro}`).toBe(false);
   });
 
-  it.each(MODULOS_PUROS)("%s importa com ambiente vazio", (modulo) => {
+  it.each(MODULOS_PUROS)("%s importa com ambiente vazio", { timeout: 60_000 }, (modulo) => {
     const r = importaComAmbienteLimpo(modulo);
     expect(
       r.ok,

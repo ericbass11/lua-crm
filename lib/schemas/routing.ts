@@ -9,6 +9,8 @@
  */
 import { z } from "zod";
 
+import { fusoValido } from "@/lib/tempo/fusos";
+
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** Modos de roteamento no MVP (decisão G1-06b); "load" fica pós-MVP. */
@@ -26,6 +28,34 @@ export const routingConfigSchema = z.object({
 });
 export type RoutingConfig = z.infer<typeof routingConfigSchema>;
 
+/**
+ * `organizations.settings.visibility_mode` — o escopo de leitura do role
+ * `agent` em conversas, mensagens e leads (spec 13 §3.5, decisão G1-06a).
+ *
+ * Mora em `settings.visibility_mode`, IRMÃO de `settings.routing` e não dentro
+ * dele: as funções de RLS (`fn_can_view_lead`, `fn_can_view_conversation`) leem
+ * esse caminho exato. Aninhar aqui por arrumação quebraria a RLS em silêncio.
+ *
+ * O tipo canônico é o de `lib/auth/types.ts` (usado pelo layout e pelo inbox);
+ * aqui só se declara a validação do input externo. A `satisfies` abaixo é o que
+ * impede as duas listas de divergirem sem ninguém notar.
+ */
+export const VISIBILITY_MODES = ["all", "own_and_unassigned", "own"] as const;
+export type VisibilityModeInput = (typeof VISIBILITY_MODES)[number];
+
+/**
+ * Corpo do PATCH de `/api/v1/settings/routing`.
+ *
+ * `visibility_mode` é OPCIONAL de propósito: um cliente que só quer mudar o modo
+ * de roteamento continua mandando o mesmo corpo de antes, e a visibilidade fica
+ * como está. Mandar `visibility_mode` sem querer mudá-la é o erro que faria uma
+ * org perder a restrição por descuido de um cliente antigo.
+ */
+export const atendimentoConfigPatchSchema = routingConfigSchema.extend({
+  visibility_mode: z.enum(VISIBILITY_MODES).optional(),
+});
+export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema>;
+
 /** Uma janela de disponibilidade: dow 0=domingo … 6=sábado, "HH:MM"–"HH:MM". */
 export const scheduleWindowSchema = z
   .object({
@@ -42,7 +72,25 @@ export type ScheduleWindow = z.infer<typeof scheduleWindowSchema>;
  * falta de janela; janelas EXISTEM para RESTRINGIR.
  */
 export const availabilityScheduleSchema = z.object({
-  timezone: z.string().min(1).max(64).default("America/Sao_Paulo"),
+  /**
+   * VALIDADO contra o runtime, e não só por tamanho.
+   *
+   * `localMoment` (lib/routing/eligibility) usa `Intl.DateTimeFormat` com este
+   * valor, e o `Intl` LANÇA `RangeError` num fuso que não existe. Antes desta
+   * checagem, `z.string().min(1).max(64)` aceitava qualquer coisa: digitar
+   * `America/Asunción` — com o acento que um hispanofalante escreve natural —
+   * salvava sem reclamar e derrubava a avaliação de disponibilidade de TODO
+   * atendente com aquela agenda.
+   *
+   * O defeito não aparecia na tela que o causava: aparecia no roteamento, como
+   * atendente que nunca fica elegível.
+   */
+  timezone: z
+    .string()
+    .min(1)
+    .max(64)
+    .refine(fusoValido, "fuso horário inválido (ex.: America/Asuncion)")
+    .default("America/Sao_Paulo"),
   windows: z.array(scheduleWindowSchema).max(50).default([]),
 });
 export type AvailabilitySchedule = z.infer<typeof availabilityScheduleSchema>;
