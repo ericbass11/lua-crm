@@ -1,0 +1,37 @@
+# Fim de linha — POR QUE este arquivo existe.
+#
+# Um checkout no Windows com `core.autocrlf=true` (o padrão do Git for Windows)
+# grava CRLF em TODO arquivo de texto, inclusive nos `.sh`. O shebang vira
+# `#!/bin/sh\r`, e o Linux procura um interpretador chamado "sh\r", que não
+# existe. O sintoma não diz isso: o contêiner responde
+#
+#     exec /usr/local/bin/entrypoint.sh: no such file or directory
+#
+# sobre um arquivo que ESTÁ lá, com permissão de execução. Medido nesta
+# instalação: o `scheduler` construído no Windows ficava em crashloop
+# (`Restarting (255)`), e com ele os crons — recover-stuck-messages,
+# follow-up, orçamento de IA — simplesmente não rodavam. O `app` subia
+# saudável, então o health gate passava: a falha era silenciosa.
+#
+# `eol=lf` faz o checkout gravar LF independentemente da plataforma e do
+# `core.autocrlf` de quem clonou. Vale para todo mundo que builda no Windows,
+# não só para esta máquina — por isso mora no repo, não na config local.
+* text=auto
+
+# Precisam de LF SEMPRE: são executados por um shell dentro de Linux/Docker.
+*.sh text eol=lf
+*.bash text eol=lf
+Dockerfile* text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binários — nunca converter.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.PDF binary
+*.woff binary
+*.woff2 binary

@@ -74,4 +74,13 @@ echo "$CRONS" | while IFS='|' read -r quando timeout rota; do
     "$quando" "$timeout" "$SEGREDO_SEGURO" "$APP_ORIGIN" "$rota" >> "$DESTINO"
 done
 
-exec crond -f -l 2
+# `-L /dev/stderr` NÃO é opcional: sem ele o busybox crond escreve em syslog, e
+# não há syslogd nesta imagem alpine — toda execução vai para o vazio e
+# `docker logs deskcommcrm-scheduler-1` responde nada, com o contêiner `healthy`
+# (o healthcheck é `pgrep crond`, que não sabe se algum cron disparou). Um cron
+# fora do crontab fica indistinguível de um cron rodando. Já custou caro nesta
+# instalação: o `event-log-drain` ficou dias fora do agendamento sem ninguém
+# notar, justamente porque não havia como notar. A flag foi acrescentada aqui em
+# 2026-07-29 no `command:` inline do compose, e a mudança que trouxe a lista de
+# crons para este arquivo a deixou para trás — o conserto voltou a se perder.
+exec crond -f -l 2 -L /dev/stderr
