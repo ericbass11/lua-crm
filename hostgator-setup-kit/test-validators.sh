@@ -1049,9 +1049,9 @@ tk_ok "caddy não é traefik"              nao "caddy:2-alpine"    "outro-caddy-
 tk_ok "nginx não é traefik"              nao "nginxproxy/nginx"  "webproxy"
 
 echo "proxy reverso: a decisão"
-dec_ok() {  # dec_ok <descrição> <esperado> <ocupadas> <proj_dono> <proj_atual> <img> <nome>
+dec_ok() {  # dec_ok <descrição> <esperado> <ocupadas> <proj_dono> <proj_atual> <img> <nome> [árvore_dono] [árvore_atual]
   local desc="$1" esperado="$2" real
-  real="$(decide_proxy "${3:-}" "${4:-}" "${5:-}" "${6:-}" "${7:-}")"
+  real="$(decide_proxy "${3:-}" "${4:-}" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}")"
   if [ "$real" = "$esperado" ]; then printf '  ✓ %s\n' "$desc"
   else printf '  ✗ %s  (deu %s, esperava %s)\n' "$desc" "$real" "$esperado"; fail=1; fi
 }
@@ -1062,6 +1062,30 @@ dec_ok "portas livres → nosso Caddy"        caddy    ""        ""          "cr
 # rodar de novo para corrigir uma resposta, e sem nem um comando acionável.
 dec_ok "re-execução: portas com esta mesma instalação" caddy "80 e 443" "crm" "crm" "caddy:2-alpine" "crm-caddy-1"
 dec_ok "Caddy de OUTRO Deskcomm → bloqueia" bloqueia "80 e 443" "outro"     "crm" "caddy:2-alpine" "outro-caddy-1"
+# O fixture acima nomeia "outro Deskcomm" mas usa projeto DIFERENTE ("outro" vs
+# "crm") — e é justamente o nome do projeto que NÃO difere no caso real: o
+# projeto do compose é o basename da pasta, e toda cópia do repo se chama
+# DeskcommCRM. Medido numa VPS de produção em 2026-08-24: a instalação de uma
+# aula em /root/apagar7/DeskcommCRM viu o Caddy da produção em
+# /root/DeskcommCRM com o MESMO projeto `deskcommcrm`, concluiu "é a
+# re-execução" e subiu por cima — trocando o banco do CRM no ar sem um aviso.
+# Quem distingue as duas é a ÁRVORE (label com.docker.compose.project.working_dir),
+# não o nome.
+dec_ok "cópia irmã: mesmo projeto, OUTRA árvore → bloqueia" \
+  bloqueia "80 e 443" "deskcommcrm" "deskcommcrm" "caddy:2-alpine" "deskcommcrm-caddy-1" \
+  "/root/DeskcommCRM" "/root/apagar7/DeskcommCRM"
+# O outro lado da mesma moeda: re-execução DE VERDADE é mesma árvore, e tem de
+# seguir passando (é o caminho que o kit manda usar para corrigir uma resposta).
+dec_ok "re-execução real: mesmo projeto, MESMA árvore → segue" \
+  caddy "80 e 443" "deskcommcrm" "deskcommcrm" "caddy:2-alpine" "deskcommcrm-caddy-1" \
+  "/root/DeskcommCRM" "/root/DeskcommCRM"
+# Contêiner sem o label de árvore (não foi o compose que criou, ou é antigo):
+# não dá para afirmar que é cópia irmã, e fechar aqui quebraria re-execução
+# legítima. Mantém o comportamento anterior — a varredura de portas continua
+# sendo a rede que pega o resto.
+dec_ok "sem árvore conhecida: mantém o comportamento anterior" \
+  caddy "80 e 443" "deskcommcrm" "deskcommcrm" "caddy:2-alpine" "deskcommcrm-caddy-1" \
+  "" "/root/apagar7/DeskcommCRM"
 dec_ok "Traefik da hospedagem → por ele"    traefik  "80 e 443" "coolify"   "crm" "traefik:v3.3"   "coolify-proxy"
 dec_ok "ocupante não identificado → bloqueia" bloqueia "80"     ""          "crm" ""              ""
 dec_ok "projeto vazio não casa projeto vazio" bloqueia "80"     ""          ""    "nginx"         "web"
@@ -1891,6 +1915,91 @@ STUB
 ) || fail=1
 rm -rf "$TMP4"
 
+echo "integração: instalar de uma CÓPIA IRMÃ, com o CRM já no ar (2026-08-24)"
+# Os casos de decide_proxy acima exercitam a FUNÇÃO. Este roda o install.sh
+# inteiro, porque o defeito real pode voltar por dois caminhos independentes: a
+# regra (dentro de decide_proxy) ou o call site (deixar de passar a árvore). Um
+# teste só da função fica verde enquanto o produto instala por cima da produção.
+#
+# A VPS deste teste é a que aconteceu de verdade: um DeskcommCRM no ar em
+# /root/DeskcommCRM (Caddy publicando 80/443, projeto `deskcommcrm`), e o
+# instalador rodando de OUTRA cópia — cuja pasta também se chama DeskcommCRM,
+# então o projeto colide e a versão anterior dizia "é a re-execução, siga".
+TMP_IRMA="$(mktemp -d)"
+(
+  montar_vps "$TMP_IRMA" "DeskcommCRM" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+  # 80/443 ocupadas: o bind de teste falha.
+  run)     case "$*" in *--entrypoint*) exit 1 ;; esac; exit 0 ;;
+  # O Caddy da instalação que está NO AR, com o MESMO nome de projeto.
+  ps)      for a in "$@"; do [ "$a" = "network=host" ] && em_host=1; done
+           [ "${em_host:-0}" = 1 ] && exit 0
+           printf 'deskcommcrm-caddy-1|deskcommcrm|caddy:2-alpine|0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp\n'
+           exit 0 ;;
+  # A árvore que pariu aquele contêiner — o dado que separa irmã de re-execução.
+  inspect) case "$*" in *working_dir*) printf '/root/DeskcommCRM\n' ;; esac; exit 0 ;;
+  network) case "$2" in inspect) exit 1 ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  LOG="$VPS_LOG"; PROJ="$VPS_PROJ"
+
+  saida="$(rodar install.sh --yes)"
+  chegou_na_deteccao || exit 1
+
+  # 1. Recusa. O sintoma do defeito era instalar em silêncio; qualquer coisa que
+  #    não seja parar aqui é o defeito de volta.
+  if ! printf '%s' "$saida" | grep -q 'Já existe um DeskcommCRM NO AR'; then
+    printf '  ✗ NÃO recusou a instalação por cima da que está no ar\n'
+    printf '     últimas linhas: %s\n' "$(printf '%s' "$saida" | tail -3 | tr '\n' ' ')"; exit 1
+  fi
+  # 2. Nomeia a árvore do OUTRO — sem isso quem lê não sabe qual pasta usar.
+  if ! printf '%s' "$saida" | grep -q '/root/DeskcommCRM'; then
+    printf '  ✗ a recusa não diz ONDE está a instalação que já existe\n'; exit 1
+  fi
+  # 3. Ensina a saída acionável (atualizar a que existe).
+  if ! printf '%s' "$saida" | grep -q 'update.sh'; then
+    printf '  ✗ a recusa não ensina o caminho (update.sh na pasta que já existe)\n'; exit 1
+  fi
+  # 4. Recusou de verdade: não pode ter subido nada. `up -d` depois da recusa
+  #    seria o pior desfecho — a mensagem certa e o estrago feito assim mesmo.
+  if grep -qE '^compose .*up -d' "$LOG"; then
+    printf '  ✗ recusou mas subiu a stack mesmo assim: %s\n' "$(grep -m1 -E '^compose .*up -d' "$LOG")"; exit 1
+  fi
+  printf '  ✓ recusa, nomeia a instalação no ar e não sobe nada\n'
+
+  # ── O outro lado: a MESMA VPS, o MESMO nome de projeto, mas rodando de dentro
+  # da árvore que É a dona. Isto é re-execução legítima — o caminho que o kit
+  # ensina para corrigir uma resposta — e tem de seguir. Sem este par, bastaria
+  # bloquear tudo para o teste acima ficar verde.
+  cat > "$VPS_RAIZ/bin/docker" <<STUB2
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\$DOCKER_LOG"
+case "\$1" in
+  compose) case "\$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+  run)     case "\$*" in *--entrypoint*) exit 1 ;; esac; exit 0 ;;
+  ps)      for a in "\$@"; do [ "\$a" = "network=host" ] && em_host=1; done
+           [ "\${em_host:-0}" = 1 ] && exit 0
+           printf 'deskcommcrm-caddy-1|deskcommcrm|caddy:2-alpine|0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp\n'
+           exit 0 ;;
+  inspect) case "\$*" in *working_dir*) printf '%s\n' "$VPS_PROJ" ;; esac; exit 0 ;;
+  network) case "\$2" in inspect) exit 1 ;; esac; exit 0 ;;
+esac
+exit 0
+STUB2
+  chmod +x "$VPS_RAIZ/bin/docker"
+  saida="$(rodar install.sh --yes)"
+  chegou_na_deteccao || exit 1
+  if printf '%s' "$saida" | grep -q 'Já existe um DeskcommCRM NO AR'; then
+    printf '  ✗ bloqueou a RE-EXECUÇÃO legítima (mesma árvore) — o kit manda rodar de novo\n'; exit 1
+  fi
+  printf '  ✓ e a re-execução de dentro da própria árvore continua passando\n'
+) || fail=1
+rm -rf "$TMP_IRMA"
+
 echo "integração: instalação NOVA numa VPS com Traefik em bridge PRÓPRIA (Coolify)"
 # O caminho NÃO-host, que é a maioria das VPS com painel — e o que a pergunta
 # nova poderia ter estragado sem ninguém ver. Aqui a coluna Ports do `docker ps`
@@ -1934,6 +2043,199 @@ STUB
   printf '  ✓ com prova na coluna Ports segue sem perguntar, e usa a rede do proxy\n'
 ) || fail=1
 rm -rf "$TMP5"
+
+echo "DDL: a conexão do schema é separada da que vai para os contêineres (issue #192)"
+# `SUPABASE_DB_URL` acumulava dois papéis numa string só: ela vai para o `.env`
+# — e o compose entrega o `.env` inteiro ao `app` e ao `worker` (`env_file`) —
+# E era a mesma que rodava `create extension`, o `baseline.sql` e a promoção do
+# dono. Na nuvem passa despercebido: a string do pooler já vem privilegiada. Num
+# Supabase PRÓPRIO trava a primeira instalação, e a única saída era editar o
+# `.env` na mão entre uma etapa e outra (issue #192, achada instalando de verdade).
+#
+# Os dois cenários abaixo são um par, e um sozinho não prova nada: SEM a variável
+# nova nada pode mudar (o parque já instalado), e COM ela o DDL tem de ir por uma
+# string enquanto o `.env` recebe a outra. Só a diferença entre os dois mostra
+# que a resolução existe — um cenário sozinho fica verde com a variável ignorada.
+#
+# A fixture precisa do `supabase/baseline.sql`: sem esse arquivo o install.sh
+# pula a etapa 7 inteira e o log não teria psql nenhum para medir. É por isso que
+# nenhum cenário anterior desta suíte tocava neste caminho.
+
+# As connection strings que chegaram ao psql/pg_dump no cenário, sem repetir.
+strings_de_banco() { grep -oE '(psql|pg_dump) [^ ]+' "$VPS_LOG" | awk '{print $2}' | sort -u; }
+# Idem, tirando a sonda do validador (`psql <url> -tAc select 1`): ela existe
+# justamente para testar a conexão DO APP, então usar a string do app ali é o
+# comportamento certo — é o que a pessoa acabou de responder. Sem esta distinção
+# o caso mediria "trocaram tudo", que é outra coisa (e um defeito).
+strings_de_schema() {
+  grep -E '(psql|pg_dump) ' "$VPS_LOG" | grep -v -- '-tAc select 1$' \
+    | grep -oE '(psql|pg_dump) [^ ]+' | awk '{print $2}' | sort -u
+}
+# Derivada do BASE_ENV, não copiada: duas cópias do mesmo literal desincronizam
+# no dia em que o cenário-base trocar de string, e aí o teste reprova por engano.
+URL_DO_APP="$(printf '%s\n' "$BASE_ENV" | sed -n "s/^SUPABASE_DB_URL='\(.*\)'$/\1/p")"
+URL_DO_DONO='postgresql://supabase_admin:senhadodono@db-proprio.exemplo.com.br:5432/postgres'
+
+TMP_DDL_A="$(mktemp -d)"
+(
+  montar_vps "$TMP_DDL_A" "crmddla" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+  rodar install.sh --yes >/dev/null
+
+  # Vacuidade: sem chamada ao Postgres não há o que medir, e a lista vazia de
+  # "strings erradas" seria lida como aprovação.
+  n="$(grep -cE '(psql|pg_dump) ' "$VPS_LOG")"
+  if [ "${n:-0}" -lt 5 ]; then
+    printf '  ✗ o install.sh falou %s vez(es) com o Postgres — teste inconclusivo, não verde\n' "${n:-0}"
+    printf '     (esperadas: extensões, sonda de schema, baseline, contagem de tabelas, promoção do dono)\n'; exit 1
+  fi
+  vistas="$(strings_de_banco)"
+  if [ "$vistas" != "$URL_DO_APP" ]; then
+    printf '  ✗ sem SUPABASE_DB_ADMIN_URL o kit deixou de usar a string de sempre — quem já instalou quebra:\n'
+    printf '%s\n' "$vistas" | sed 's/^/       /'; exit 1
+  fi
+  printf '  ✓ sem a variável nova: as %s conversas com o Postgres usam a string de sempre\n' "$n"
+) || fail=1
+rm -rf "$TMP_DDL_A"
+
+TMP_DDL_B="$(mktemp -d)"
+(
+  montar_vps "$TMP_DDL_B" "crmddlb" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+  # Pelo AMBIENTE, e não por uma linha no `.env`: é o caminho que NÃO deixa a
+  # credencial do dono no arquivo que o compose entrega aos contêineres. Se o
+  # cenário a declarasse no `.env`, o laço de preservação do install.sh a
+  # copiaria de volta e a asserção de baixo mediria o teste, não o kit.
+  export SUPABASE_DB_ADMIN_URL="$URL_DO_DONO"
+  rodar install.sh --yes >/dev/null
+  unset SUPABASE_DB_ADMIN_URL
+
+  n="$(grep -cE '(psql|pg_dump) ' "$VPS_LOG")"
+  if [ "${n:-0}" -lt 5 ]; then
+    printf '  ✗ o install.sh falou %s vez(es) com o Postgres — teste inconclusivo, não verde\n' "${n:-0}"; exit 1
+  fi
+  vistas="$(strings_de_schema)"
+  if [ "$vistas" != "$URL_DO_DONO" ]; then
+    printf '  ✗ com SUPABASE_DB_ADMIN_URL declarada, o schema NÃO foi por ela:\n'
+    printf '%s\n' "$vistas" | sed 's/^/       /'
+    printf '     esperava só: %s\n' "$URL_DO_DONO"
+    grep -nE '(psql|pg_dump) ' "$VPS_LOG" | sed 's/^/       /'; exit 1
+  fi
+  printf '  ✓ com a variável nova: todo trabalho de schema vai pela conexão do dono\n'
+
+  # O outro lado, e é ele que distingue a correção de um "trocaram tudo": na
+  # MESMA execução, a sonda que confere a connection string do app tem de
+  # continuar usando a do app. Um patch que substituísse a variável em bloco
+  # deixaria a asserção de cima verde e esta vermelha.
+  if ! grep -qF -- "psql $URL_DO_APP -tAc select 1" "$VPS_LOG"; then
+    printf '  ✗ a sonda que valida a conexão do APP deixou de usar a string do app\n'
+    printf '     — ela passaria a aprovar uma credencial que o app nunca vai usar.\n'
+    grep -nE 'psql .* -tAc select 1$' "$VPS_LOG" | sed 's/^/       /'; exit 1
+  fi
+  printf '  ✓ e a conferência da conexão do app continua sendo feita com a do app\n'
+
+  gravada="$(valor_no_env "$VPS_PROJ/.env" SUPABASE_DB_URL)"
+  if [ "$gravada" != "$URL_DO_APP" ]; then
+    printf '  ✗ o .env não recebeu a string do APP: [%s]\n' "$gravada"; exit 1
+  fi
+  printf '  ✓ e o .env continua recebendo a string do app\n'
+
+  # A metade que dá sentido à separação: se a credencial do dono for parar no
+  # `.env`, o compose a entrega ao app e ao worker por `env_file` — e o app volta
+  # a ter na mão o poder que esta issue tirou dele.
+  if grep -q 'SUPABASE_DB_ADMIN_URL' "$VPS_PROJ/.env"; then
+    printf '  ✗ a credencial do DONO foi gravada no .env — o compose a entrega aos contêineres:\n'
+    printf '       %s\n' "$(grep -m1 'SUPABASE_DB_ADMIN_URL' "$VPS_PROJ/.env")"; exit 1
+  fi
+  printf '  ✓ e NÃO grava a do dono no .env (que o compose entregaria aos contêineres)\n'
+) || fail=1
+rm -rf "$TMP_DDL_B"
+
+echo "DDL: o update.sh reaplica o baseline pela conexão do dono"
+# O update.sh é a metade que mais dói e a que ninguém vê: ele roda sozinho pelo
+# cron do agent.sh, e é ele que entrega migration nova ao clone. Com a role menor
+# no `.env` — que é o que `docs/deploy-selfhost/README.md` §2 recomenda — o
+# `baseline.sql` passava a falhar a cada atualização, sem ninguém lendo a tela.
+#
+# Aqui a variável vem do `.env` de propósito: é o único jeito de o cron ter a
+# credencial, e é o que a documentação manda para quem quer atualização sozinha.
+# O backup entra junto (sem `--skip-backup`) porque o `pg_dump` tem o mesmo
+# problema com cara pior: com role menor ele despeja só o que ela enxerga e sai
+# VERDE — backup parcial que só aparece na hora de restaurar.
+TMP_DDL_C="$(mktemp -d)"
+(
+  montar_vps "$TMP_DDL_C" "crmddlc" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+  # O update.sh decide o que instalar por TAG: sem versão publicada ele para
+  # antes do banco, e o teste passaria vazio.
+  (cd "$VPS_PROJ" && git init -q -b main . \
+    && git -c user.email=t@exemplo -c user.name=teste add -A \
+    && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
+    && git tag v9.9.9) >/dev/null 2>&1
+
+  saida="$(rodar update.sh "" "SUPABASE_DB_ADMIN_URL='$URL_DO_DONO'
+INTERNAL_SECRET='segredo-de-teste'
+NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'")"
+
+  n_dump="$(grep -cE 'pg_dump ' "$VPS_LOG")"
+  n_psql="$(grep -cE 'psql ' "$VPS_LOG")"
+  if [ "${n_dump:-0}" -lt 1 ] || [ "${n_psql:-0}" -lt 2 ]; then
+    printf '  ✗ o update.sh não chegou ao banco (pg_dump=%s psql=%s) — inconclusivo, não verde\n' \
+      "${n_dump:-0}" "${n_psql:-0}"
+    printf '     última linha da saída: %s\n' "$(printf '%s' "$saida" | tail -1)"; exit 1
+  fi
+  vistas="$(strings_de_banco)"
+  if [ "$vistas" != "$URL_DO_DONO" ]; then
+    printf '  ✗ a atualização não usou a conexão do dono:\n'
+    printf '%s\n' "$vistas" | sed 's/^/       /'; exit 1
+  fi
+  printf '  ✓ baseline (%s psql) e backup (%s pg_dump) pela conexão do dono\n' "$n_psql" "$n_dump"
+) || fail=1
+rm -rf "$TMP_DDL_C"
+
+echo "DDL: nenhum script do kit manda a string do APP para o Postgres"
+# A guarda de CLASSE. Os três cenários acima provam o install.sh e o update.sh
+# pelo comportamento; esta linha alcança os irmãos que nenhuma fixture roda
+# (backup.sh, restore.sh, reset-mfa.sh via psql_run) — onde o mesmo defeito
+# reapareceria sem ninguém ver. Um sítio que volte a `psql "$SUPABASE_DB_URL"`
+# reprova aqui.
+# `--exclude` para não casar as próprias frases deste arquivo — que fala do
+# defeito para explicá-lo, e ficaria eternamente vermelho por citar o que vigia.
+sobrando="$(grep -nE --exclude='test-validators.sh' '(psql|pg_dump) "\$SUPABASE_DB_URL"' ./*.sh 2>/dev/null || true)"
+convertidos="$(grep -hoE --exclude='test-validators.sh' '(psql|pg_dump) "\$\(url_do_schema\)"' ./*.sh 2>/dev/null | grep -c . || true)"
+if [ -n "$sobrando" ]; then
+  printf '  ✗ script do kit ainda manda a string do app para o Postgres:\n'
+  printf '%s\n' "$sobrando" | sed 's/^/       /'
+  fail=1
+elif [ "${convertidos:-0}" -lt 10 ]; then
+  # Vacuidade: uma varredura que não achasse NADA devolveria a mesma lista vazia
+  # de infratores. O número é piso, não igualdade — sítio novo não deve reprovar.
+  printf '  ✗ a varredura só achou %s sítio(s) convertido(s) — ela está cega, não limpa\n' "${convertidos:-0}"
+  fail=1
+else
+  printf '  ✓ %s sítio(s) pela conexão do schema, nenhum pela do app\n' "$convertidos"
+fi
 
 echo "integração: update.sh quando a rede do proxy sumiu"
 # O guard da rede nasceu só no install.sh, e o `dc up -d` do update.sh corre o

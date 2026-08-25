@@ -219,8 +219,8 @@ function PipelineEditor({ pipeline, stages = [] }: { pipeline: PipelineRow; stag
         </p>
       </div>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={isPending}>
+      <div className="flex sm:justify-end">
+        <Button onClick={handleSave} disabled={isPending} className="w-full sm:w-auto">
           {isPending ? "Salvando…" : "Salvar vocabulário e campos"}
         </Button>
       </div>

@@ -119,24 +119,32 @@ export function VersionDiff({ versionA, versionB }: Props) {
         {fields.length === 0 ? (
           <p className="text-xs text-text-muted">Sem mudanças.</p>
         ) : (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-left text-text-muted">
-                <th className="py-1">Campo</th>
-                <th className="py-1">v{versionA.version_number}</th>
-                <th className="py-1">v{versionB.version_number}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {fields.map((f) => (
-                <tr key={f.key} className="border-t border-border/40">
-                  <td className="py-1 font-mono">{f.label}</td>
-                  <td className="py-1 font-mono text-error-fg">{String(f.a)}</td>
-                  <td className="py-1 font-mono text-success-fg">{String(f.b)}</td>
+          // `overflow-x-auto` isolado: campos como `channel_session_id`
+          // (uuid, monoespaçado) em 3 colunas passavam da largura de um
+          // celular pequeno sem isso.
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-text-muted">
+                  <th className="py-1 pr-3">Campo</th>
+                  <th className="py-1 pr-3">v{versionA.version_number}</th>
+                  <th className="py-1">v{versionB.version_number}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {fields.map((f) => (
+                  <tr key={f.key} className="border-t border-border/40">
+                    <td className="whitespace-nowrap py-1 pr-3 font-mono">{f.label}</td>
+                    {/* Tokens do design system Indigo — `error-fg`/`success-fg`
+                        no lugar de `destructive`/`emerald-600`, que não
+                        atravessam o tema escuro desta instalação. */}
+                    <td className="whitespace-nowrap py-1 pr-3 font-mono text-error-fg">{String(f.a)}</td>
+                    <td className="whitespace-nowrap py-1 font-mono text-success-fg">{String(f.b)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Section>
 

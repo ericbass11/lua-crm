@@ -492,3 +492,28 @@ export async function startConversationHandler(
     lead_id: lead.lead_id,
   };
 }
+
+// mark read
+// ---------------------------------------------------------------------------
+
+export async function markConversationReadHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  conversationId: string,
+): Promise<Conversation> {
+  const { data, error } = await supabase
+    .from("conversations")
+    .update({ unread_count_for_assignee: 0 })
+    .eq("id", conversationId)
+    .eq("organization_id", ctx.organization_id)
+    .select(SELECT_COLS)
+    .maybeSingle();
+
+  if (error) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  }
+  if (!data) {
+    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Conversa não encontrada.");
+  }
+  return data as unknown as Conversation;
+}

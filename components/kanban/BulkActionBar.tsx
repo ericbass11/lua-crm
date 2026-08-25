@@ -113,7 +113,17 @@ export function BulkActionBar({
 
   return (
     <>
-      <div className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-2 rounded-full border border-border bg-surface-elevated px-4 py-2.5 shadow-lg">
+      {/* `w-fit` sozinho não tinha teto: seis itens (rótulo + 5 ações) numa
+          linha só passavam da largura da tela em qualquer smartphone e essa
+          barra `sticky` virava scroll horizontal da PÁGINA inteira — a barra
+          é `mx-auto`, então o excesso ficava invisível dos dois lados, não só
+          cortado. `max-w-[calc(100vw-2rem)]` + `flex-wrap` deixam a barra
+          quebrar em linhas em vez de vazar.
+
+          O teto e o `flex-wrap` são do upstream; a pílula (`rounded-full`,
+          `surface-elevated`, `shadow-lg`) é o design system Indigo desta
+          instalação. Nenhum dos dois depende do outro. */}
+      <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-2 rounded-full border border-border bg-surface-elevated px-4 py-2.5 shadow-lg">
         <span className="px-1 text-sm font-semibold text-text">
           {selectedIds.length} selecionado{selectedIds.length > 1 ? "s" : ""}
         </span>

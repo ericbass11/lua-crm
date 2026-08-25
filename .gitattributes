@@ -16,9 +16,23 @@
 # `eol=lf` faz o checkout gravar LF independentemente da plataforma e do
 # `core.autocrlf` de quem clonou. Vale para todo mundo que builda no Windows,
 # não só para esta máquina — por isso mora no repo, não na config local.
-* text=auto
+# `eol=lf` no GLOBO, não só nos executáveis. A primeira versão deste arquivo
+# (2026-08-18) forçava LF apenas em `.sh`/`Dockerfile`/`.yml`, porque o sintoma
+# conhecido era o scheduler em crashloop. O sync com a v1.4.1 mostrou a segunda
+# metade do mesmo problema: `tests/unit/marca-logo-spec-ancora-a-rota.test.ts`
+# LÊ um `.spec.ts` como texto e procura `\n}\n` para achar o fim de uma função.
+# Com CRLF o arquivo tem `\r\n}\r\n`, o casamento nunca acontece e a suíte
+# inteira reprova — só no Windows, nunca no CI.
+#
+# Medido: 375 de 400 arquivos `.ts`/`.tsx` amostrados estavam com CRLF nesta
+# árvore. Como os blobs no git JÁ são LF (o projeto é escrito em Linux), forçar
+# LF no checkout não muda uma vírgula do histórico: alinha a árvore de trabalho
+# com exatamente o que o CI enxerga. Nenhum arquivo do repo precisa de CRLF —
+# não há `.bat`, `.cmd` nem `.ps1` versionado.
+* text=auto eol=lf
 
-# Precisam de LF SEMPRE: são executados por um shell dentro de Linux/Docker.
+# Explícitos porque carregam o PORQUÊ: são executados por um shell dentro de
+# Linux/Docker, e aqui o CRLF não reprova um teste — ele quebra o contêiner.
 *.sh text eol=lf
 *.bash text eol=lf
 Dockerfile* text eol=lf

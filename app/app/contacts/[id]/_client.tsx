@@ -15,6 +15,7 @@ import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
+import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 interface Props {
@@ -73,16 +74,20 @@ export function ContactDetailClient({ contactId }: Props) {
         </div>
       )}
 
-      <header className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-4">
+      {/* Empilhamento responsivo do upstream; avatar e tokens do Indigo. */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 items-start gap-4">
           <span
             className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent-soft text-lg font-bold text-accent"
             aria-hidden
           >
             {displayName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "—"}
           </span>
-          <div>
-          <h1 className="text-2xl font-bold tracking-tight text-text">{displayName}</h1>
+          <div className="min-w-0">
+          {/* Sem truncar: nome é dado que a tela existe pra mostrar, e cortar
+              com reticências sem um jeito de ver o resto violaria o princípio
+              de nunca esconder informação crítica. Deixa quebrar linha. */}
+          <h1 className="text-2xl font-bold tracking-tight text-text break-words">{displayName}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-text-subtle">
             {contact.email && <span>{contact.email}</span>}
             {contact.email && contact.phone_number && <span>•</span>}
@@ -98,12 +103,14 @@ export function ContactDetailClient({ contactId }: Props) {
           </div>
         </div>
         {!contact.is_anonymized && (
-          <Button variant="outline" onClick={() => setEditOpen(true)}>
+          <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
             <PencilSimple size={16} weight="bold" aria-hidden />
             <span>Editar</span>
           </Button>
         )}
       </header>
+
+      <ConversaNoDossie conversa={contact.conversa} />
 
       {/* ANTES das abas, e não dentro de uma delas: é o único conteúdo desta
           tela que PEDE uma ação. Enterrado numa aba, viraria pendência que só

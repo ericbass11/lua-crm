@@ -198,17 +198,42 @@ export async function archiveAgentAction(id: string): Promise<ActionResult> {
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (!existing) return { ok: false, error: "not_found" };
+  /**
+   * Arquivar o agente PADRÃO é recusado (regra do upstream, adotada na
+   * sincronização com a v1.4.1 e vigiada por
+   * `tests/unit/arquivar-agente-arquiva-mesmo.test.ts`).
+   *
+   * Esta fork fazia o contrário: arquivava e liberava a marca de padrão junto
+   * (`updates.is_default = false`), para o unique parcial `one_default_per_org`
+   * não ficar ocupado por um agente arquivado. O comportamento veio de um
+   * commit de sync genérico, sem justificativa escrita.
+   *
+   * Recusar é o lado seguro: o padrão é quem atende conversa nova, e arquivá-lo
+   * deixaria a organização sem ninguém atendendo — sem aviso. Quem quiser
+   * arquivar o padrão promove outro agente a padrão primeiro, e aí a marca já
+   * saiu deste. O caminho continua existindo; ele só deixou de ser silencioso.
+   */
+  if (existing.is_default) return { ok: false, error: "cannot_archive_default" };
 
-  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  // Agente default pode ser arquivado — a marca de default é liberada junto
-  // (o unique parcial one_default_per_org volta a aceitar outro default).
-  if (existing.is_default) updates.is_default = false;
-  if (existing.kind === "mcp_agent") {
-    updates.archived_at = new Date().toISOString();
-    updates.published_version_id = null;
-  } else {
-    updates.is_active = false;
-  }
+  /**
+   * Arquivar carimba a data e tira do ar — nos DOIS kinds.
+   *
+   * O legado recebia só `is_active = false`, e as três consequências eram
+   * visíveis: `archived_at` nulo mantinha o agente na lista (a rota filtra por
+   * ele), `deriveAgentStatus` o rotulava "Pausado" em vez de "Arquivado", e o
+   * dispatcher — que seleciona por `archived_at is null` + `published_version_id
+   * not null`, sem olhar `is_active` nem `kind` — continuava entregando
+   * conversas a ele. A auditoria, enquanto isso, gravava `ai_agent.archived`.
+   *
+   * `is_active = false` continua para o legado, e não é redundante: é o filtro
+   * que o worker antigo consulta (`workers/ai-response-worker.ts`).
+   */
+  const updates: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+    archived_at: new Date().toISOString(),
+    published_version_id: null,
+  };
+  if (existing.kind !== "mcp_agent") updates.is_active = false;
 
   const { error } = await admin
     .from("ai_agents")

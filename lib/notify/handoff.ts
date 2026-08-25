@@ -157,7 +157,17 @@ export async function notifyHandoff(
             waIdentity: null,
           });
           if (!recipient) continue;
-          await adapter.send({ sessionRef, to: recipient, kind: "text", body: text });
+          // `organizationId` virou obrigatório no envelope de saída (upstream
+          // #284): todo envio carrega o escopo do tenant. Aqui ele vem de
+          // `input`, que é a fonte confiável desta chamada — a mesma org já
+          // usada para resolver a sessão logo acima —, nunca de payload externo.
+          await adapter.send({
+            organizationId: input.organizationId,
+            sessionRef,
+            to: recipient,
+            kind: "text",
+            body: text,
+          });
         }
       }
     } catch {
