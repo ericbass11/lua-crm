@@ -109,7 +109,7 @@ export function TagPicker({ value, onChange }: Props) {
                   <button
                     type="button"
                     aria-label={`Remover tag ${t}`}
-                    className="ml-0.5 rounded px-1 text-xs text-muted-foreground hover:text-destructive"
+                    className="ml-0.5 rounded-md px-1 text-xs text-muted-foreground hover:text-destructive"
                     onClick={() => remove(t)}
                   >
                     ×

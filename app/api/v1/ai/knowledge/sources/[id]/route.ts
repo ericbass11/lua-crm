@@ -13,6 +13,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { aceitaTextoColado, canonizarTipoDeFonte } from "@/lib/ai/rag/tipos-de-fonte";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +45,12 @@ async function resolveContext(requestId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// GET — source + FAQ items (used by the FAQ editor to prefill on edit)
+// GET — o material e o conteúdo que dá para editar
 // ---------------------------------------------------------------------------
+//
+// Existe para o diálogo de edição não ter de adivinhar o que já está lá. Sem
+// ele, "Editar conteúdo" abriria um campo vazio e salvar apagaria a FAQ inteira
+// — o pior desfecho possível para um botão chamado "editar".
 
 export async function GET(
   _req: NextRequest,
@@ -59,49 +64,33 @@ export async function GET(
   const { activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
 
   const supabase = await createClient();
-  const { data: source, error: srcErr } = await supabase
+  const { data: fonte, error } = await supabase
     .from("ai_knowledge_sources")
-    .select("id, name, source_type, status, chunks_count, last_index_status")
+    .select(
+      "id, agent_id, organization_id, source_type, name, status, last_index_status, " +
+        "last_index_error, last_indexed_at, chunks_count, is_active, source_metadata, " +
+        "active_kb_version_id, created_at, updated_at",
+    )
     .eq("id", sourceId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
 
-  if (srcErr) {
-    console.error("[ai-knowledge-sources] GET fetch failed:", srcErr.message);
-    return fail("internal_error", "Erro ao carregar fonte.", 500, { requestId });
+  if (error) {
+    console.error("[ai-knowledge-sources] GET falhou:", error.message);
+    return fail("internal_error", "Erro ao ler o material.", 500, { requestId });
   }
-  if (!source) {
-    return fail("not_found", "Fonte de conhecimento não encontrada.", 404, { requestId });
-  }
-
-  let items: Array<{ question: string; answer: string; tags: string[]; locale: string }> = [];
-  if ((source as { source_type: string }).source_type === "faq") {
-    const { data: itemRows, error: itemsErr } = await supabase
-      .from("ai_faq_items")
-      .select("question, answer, tags, locale, position")
-      .eq("knowledge_source_id", sourceId)
-      .eq("organization_id", activeOrg.orgId)
-      .order("position", { ascending: true });
-
-    if (itemsErr) {
-      console.error("[ai-knowledge-sources] GET items failed:", itemsErr.message);
-      return fail("internal_error", "Erro ao carregar itens da FAQ.", 500, { requestId });
-    }
-
-    items = ((itemRows ?? []) as Array<{
-      question: string | null;
-      answer: string | null;
-      tags: string[] | null;
-      locale: string | null;
-    }>).map((it) => ({
-      question: it.question ?? "",
-      answer: it.answer ?? "",
-      tags: it.tags ?? [],
-      locale: it.locale ?? "pt-BR",
-    }));
+  if (!fonte) {
+    return fail("not_found", "Material não encontrado.", 404, { requestId });
   }
 
-  return ok({ source, items }, { requestId });
+  const { data: itens } = await supabase
+    .from("ai_faq_items")
+    .select("question, answer, tags, locale, position")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("knowledge_source_id", sourceId)
+    .order("position", { ascending: true });
+
+  return ok({ ...(fonte as unknown as Record<string, unknown>), items: itens ?? [] }, { requestId });
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +143,8 @@ export async function PATCH(
     return fail("not_found", "Fonte de conhecimento não encontrada.", 404, { requestId });
   }
 
-  const ksRow = existing as { id: string; source_type: string; agent_id: string };
+  const ksRow = existing as { id: string; source_type: string; agent_id: string | null };
+  const tipo = canonizarTipoDeFonte(ksRow.source_type);
 
   // Build update payload (only provided fields).
   const updatePayload: Record<string, unknown> = {};
@@ -178,7 +168,18 @@ export async function PATCH(
 
   // Replace FAQ items if provided.
   let itemsCount: number | undefined;
-  if (input.items !== undefined && ksRow.source_type === "faq") {
+  // Itens mandados para um tipo que não os ingere eram DESCARTADOS em silêncio:
+  // a pessoa editava o conteúdo, recebia 200, e nada mudava.
+  if (input.items !== undefined && tipo !== null && !aceitaTextoColado(tipo)) {
+    return fail(
+      "unprocessable_entity",
+      "Este material não é preenchido por texto colado — envie o arquivo ou aguarde a rotina que o alimenta.",
+      422,
+      { requestId },
+    );
+  }
+
+  if (input.items !== undefined && tipo === "faq") {
     // Delete existing items.
     const { error: delErr } = await admin
       .from("ai_faq_items")
@@ -270,15 +271,23 @@ export async function DELETE(
   }
 
   const admin = createAdminClient();
+  // `is_active` JUNTO, e não só `status`.
+  //
+  // Nenhuma linha do repo jamais escreveu `is_active = false`. Enquanto existia
+  // o índice único `(agent_id, source_type) WHERE is_active`, isso deixava o
+  // "slot" ocupado por um material arquivado PARA SEMPRE: recriar devolvia 409 e
+  // não havia caminho nenhum de volta. O índice saiu na 0181 e a incoerência
+  // dos dois campos sairia junto — a constraint
+  // `ai_knowledge_sources_arquivada_nao_e_ativa` agora recusa arquivar pela metade.
   const { error: archiveErr } = await admin
     .from("ai_knowledge_sources")
-    .update({ status: "archived" })
+    .update({ status: "archived", is_active: false })
     .eq("id", sourceId)
     .eq("organization_id", activeOrg.orgId);
 
   if (archiveErr) {
-    console.error("[ai-knowledge-sources] DELETE archive failed:", archiveErr.message);
-    return fail("internal_error", "Erro ao arquivar fonte.", 500, { requestId });
+    console.error("[ai-knowledge-sources] arquivar falhou:", archiveErr.message);
+    return fail("internal_error", "Erro ao arquivar o material.", 500, { requestId });
   }
 
   return ok({ id: sourceId, status: "archived" }, { requestId });

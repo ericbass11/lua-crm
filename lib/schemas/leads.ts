@@ -104,10 +104,12 @@ export const updateLeadSchema = z.object({
     .nullable()
     .optional(),
   tags: z.array(z.string()).optional(),
-  // Campos estratégicos (Fase 2): merge feito no handler. Escalares apenas.
-  custom_fields: z
-    .record(z.string().min(1).max(40), z.union([z.string().max(2000), z.number(), z.boolean(), z.null()]))
-    .optional(),
+  // Campos personalizados: merge feito no handler. O tipo é `unknown` de
+  // propósito desde a v1.14.0 do upstream — o editor de campos do funil
+  // (`CRMSidePanel`/`pipelines/_client`) produz `Record<string, unknown>`, e o
+  // schema mais estrito desta fork (escalares) brigava com ele no typecheck.
+  // A validação por tipo de campo mora no editor, que conhece a definição.
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 export type UpdateLeadInput = z.infer<typeof updateLeadSchema>;
 
@@ -115,9 +117,13 @@ export const bulkLeadActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("move"),
     lead_ids: z.array(z.string().uuid()).min(1).max(50),
+    // Sem `position_in_stage`: quem posiciona o lote é o banco
+    // (`fn_mover_leads_em_lote`, migration 0209), porque N cards precisam de N
+    // posições distintas e um campo escalar só sabe dizer uma. Um cliente antigo
+    // que ainda o mande não quebra — `z.object` descarta chave desconhecida —,
+    // e é melhor que ele suma do que ficar aceito e ignorado.
     params: z.object({
       stage_id: z.string().uuid(),
-      position_in_stage: z.number().finite(),
     }),
   }),
   z.object({

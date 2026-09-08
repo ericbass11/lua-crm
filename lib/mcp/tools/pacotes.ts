@@ -7,7 +7,9 @@
  *
  * Duas razoes para agrupar em PACOTES em vez de listar tool por tool:
  *   1. modelo — 60 tools num prompt degradam a escolha do LLM (erra a tool,
- *      gasta contexto, alucina argumento). O teto de 20 por agente e real.
+ *      gasta contexto, alucina argumento). O teto por agente e real — o numero
+ *      dele mora em `TETO_TOOLS_POR_AGENTE` e ja mudou uma vez (20 -> 25), por
+ *      isso nao se repete aqui.
  *   2. tela — 60 checkboxes destroem a configuracao para um leigo.
  * O checkbox por tool continua existindo em "modo avancado"; o pacote e o
  * caminho padrao.
@@ -26,7 +28,9 @@ export type ToolBundle =
   | "reter"
   | "escalar"
   | "organizar"
-  | "evoluir";
+  | "evoluir"
+  // Pacote desta instalação (fork LUA CRM): a agenda do Google por Service Account.
+  | "agenda_google";
 
 export interface PacoteMeta {
   id: ToolBundle;
@@ -79,6 +83,17 @@ export const PACOTES: ReadonlyArray<PacoteMeta> = [
     explicacao:
       "O agente consulta o que a empresa já sabe, aprende com os atendimentos e sugere melhorias para você aprovar.",
     ordem: 6,
+  },
+  {
+    // Fork LUA CRM. Vive num pacote próprio para não inflar os do upstream:
+    // com as 5 tools da agenda dentro de "vender", o pacote passava de 25 (o
+    // teto por agente) e nenhuma jornada nova cabia depois do onboarding —
+    // `tests/unit/pacote-reserva-vaga-da-critica.test.ts`.
+    id: "agenda_google",
+    rotulo: "Agenda do Google (conta de serviço)",
+    explicacao:
+      "O agente consulta a disponibilidade e marca, remarca e cancela compromissos direto na agenda do Google conectada por conta de serviço.",
+    ordem: 7,
   },
 ] as const;
 

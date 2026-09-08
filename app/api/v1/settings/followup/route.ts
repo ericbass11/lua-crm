@@ -10,7 +10,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -54,26 +54,13 @@ type OrgCtx =
   | { ok: true; authUser: AuthUser; activeOrg: ActiveOrg };
 
 async function requireOrg(minRole: "manager" | "admin"): Promise<OrgCtx> {
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return { ok: false, res: fail("unauthenticated", "Auth required.", 401, { requestId: randomUUID() }) };
-  }
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return {
-      ok: false,
-      res: fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId: randomUUID() }),
-    };
-  }
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK[minRole]) {
-    return {
-      ok: false,
-      res: fail("forbidden_role", `Permissão insuficiente. Requer role ${minRole}.`, 403, {
-        requestId: randomUUID(),
-      }),
-    };
-  }
-  return { ok: true, authUser, activeOrg };
+  // `requireRole()` e o UNICO lugar que aplica o gate de MFA (`mfaEmDivida`). A
+  // comparacao manual de rank que vivia aqui decidia 403 sem passar por ele.
+  // Achado do `lint:role-rank` (upstream v1.16.1); o helper fica so como adaptador
+  // para a forma `OrgCtx` que os handlers deste arquivo ja consomem.
+  const authz = await requireRole(minRole, { requestId: randomUUID(), resource: "followup_settings" });
+  if (!authz.ok) return { ok: false, res: authz.response };
+  return { ok: true, authUser: authz.user, activeOrg: authz.org };
 }
 
 export async function GET(): Promise<Response> {

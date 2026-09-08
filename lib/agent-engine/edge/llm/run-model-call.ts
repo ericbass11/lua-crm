@@ -97,6 +97,17 @@ export interface RunModelCallInput {
   leadId?: string | null;
   jobId?: string | null;
   variantId?: string | null;
+  /**
+   * De QUEM é esta execução — `ai_agents.id` do agente publicado que está no
+   * turno. Vai para `llm_calls.agent_id`, a coluna que existia com FK e nunca
+   * era escrita (medido em produção: 0 de 130 linhas de `agent_turn`).
+   *
+   * Sem ela a aba "Execuções" da tela do agente não tem como filtrar o que
+   * mostrar — e era por isso que ela dizia "Nenhuma execução ainda" enquanto o
+   * agente respondia. Opcional porque a maioria dos chamadores é auxiliar
+   * (classificador, compaction, flywheel) e não pertence a um agente.
+   */
+  agentId?: string | null;
   /** atribuição de custo: 'agent_turn' (default) | 'classifier' | 'compaction' | 'connection_test' */
   purpose?: string;
   system?: string;
@@ -323,12 +334,21 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     padraoDaOrganizacao: { provider: padrao.provider, defaultModel: padrao.defaultModel },
   }, deps.log ? { log: deps.log } : {});
 
-  // Só re-resolve a credencial quando o painel apontou para OUTRA que não a já
+  // Só re-resolve a credencial quando a decisão aponta para OUTRA que não a já
   // carregada — decifrar duas vezes a mesma chave é custo puro no caminho
   // quente, e cada decifragem é mais um instante com plaintext em memória.
+  //
+  // A condição olha para o QUE FOI DECIDIDO, nunca para o rótulo da origem. Ela
+  // já foi `decisao.origem === 'binding' && (…)`, e amarrar a correção a um
+  // rótulo é o que permite decisão e execução divergirem: qualquer ramo que
+  // devolvesse um provider fora do já resolvido saía com a chave do outro —
+  // silenciosamente, porque `factory` usa `config.provider` e não
+  // `decisao.provider`. `padrao` foi resolvido com `input.llmOverride`, então
+  // comparar contra ele é comparar contra o que de fato está carregado.
+  const credencialJaCarregada = input.llmOverride?.credentialId ?? null;
   const precisaOutraCredencial =
-    decisao.origem === 'binding' &&
-    (decisao.provider !== padrao.provider || decisao.credentialId !== null);
+    decisao.provider !== padrao.provider ||
+    (decisao.credentialId !== null && decisao.credentialId !== credencialJaCarregada);
 
   const config = precisaOutraCredencial
     ? await resolveOrgLlmConfig(db, cfg, input.tenantId, {
@@ -458,8 +478,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     `insert into llm_calls
        (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
-        status, origem_da_escolha)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14)
+        status, origem_da_escolha, agent_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15)
      returning id`,
     [
       input.tenantId,
@@ -476,6 +496,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       cost,
       latencyMs,
       decisao.origem,
+      input.agentId ?? null,
     ],
   );
 
@@ -630,8 +651,8 @@ async function registrarFalha(
     `insert into llm_calls
        (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
-        status, error_code, error_message, http_status, origem_da_escolha)
-     values ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0, null, $8, 'erro', $9, $10, $11, $12)`,
+        status, error_code, error_message, http_status, origem_da_escolha, agent_id)
+     values ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0, null, $8, 'erro', $9, $10, $11, $12, $13)`,
     [
       d.input.tenantId,
       d.input.leadId ?? null,
@@ -645,6 +666,7 @@ async function registrarFalha(
       error_message,
       http_status,
       d.origem,
+      d.input.agentId ?? null,
     ],
   );
 }

@@ -468,7 +468,7 @@ function ConnectDialog({
               <img
                 src={`/api/v1/channel-sessions/${sessionId}/qr?t=${tick}`}
                 alt="QR Code para conectar o WhatsApp do oculto"
-                className="h-56 w-56 rounded border border-border bg-white object-contain"
+                className="h-56 w-56 rounded-md border border-border bg-white object-contain"
               />
             )}
           </div>

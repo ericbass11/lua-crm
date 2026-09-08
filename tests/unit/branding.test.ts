@@ -227,7 +227,17 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "é a guarda do contrato acima: este teste é o que reprova quem renomear o header. Trocar a string aqui para 'limpar a marca' desarmaria a única proteção que o contrato tem",
     marcas: ["x-deskcomm-event", "x-deskcomm-signature", "x-deskcomm-signature"],
   },
+  "lib/agenda/google/evento.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "sufixo do `iCalUID` e prefixo das `extendedProperties` que GRAVAMOS dentro do Google Calendar do cliente. É por essa string que reconhecemos, meses depois, quais eventos daquela agenda vieram do CRM — e é o que impede o laço de eco. Trocar pela marca do revendedor faz todo evento já criado deixar de ser reconhecido, e o sintoma é compromisso fantasma ocupando horário, sem erro nenhum",
+    marcas: ["deskcomm", "deskcomm.app"],
+  },
+
   // ─── INFRA — cookie/storage/contêiner. Renomear desloga ou perde estado. ───
+
+
+  // ─── DIVIDA — vazamento real. Cada linha declara a fase que a apaga. ───
 
   // ─── DEV — fixture de teste; não embarca. ───
   "lib/agent-engine/agent/draft-reply.test.ts": {
@@ -399,7 +409,7 @@ describe("catraca de marca hardcoded", () => {
     expect(ruins, `entrada sem categoria válida ou sem justificativa escrita:\n  ${ruins.join("\n  ")}`).toEqual([]);
   });
 
-  it("a Fase 4 fechou: não sobra dívida da marca de referência", () => {
+  it("a Fase 4 fechou: sobra uma dívida, e ela declara por que sobrou", () => {
     // As três regras acima forçam a lista a ENCOLHER, mas nada impedia que ela
     // voltasse a CRESCER: uma `DIVIDA` nova entra sem ninguém notar, porque
     // acrescentar linha à allowlist é o caminho de menor resistência de quem
@@ -408,10 +418,14 @@ describe("catraca de marca hardcoded", () => {
     const dividas = Object.entries(MARCA_CONGELADA)
       .filter(([, e]) => e.categoria === "DIVIDA")
       .map(([arquivo]) => arquivo);
+    // Fork LUA CRM: o rebrand de 2026-07 tirou a marca também do template do
+    // alarme de orçamento (o upstream ainda o lista como a única dívida), então
+    // aqui o conjunto correto é VAZIO. Qualquer nome que apareça é dívida nova.
     expect(
       dividas,
-      "a Fase 4 zerou as dívidas da marca de referência. Dívida nova aqui precisa " +
-        "de decisão, não de mais uma linha na lista.",
+      "a Fase 4 zerou as dívidas de marca nesta fork — inclusive o alarme de " +
+        "orçamento de IA, rebrandeado. Dívida nova aqui precisa de decisão, não de " +
+        "mais uma linha na lista.",
     ).toEqual([]);
   });
 

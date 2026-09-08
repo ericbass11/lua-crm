@@ -1,36 +1,80 @@
-# Fim de linha — POR QUE este arquivo existe.
+# Merge entre sessões paralelas.
 #
-# Um checkout no Windows com `core.autocrlf=true` (o padrão do Git for Windows)
-# grava CRLF em TODO arquivo de texto, inclusive nos `.sh`. O shebang vira
-# `#!/bin/sh\r`, e o Linux procura um interpretador chamado "sh\r", que não
-# existe. O sintoma não diz isso: o contêiner responde
+# O conflito que mais custa neste repo não é o do CHANGELOG (o git auto-mescla
+# aquele: medido entre os PRs #354 e #349, `git merge-file` sai com 0). É o dos
+# dois arquivos append-only que TODA migration toca — e neles os dois lados
+# estão sempre certos: cada sessão acrescentou a sua linha no fim.
+
+# `union` = fica com os dois lados, sem marcador. Para uma tabela de registro,
+# é a resolução que um humano faria à mão em 100% dos casos.
+supabase/migrations/MANIFEST.md merge=union
+
+# ─── E por que `supabase/baseline.sql` NÃO está aqui ────────────────────────
 #
-#     exec /usr/local/bin/entrypoint.sh: no such file or directory
+# Porque `union` nele é pior que o conflito. Medido num merge real seguido de
+# aplicação num Postgres 17: o merge sai LIMPO (exit 0, "Merge made by the
+# 'ort' strategy", zero marcadores) e o SQL resultante intercala duas funções —
+# uma declarada e nunca definida, a outra com o corpo da primeira. Aí:
 #
-# sobre um arquivo que ESTÁ lá, com permissão de execução. Medido nesta
-# instalação: o `scheduler` construído no Windows ficava em crashloop
-# (`Restarting (255)`), e com ele os crons — recover-stuck-messages,
-# follow-up, orçamento de IA — simplesmente não rodavam. O `app` subia
-# saudável, então o health gate passava: a falha era silenciosa.
+#   - no `install.sh` (banco novo, ON_ERROR_STOP=1) morre com syntax error;
+#   - no `update.sh` do CLIENTE (sem ON_ERROR_STOP) sai com codigo 0, deixando
+#     zero funções criadas e engolindo o resto do arquivo em silêncio.
 #
-# `eol=lf` faz o checkout gravar LF independentemente da plataforma e do
-# `core.autocrlf` de quem clonou. Vale para todo mundo que builda no Windows,
-# não só para esta máquina — por isso mora no repo, não na config local.
-# `eol=lf` no GLOBO, não só nos executáveis. A primeira versão deste arquivo
-# (2026-08-18) forçava LF apenas em `.sh`/`Dockerfile`/`.yml`, porque o sintoma
-# conhecido era o scheduler em crashloop. O sync com a v1.4.1 mostrou a segunda
-# metade do mesmo problema: `tests/unit/marca-logo-spec-ancora-a-rota.test.ts`
-# LÊ um `.spec.ts` como texto e procura `\n}\n` para achar o fim de uma função.
-# Com CRLF o arquivo tem `\r\n}\r\n`, o casamento nunca acontece e a suíte
-# inteira reprova — só no Windows, nunca no CI.
+# O marcador de conflito, aqui, é FEATURE: ele é a única coisa que obriga
+# alguém a olhar antes de o arquivo chegar à VPS de um cliente. `merge=binary`
+# tem o mesmo defeito pelo outro lado (fica com "ours" e um `git add` descarta
+# o outro lado sem ninguém ver).
 #
-# Medido: 375 de 400 arquivos `.ts`/`.tsx` amostrados estavam com CRLF nesta
-# árvore. Como os blobs no git JÁ são LF (o projeto é escrito em Linux), forçar
-# LF no checkout não muda uma vírgula do histórico: alinha a árvore de trabalho
-# com exatamente o que o CI enxerga. Nenhum arquivo do repo precisa de CRLF —
-# não há `.bat`, `.cmd` nem `.ps1` versionado.
+# O conserto certo para o baseline é de processo, não de atributo: apêndice
+# idempotente por migration, como a doutrina de migrations do CLAUDE.md manda.
+
+# ─── Fim de linha fixo em LF pra todo .sql ───────────────────────────────────
+#
+# supabase/baseline.sql tem blocos que se autoconferem por md5(body) contra uma
+# constante `v_md5` gravada no próprio arquivo (ex.: migration 0191, playbook
+# `agendamento`). Sem esta regra, um clone com `core.autocrlf=true` (padrão do
+# instalador git pra Windows) faz checkout do arquivo com CRLF — o hash
+# declarado foi calculado sobre o blob LF do git, então o corpo inserido no
+# banco (lido do disco, já CRLF) diverge do declarado e o self-check do
+# `do $pub$ ... end $pub$;` derruba `pnpm test:db` antes de qualquer teste
+# rodar. CI passa porque `ubuntu-latest` não converte por padrão — só quem
+# clona no Windows vê a falha. `eol=lf` fixa LF no checkout independente do
+# `core.autocrlf` de quem clonou.
+*.sql text eol=lf
+
+# ─── Fim de linha fixo em LF para TODO arquivo de texto ──────────────────────
+#
+# A regra de `*.sql` acima resolveu um caso de um problema que é geral, e o
+# resto dele continuava de pé. Num clone feito no Windows com o padrão do
+# instalador git (`core.autocrlf=true`), TODO arquivo de texto chega ao disco
+# com CRLF — e os gates deste repo leem arquivo de texto o tempo todo: o
+# workflow YAML, o mapa de jornadas, o selo da tradução, a lista de specs do
+# e2e. Um `\r` no fim da linha derruba regex ancorada e comparação de string.
+#
+# Medido num clone limpo desta main, rodando `pnpm test:unit` em Windows:
+#
+#     core.autocrlf=true  (padrão)  ->  9 arquivos / 20 casos vermelhos
+#     core.autocrlf=false           ->  5 arquivos /  8 casos vermelhos
+#
+# Os 5 arquivos e 12 casos da diferença NÃO têm defeito nenhum: são
+# `tag-so-nasce-da-main`, `e2e-cobertura-completa`, `numero-de-jornada-e-unico`,
+# `traducao-nao-defasa` e `marca-logo-spec-ancora-a-rota` lendo `\r` que o CI
+# nunca vê, porque `ubuntu-latest` não converte. É o mesmo raciocínio que o
+# bloco de `*.sql` já escreveu — só que ele vale para o repo inteiro.
+#
+# `text=auto` deixa o git detectar binário sozinho; só o que ele já trata como
+# texto é normalizado. Os blobs JÁ estão em LF, então isto não reescreve
+# arquivo nenhum: muda apenas o que o checkout entrega.
 * text=auto eol=lf
 
+# ─── Executáveis e binários — com o porquê desta instalação ─────────────────
+#
+# O globo `* text=auto eol=lf` acima já cobre estes arquivos. Ficam explícitos
+# porque aqui o CRLF não reprova um teste — ele quebra o contêiner: medido em
+# 2026-08-18, o `docker/scheduler/entrypoint.sh` chegou à imagem com shebang
+# `#!/bin/sh` seguido de CR, o Linux procurou um interpretador com esse nome e o
+# scheduler ficou em crashloop (`Restarting (255)`) com o `app` saudável —
+# nenhum cron rodando e o health gate passando verde por cima.
 # Explícitos porque carregam o PORQUÊ: são executados por um shell dentro de
 # Linux/Docker, e aqui o CRLF não reprova um teste — ele quebra o contêiner.
 *.sh text eol=lf

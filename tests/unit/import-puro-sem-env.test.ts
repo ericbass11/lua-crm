@@ -33,6 +33,30 @@ import { describe, expect, it } from "vitest";
 const RAIZ = join(__dirname, "..", "..");
 
 /**
+ * O CLI do tsx como ARQUIVO JS, chamado pelo `process.execPath` — nunca por
+ * `npx`.
+ *
+ * `execFileSync` não resolve extensão de executável, e no Windows o `npx` é
+ * `npx.cmd`: o filho morria com `spawnSync npx ENOENT` antes de importar
+ * coisa nenhuma. Chamar o `.mjs` direto dispensa PATH, dispensa `.cmd` e usa
+ * exatamente o tsx deste `node_modules`, em vez do que o PATH oferecer.
+ */
+const TSX_CLI = join(RAIZ, "node_modules", "tsx", "dist", "cli.mjs");
+
+/**
+ * O filho chegou a RODAR e responder?
+ *
+ * É a distinção que faltava, e ela é o conserto de verdade. Um filho que nunca
+ * nasceu devolvia `ok:false` — indistinguível de "o módulo falhou ao
+ * importar", que é justamente o resultado que o controle positivo ESPERA. O
+ * controle ficava VERDE com o aparato inteiramente quebrado, ao lado do caso
+ * real vermelho, afirmando que o instrumento estava bom.
+ */
+function respondeu(saida: string): boolean {
+  return saida.includes("OK") || saida.includes("ERRO:");
+}
+
+/**
  * Os módulos vigiados: os que um teste unitário importa por causa de função
  * pura. A lista é explícita porque a alternativa (varrer tudo) acusaria os
  * módulos que PRECISAM de env — e um teste que acusa o correto é pior que
@@ -41,11 +65,10 @@ const RAIZ = join(__dirname, "..", "..");
 const MODULOS_PUROS = ["@/lib/leads/timeline-query"] as const;
 
 /** Importa o módulo num processo filho SEM as variáveis do app. */
-function importaComAmbienteLimpo(modulo: string): { ok: boolean; erro: string } {
+function importaComAmbienteLimpo(modulo: string): { ok: boolean; respondeu: boolean; erro: string } {
   const script = `import(${JSON.stringify(modulo)}).then(()=>{console.log("OK")},(e)=>{console.log("ERRO:"+String(e && e.message).split("\\n")[0]);});`;
-  // Só PATH e HOME: o processo filho usa o mesmo Node e resolve o loader `tsx`
-  // a partir do repositório. Nenhuma
-  // variável do app — é justamente a ausência delas que o teste mede.
+  // Só PATH e HOME. Nenhuma variável do app — é justamente a ausência delas
+  // que o teste mede.
   // `NODE_ENV` fica de fora de propósito; o cast existe porque o tipo do Node o
   // exige e aqui a omissão é o ponto.
   const limpo = {
@@ -53,21 +76,26 @@ function importaComAmbienteLimpo(modulo: string): { ok: boolean; erro: string } 
     HOME: process.env.HOME ?? "",
   } as unknown as NodeJS.ProcessEnv;
   try {
-    const saida = execFileSync(process.execPath, ["--import", "tsx", "--eval", script], {
+    const saida = execFileSync(process.execPath, [TSX_CLI, "--eval", script], {
       cwd: RAIZ,
       env: limpo,
       encoding: "utf8",
       timeout: 120_000,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    return { ok: saida.includes("OK"), erro: saida.trim() };
+    return { ok: saida.includes("OK"), respondeu: respondeu(saida), erro: saida.trim() };
   } catch (e) {
-    return { ok: false, erro: e instanceof Error ? e.message.slice(0, 400) : String(e) };
+    // O filho pode ter RODADO e saído com código != 0 — é assim que o
+    // `--eval` termina quando a promessa rejeita. Ali o texto dele ainda vale,
+    // e é ele que separa "importou e falhou" de "nunca nasceu".
+    const bruto = typeof e === "object" && e !== null && "stdout" in e ? String((e as { stdout?: unknown }).stdout ?? "") : "";
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, respondeu: respondeu(bruto), erro: `${bruto} ${msg}`.trim().slice(0, 400) };
   }
 }
 
 describe("módulo de função pura importa sem ambiente", () => {
-  // Timeout explícito: estes dois casos abrem um PROCESSO FILHO (Node + `tsx`), que
+  // Timeout explícito: estes dois casos abrem um PROCESSO FILHO (`npx tsx`), que
   // custa ~5s em máquina livre e mais em máquina carregada — acima do padrão de
   // 5s do vitest. O timeout interno do execFileSync já é 120s; quem estourava
   // era o do vitest, e o teste ficava vermelho por LENTIDÃO, não por defeito.
@@ -75,11 +103,19 @@ describe("módulo de função pura importa sem ambiente", () => {
   // travando PR de quem não mexeu em nada (aconteceu no PR #81, que só mexia em
   // documentação).
   it("o aparato consegue detectar o defeito (controle positivo)", { timeout: 60_000 }, () => {
-    // Sem isto, um Node + `tsx` que falhasse por qualquer motivo daria "ok:false"
+    // Sem isto, um `npx tsx` que falhasse por qualquer motivo daria "ok:false"
     // e o teste principal ficaria vermelho pelo motivo errado — ou, pior, um
     // script que sempre imprime OK deixaria tudo verde medindo nada.
-  // `@/lib/env` DEVE falhar sem ambiente: é literalmente o trabalho dele.
+    // `@/lib/env` DEVE falhar sem ambiente: é literalmente o trabalho dele.
     const controle = importaComAmbienteLimpo("@/lib/env");
+    // DUAS asserções, e a primeira é a que faltava. Um filho que nunca nasceu
+    // devolve `ok:false`, que é exatamente o que a segunda espera — então o
+    // controle passava com o aparato quebrado.
+    expect(
+      controle.respondeu,
+      `o processo filho não chegou a responder — o aparato não rodou, então ` +
+        `nada foi medido. Saída: ${controle.erro}`,
+    ).toBe(true);
     expect(controle.ok, `esperava @/lib/env FALHAR sem env, veio: ${controle.erro}`).toBe(false);
   });
 

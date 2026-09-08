@@ -22,6 +22,7 @@
  * keeps `status='pending'` so the next batch picks it up.
  */
 
+import { silencioVigente } from "@/lib/inbox/comando-da-conversa";
 import { randomUUID } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -238,20 +239,34 @@ async function processEvent(event: EventRow): Promise<DispatchOutcome> {
 
   // Portões de intervenção humana (paridade com IA-01..IA-08 do worker legado —
   // sem eles o bot atropela o atendente: responde mesmo após handoff/Assumir).
+  //
+  // ⚠️ `assigned_to_user_id` NÃO é mais portão, de propósito (sync v1.16.1).
+  // Este gate nasceu em 2026-07-15, quando "Assumir" não calava o automático e
+  // ter um responsável era o único sinal de que uma pessoa tinha tomado a
+  // conversa. A migration 0173 do upstream mudou o modelo: `fn_conversation_assign`
+  // grava `bot_silenced_until = 'infinity'` em claim/transfer, `null` em release
+  // — e, deliberadamente, NÃO mexe quando `p_reason = 'routing'`: o rodízio
+  // DISTRIBUI (escolhe quem cuida se precisar), não toma o comando. Um gate por
+  // `assigned_to_user_id` anularia essa ressalva: numa org em round-robin, toda
+  // conversa nova nasce atribuída pelo worker de roteamento, e a IA emudeceria na
+  // primeira mensagem da vida de cada cliente — sem nenhuma pista apontando aqui.
+  // O silêncio já está codificado em `bot_silenced_until` por quem tem contexto
+  // para decidir (a função do banco), e é ela que este gate lê. Medido antes da
+  // troca: 0 conversas assumidas sem silêncio gravado, então não há backfill.
   const convContact = (Array.isArray(convRow.contacts) ? convRow.contacts[0] : convRow.contacts) as {
     force_human: boolean | null;
     is_blocked: boolean | null;
   } | null;
   const silencedUntil = convRow.bot_silenced_until as string | null;
+  // `'infinity'` vira `Date` inválida (NaN) e `NaN > now` é false — o silêncio
+  // durável passaria batido. `silencioVigente` trata infinity/NaN como vigente.
   const humanGate = convContact?.is_blocked
     ? "contact_blocked"
     : convContact?.force_human
       ? "force_human"
-      : silencedUntil && new Date(silencedUntil).getTime() > Date.now()
+      : silencioVigente(silencedUntil, new Date()).vigente
         ? "bot_silenced"
-        : convRow.assigned_to_user_id
-          ? "assigned_to_human"
-          : null;
+        : null;
   if (humanGate) {
     await markEventProcessed(event, "skipped_human_active", { reason: humanGate });
     return "skipped_human_active";

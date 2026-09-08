@@ -16,7 +16,7 @@ export const TOOLS_AGENDA_E_DADOS = declararTools([
       "Mostra os próximos horários livres da agenda da empresa antes de combinar uma reunião com o cliente.",
     oQueToca: "Agenda da empresa",
     risco: "seguro",
-    pacotes: ["vender"],
+    pacotes: ["agenda_google"],
   },
   {
     name: "crm_schedule_meeting",
@@ -26,7 +26,7 @@ export const TOOLS_AGENDA_E_DADOS = declararTools([
       "Cria uma reunião na agenda da empresa no horário que já foi confirmado com o cliente.",
     oQueToca: "Agenda da empresa",
     risco: "atencao",
-    pacotes: ["vender"],
+    pacotes: ["agenda_google"],
   },
   {
     name: "crm_list_scheduled_meetings",
@@ -36,7 +36,7 @@ export const TOOLS_AGENDA_E_DADOS = declararTools([
       "Lista as próximas reuniões que o assistente marcou para a equipe acompanhar os compromissos assumidos.",
     oQueToca: "Agenda da empresa",
     risco: "seguro",
-    pacotes: ["vender", "organizar"],
+    pacotes: ["agenda_google"],
   },
   {
     name: "crm_reschedule_meeting",
@@ -46,7 +46,7 @@ export const TOOLS_AGENDA_E_DADOS = declararTools([
       "Troca o horário de uma reunião existente depois que o novo horário foi confirmado com o cliente.",
     oQueToca: "Agenda da empresa",
     risco: "atencao",
-    pacotes: ["vender"],
+    pacotes: ["agenda_google"],
   },
   {
     name: "crm_cancel_meeting",
@@ -56,7 +56,7 @@ export const TOOLS_AGENDA_E_DADOS = declararTools([
       "Remove uma reunião da agenda da empresa depois que o cancelamento foi confirmado com o cliente.",
     oQueToca: "Agenda da empresa",
     risco: "atencao",
-    pacotes: ["vender"],
+    pacotes: ["agenda_google"],
   },
   {
     name: "crm_tag_conversation",

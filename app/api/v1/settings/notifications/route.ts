@@ -8,8 +8,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -32,13 +31,13 @@ const patchSchema = z.object({
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
-    return fail("forbidden_role", "Requer role >= manager.", 403, { requestId });
-  }
+  // `requireRole()` e o UNICO lugar que aplica o gate de MFA (`mfaEmDivida`).
+  // A comparacao manual de rank que vivia aqui decidia 403 sem passar por ele:
+  // uma sessao `aal1` de admin com TOTP cadastrado atravessava esta rota sem
+  // provar o segundo fator. Achado do `lint:role-rank` (upstream v1.16.1).
+  const authz = await requireRole("manager", { requestId, resource: "notification_settings" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
   const admin = createAdminClient();
   const { data } = await admin
     .from("notification_settings")
@@ -53,13 +52,13 @@ export async function GET(): Promise<Response> {
 
 export async function PATCH(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Requer role admin.", 403, { requestId });
-  }
+  // `requireRole()` e o UNICO lugar que aplica o gate de MFA (`mfaEmDivida`).
+  // A comparacao manual de rank que vivia aqui decidia 403 sem passar por ele:
+  // uma sessao `aal1` de admin com TOTP cadastrado atravessava esta rota sem
+  // provar o segundo fator. Achado do `lint:role-rank` (upstream v1.16.1).
+  const authz = await requireRole("admin", { requestId, resource: "notification_settings" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   let rawBody: unknown;
   try {

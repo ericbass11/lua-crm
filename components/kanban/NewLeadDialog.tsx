@@ -1,4 +1,6 @@
 "use client";
+
+import { useT } from "@/hooks/i18n/useT";
 import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -44,6 +46,8 @@ interface Props {
   stages: Stage[];
   /** Vincula o lead criado a este contato de origem (ex.: painel do Inbox). */
   contactId?: string | null;
+  /** Depois do INSERT — o inbox relê o resumo para o lead novo aparecer no formulário. */
+  onCreated?: () => void;
 }
 
 function defaultStageId(stages: Stage[]): string {
@@ -51,7 +55,15 @@ function defaultStageId(stages: Stage[]): string {
   return open?.id ?? stages[0]?.id ?? "";
 }
 
-export function NewLeadDialog({ open, onOpenChange, pipelineId, stages, contactId }: Props) {
+export function NewLeadDialog({
+  open,
+  onOpenChange,
+  pipelineId,
+  stages,
+  contactId,
+  onCreated,
+}: Props) {
+  const t = useT();
   const create = useCreateLead(pipelineId);
   const initialStage = useMemo(() => defaultStageId(stages), [stages]);
 
@@ -111,7 +123,8 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages, contactI
 
     try {
       await create.mutateAsync(parsed.data as CreateLeadInput);
-      toast.success("Lead criado");
+      toast.success(t("Lead criado"));
+      onCreated?.();
       form.reset({
         title: "",
         description: "",
@@ -134,12 +147,12 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages, contactI
         <DialogHeader>
           <DialogTitle>Novo Lead</DialogTitle>
           <DialogDescription>
-            Crie uma oportunidade manualmente neste funil.
+            {t("Crie um lead manualmente neste pipeline.")}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="title">Título</Label>
+            <Label htmlFor="title">{t("Título")}</Label>
             <Input
               id="title"
               placeholder="Ex: Pedido Maria — combo presente"
@@ -148,23 +161,23 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages, contactI
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Descrição</Label>
+            <Label htmlFor="description">{t("Descrição")}</Label>
             <Textarea
               id="description"
               rows={3}
-              placeholder="Contexto, observações, links…"
+              placeholder={t("Contexto, observações, links…")}
               {...form.register("description")}
             />
           </div>
 
           <div className="space-y-2">
-            <Label>Etapa</Label>
+            <Label>{t("Etapa")}</Label>
             <Select
               value={stageId}
               onValueChange={(v) => form.setValue("stage_id", v)}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Selecione a etapa" />
+                <SelectValue placeholder={t("Selecione a etapa")} />
               </SelectTrigger>
               <SelectContent>
                 {stages
@@ -195,7 +208,7 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages, contactI
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="expected_close_date">Fechamento previsto</Label>
+              <Label htmlFor="expected_close_date">{t("Fechamento previsto")}</Label>
               <Input
                 id="expected_close_date"
                 type="date"

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { useT } from "@/hooks/i18n/useT";
 import {
   Dialog,
   DialogContent,
@@ -51,6 +52,7 @@ function centsToReais(cents: number | null | undefined): string {
 }
 
 export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) {
+  const t = useT();
   const edit = useEditLead(pipelineId);
 
   // Campos estratégicos declarados no pipeline (Fase 2). Editáveis; a IA também
@@ -111,7 +113,7 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
     if (reais.length > 0) {
       valueCents = parseReaisToCents(reais);
       if (valueCents === null) {
-        form.setError("valueReais", { message: "Valor inválido" });
+        form.setError("valueReais", { message: t("Valor inválido") });
         return;
       }
     }
@@ -144,7 +146,7 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
     const parsed = updateLeadSchema.safeParse(patch);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
-      toast.error(first?.message ?? "Dados inválidos");
+      toast.error(first?.message ?? t("Dados inválidos"));
       return;
     }
 
@@ -153,7 +155,7 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
         leadId: lead.id,
         patch: parsed.data as UpdateLeadInput,
       });
-      toast.success("Lead atualizado");
+      toast.success(t("Lead atualizado"));
       onOpenChange(false);
     } catch {
       // toast already shown
@@ -164,15 +166,14 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Editar lead</DialogTitle>
+          <DialogTitle>{t("Editar lead")}</DialogTitle>
           <DialogDescription>
-            Atualize os campos. Mover de etapa ou marcar ganho/perdido tem opções
-            próprias.
+            {t("Atualize os campos. Mover de etapa ou marcar ganho/perdido tem opções próprias.")}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="title">Título</Label>
+            <Label htmlFor="title">{t("Título")}</Label>
             <Input
               id="title"
               {...form.register("title", { required: true, minLength: 2 })}
@@ -180,13 +181,13 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Descrição</Label>
+            <Label htmlFor="description">{t("Descrição")}</Label>
             <Textarea id="description" rows={3} {...form.register("description")} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="valueReais">Valor (R$)</Label>
+              <Label htmlFor="valueReais">{t("Valor (R$)")}</Label>
               <Input
                 id="valueReais"
                 inputMode="decimal"
@@ -201,7 +202,7 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="expected_close_date">Fechamento previsto</Label>
+              <Label htmlFor="expected_close_date">{t("Fechamento previsto")}</Label>
               <Input
                 id="expected_close_date"
                 type="date"
@@ -225,7 +226,7 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
           {fieldDefs.length > 0 && (
             <div className="space-y-3 border-t pt-4">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Campos estratégicos <span className="normal-case">(a IA também preenche)</span>
+                {t("Campos estratégicos")} <span className="normal-case">{t("(a IA também preenche)")}</span>
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {fieldDefs.map((def) => {
@@ -259,8 +260,8 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
                           className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
                         >
                           <option value="">—</option>
-                          <option value="true">Sim</option>
-                          <option value="false">Não</option>
+                          <option value="true">{t("Sim")}</option>
+                          <option value="false">{t("Não")}</option>
                         </select>
                       ) : (
                         <Input
@@ -283,10 +284,10 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
               onClick={() => onOpenChange(false)}
               disabled={edit.isPending}
             >
-              Cancelar
+              {t("Cancelar")}
             </Button>
             <Button type="submit" disabled={edit.isPending}>
-              {edit.isPending ? "Salvando…" : "Salvar"}
+              {edit.isPending ? t("Salvando…") : t("Salvar")}
             </Button>
           </DialogFooter>
         </form>

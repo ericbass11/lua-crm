@@ -13,8 +13,7 @@ import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -27,13 +26,13 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Permissão insuficiente. Requer role admin.", 403, { requestId });
-  }
+  // `requireRole()` é o ÚNICO lugar que aplica o gate de MFA (`mfaEmDivida`).
+  // A comparação manual de ROLE_RANK que vivia aqui decidia 403 sem passar por
+  // ele — uma sessão `aal1` de admin com TOTP cadastrado atravessava esta rota
+  // sem provar o segundo fator. Achado do `lint:role-rank` (upstream v1.16.1).
+  const authz = await requireRole("admin", { requestId, resource: "conversations" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   const admin = createAdminClient();
 
