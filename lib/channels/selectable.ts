@@ -22,6 +22,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { nomeDoCanal } from "@/lib/channels/estado";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "./archived";
+import { PROVIDERS_DE_MENSAGEM } from "./capabilities";
 
 /** Um canal oferecível como destino, já com o rótulo resolvido para a tela. */
 export interface SelectableChannel {
@@ -57,7 +58,17 @@ export async function listSelectableChannels(
     const query = db
       .from("channel_sessions")
       .select(COLUNAS)
-      .eq("organization_id", organizationId);
+      .eq("organization_id", organizationId)
+      // Esta é a FONTE ÚNICA dos seletores de "Número conectado" — e alimenta
+      // também `lib/ai/agents/first-publication.ts` (que amarra o primeiro
+      // agente publicado a `canais[0]`) e o retrato de
+      // `app/api/v1/system/instalacao/route.ts` (que conta canal conectado).
+      // Uma linha de chamada de voz (spec 18) aqui vira número escolhível,
+      // agente preso a um canal mudo e "1 canal conectado" numa instalação com
+      // zero canal de mensagem.
+      .in("provider", [...PROVIDERS_DE_MENSAGEM]);
+    // Cliente Oculto (fork Lua CRM): quando a tela pede um `purpose` específico,
+    // restringe a esse propósito (ex.: sessões de auditoria).
     return options.purpose ? query.eq("purpose", options.purpose) : query;
   };
 

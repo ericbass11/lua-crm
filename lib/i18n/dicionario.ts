@@ -37,6 +37,10 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Versão publicada": { es: "Versión publicada" },
+  "Publicado em": { es: "Publicado el" },
+  "Nenhum agente publicado": { es: "Ningún agente publicado" },
+  "Não foi possível carregar o agente do tenant. Tente recarregar a página.": { es: "No se pudo cargar el agente del tenant. Intenta recargar la página." },
   "números de teste autorizados": { es: "números de prueba autorizados" },
   "1 número de teste autorizado": { es: "1 número de prueba autorizado" },
   "Nenhum número autorizado — a IA não responde ninguém neste canal.": {
@@ -68,6 +72,284 @@ export const DICIONARIO: Traducoes = {
   "Continuar em teste": { es: "Continuar en prueba" },
   "Confirmar liberação": { es: "Confirmar habilitación" },
   "Novos canais começam em modo de teste, sem respostas automáticas até você autorizar números ou liberar o público.": { es: "Los canales nuevos empiezan en modo de prueba, sin respuestas automáticas hasta que autorices números o habilites al público." },
+  "Assistência do agente": { es: "Asistencia del agente" },
+  "Resposta aprovada. Acompanhe o envio aqui.": { es: "Respuesta aprobada. Sigue el envío aquí." },
+  "Sugestão rejeitada. O feedback será usado na próxima sugestão.": {
+    es: "Sugerencia rechazada. Los comentarios se usarán en la próxima sugerencia.",
+  },
+  "Sua edição foi preservada. Confira se a conversa mudou antes de aprovar novamente.": {
+    es: "Tu edición se conservó. Comprueba si la conversación cambió antes de aprobar de nuevo.",
+  },
+  "Preparando sugestão…": { es: "Preparando sugerencia…" },
+  "Sugestão para revisar": { es: "Sugerencia para revisar" },
+  "Resposta aprovada: aguardando envio": { es: "Respuesta aprobada: esperando envío" },
+  "Enviando resposta aprovada…": { es: "Enviando respuesta aprobada…" },
+  "Resposta aprovada enviada": { es: "Respuesta aprobada enviada" },
+  "Sugestão rejeitada": { es: "Sugerencia rechazada" },
+  "Nenhum agente publicado atende este canal. Publique uma versão do agente em IA › Agentes.": {
+    es: "Ningún agente publicado atiende este canal. Publica una versión del agente en IA › Agentes.",
+  },
+  "Não dá para sugerir nesta conversa: o contato pediu para não receber mensagens, foi anonimizado, ou o histórico não pôde ser lido.":
+    {
+      es: "No se puede sugerir en esta conversación: el contacto pidió no recibir mensajes, fue anonimizado, o no se pudo leer el historial.",
+    },
+  "Não foi possível gerar a sugestão. O motivo ficou registrado no servidor com o identificador abaixo.":
+    {
+      es: "No se pudo generar la sugerencia. El motivo quedó registrado en el servidor con el identificador de abajo.",
+    },
+  "Sugestão obsoleta: a conversa mudou": { es: "Sugerencia obsoleta: la conversación cambió" },
+  "Não foi possível concluir a sugestão ou o envio": {
+    es: "No se pudo completar la sugerencia o el envío",
+  },
+  "Aprovar envia somente este texto. Não altera dados, agenda ou a autonomia do agente.": {
+    es: "Aprobar envía solo este texto. No cambia datos, calendario ni la autonomía del agente.",
+  },
+  "Resposta sugerida": { es: "Respuesta sugerida" },
+  "Ações propostas: precisam de autorização separada": {
+    es: "Acciones propuestas: necesitan autorización por separado",
+  },
+  "Abra a ação correspondente no CRM ou na agenda para confirmar.": {
+    es: "Abre la acción correspondiente en el CRM o en el calendario para confirmar.",
+  },
+  "Feedback para a próxima sugestão": { es: "Comentarios para la próxima sugerencia" },
+  "Aprovar e enviar": { es: "Aprobar y enviar" },
+  Rejeitar: { es: "Rechazar" },
+  "Confira a configuração do agente e tente gerar novamente.": {
+    es: "Revisa la configuración del agente e intenta generar de nuevo.",
+  },
+  "Operação do agente": { es: "Operación del agente" },
+  "Modo de operação": { es: "Modo de operación" },
+  "Assistido: revisar antes de enviar": { es: "Asistido: revisar antes de enviar" },
+  "Automático: responder com as regras do agente": {
+    es: "Automático: responder con las reglas del agente",
+  },
+  "Retomar automático": { es: "Reanudar automático" },
+  "Pausar automático": { es: "Pausar automático" },
+  "Automático pausado. A versão publicada foi preservada e a assistência continua disponível.": {
+    es: "Automático pausado. La versión publicada se conservó y la asistencia sigue disponible.",
+  },
+  "O modo assistido prepara sugestões na conversa. Só a aprovação humana autoriza o envio.": {
+    es: "El modo asistido prepara sugerencias en la conversación. Solo la aprobación humana autoriza el envío.",
+  },
+  "Recuperar agente legado": { es: "Recuperar agente anterior" },
+  "Este agente precisa concluir a configuração para atender.": {
+    es: "Este agente necesita completar la configuración para atender.",
+  },
+  "O prompt e o conhecimento serão preservados. Nenhuma permissão para alterar negócios ou agenda será adicionada.":
+    {
+      es: "Se conservarán las instrucciones y el conocimiento. No se añadirán permisos para cambiar negocios o calendario.",
+    },
+  "Já existe uma versão preservada. Revise, teste e publique pelo editor abaixo.": {
+    es: "Ya existe una versión conservada. Revísala, pruébala y publícala con el editor de abajo.",
+  },
+  "Canal da recuperação": { es: "Canal de recuperación" },
+  "Escolha um canal": { es: "Elige un canal" },
+  "Credencial da recuperação": { es: "Credencial de recuperación" },
+  "Chave da instalação (se configurada)": { es: "Clave de la instalación (si está configurada)" },
+  "Conferindo configuração…": { es: "Comprobando configuración…" },
+  "Conferir e publicar configuração preservada": {
+    es: "Comprobar y publicar la configuración conservada",
+  },
+  "Mesmo motor e conhecimento do agente; nenhuma alteração é aplicada ao cliente.": {
+    es: "Mismo motor y conocimiento del agente; no se aplica ningún cambio al cliente.",
+  },
+  "Estado do contato simulado. Canal, opt-out e contexto serão conferidos novamente antes de um envio real.":
+    {
+      es: "Estado del contacto simulado. El canal, la baja y el contexto se comprobarán de nuevo antes de un envío real.",
+    },
+  "Verificações da resposta": { es: "Comprobaciones de la respuesta" },
+  "Provedor de teste controlado. O motor e as verificações são os mesmos; não há chamada a uma IA externa.":
+    {
+      es: "Proveedor de prueba controlado. El motor y las comprobaciones son los mismos; no se llama a una IA externa.",
+    },
+  "Responsáveis por número": { es: "Responsables por número" },
+  "A capacidade e o horário de cada pessoa valem para todos os números. A distribuição automática respeita os responsáveis de cada canal.": { es: "La capacidad y el horario de cada persona se aplican a todos los números. La distribución automática respeta los responsables de cada canal." },
+  "Conecte um número para escolher os responsáveis.": { es: "Conecta un número para elegir responsables." },
+  "Usa todos os atendentes elegíveis da organização.": { es: "Usa todos los agentes disponibles de la organización." },
+  "Ninguém configurado — as conversas ficarão na fila.": { es: "Nadie configurado: las conversaciones permanecerán en la cola." },
+  "Somente as pessoas selecionadas recebem este número.": { es: "Solo las personas seleccionadas reciben este número." },
+  "Nenhum atendente ativo na equipe.": { es: "No hay agentes activos en el equipo." },
+  "Salvar responsáveis": { es: "Guardar responsables" },
+  "Voltar ao padrão da organização": { es: "Volver al valor predeterminado de la organización" },
+  "Responsáveis salvos.": { es: "Responsables guardados." },
+  "Não foi possível salvar. Tente novamente.": { es: "No se pudo guardar. Inténtalo de nuevo." },
+  "Atendente sem nome": { es: "Agente sin nombre" },
+  "Configurar responsáveis por número": { es: "Configurar responsables por número" },
+  "Consulte os responsáveis em Atendimento.": { es: "Consulta los responsables en Atención." },
+  "Detalhes para suporte": { es: "Detalles para soporte" },
+  "Copiar detalhes": { es: "Copiar detalles" },
+  "Conversa aguardando responsável": { es: "Conversación esperando responsable" },
+  "Confira os responsáveis em Configurações → Atendimento.": { es: "Revisa los responsables en Configuración → Atención." },
+
+  "Suas agendas Google": { es: "Tus calendarios de Google" },
+  "Escolha quais agendas ocupam seus horários e onde publicar novos compromissos. Os já publicados permanecem na agenda original.": { es: "Elige qué calendarios ocupan tus horarios y dónde publicar nuevas citas. Las ya publicadas permanecen en el calendario original." },
+  "Carregando agendas…": { es: "Cargando calendarios…" },
+  "Não foi possível carregar suas agendas.": { es: "No se pudieron cargar tus calendarios." },
+  "Conecte sua conta pela Agenda": { es: "Conecta tu cuenta desde la Agenda" },
+  "Atualizar lista e sincronização": { es: "Actualizar lista y sincronización" },
+  "Conta como ocupado": { es: "Cuenta como ocupado" },
+  "Destino dos novos compromissos": { es: "Destino de las nuevas citas" },
+  "Leitura permitida. Esta agenda não está disponível para publicação.": { es: "Lectura permitida. Este calendario no está disponible para publicar." },
+  "Esta permissão não oferece a leitura de eventos necessária. Revise o acesso no Google.": { es: "Este permiso no ofrece la lectura de eventos necesaria. Revisa el acceso en Google." },
+  "Última sincronização": { es: "Última sincronización" },
+  "Ainda não sincronizada": { es: "Aún no sincronizado" },
+  "Leitura em andamento; a cobertura será confirmada ao terminar.": { es: "Lectura en curso; la cobertura se confirmará al terminar." },
+  "Salvar agendas": { es: "Guardar calendarios" },
+  "Sincronização Google": { es: "Sincronización con Google" },
+  "Este compromisso precisa de uma decisão de sincronização.": { es: "Esta cita necesita una decisión de sincronización." },
+  "Há alterações aguardando sincronização.": { es: "Hay cambios pendientes de sincronización." },
+  "Alterações sincronizadas.": { es: "Cambios sincronizados." },
+  "Ainda não publicado no Google.": { es: "Aún no publicado en Google." },
+  "Aqui": { es: "Aquí" },
+  "No Google": { es: "En Google" },
+  "Evento indisponível ou incompatível": { es: "Evento no disponible o incompatible" },
+  "A publicação também substituiria campos alterados no Google. Revise antes de continuar.": { es: "La publicación también reemplazaría campos modificados en Google. Revisa antes de continuar." },
+  "Preservamos o histórico daqui. Revise o evento no Google ou crie outro compromisso pela Agenda.": { es: "Conservamos el historial de aquí. Revisa el evento en Google o crea otra cita desde la Agenda." },
+  "Usar horário do Google": { es: "Usar horario de Google" },
+  "Usar cancelamento do Google": { es: "Usar cancelación de Google" },
+  "Publicar alteração daqui": { es: "Publicar el cambio de aquí" },
+  "Manter horário daqui": { es: "Mantener el horario de aquí" },
+  "Preservar campos do Google": { es: "Conservar campos de Google" },
+  "Decisão registrada. O Google será relido antes de aplicar; mudanças novas exigem outra decisão.": { es: "Decisión registrada. Se volverá a leer Google antes de aplicarla; los cambios nuevos requieren otra decisión." },
+  "Tentar sincronizar novamente": { es: "Reintentar sincronización" },
+  "Configurar suas agendas": { es: "Configurar tus calendarios" },
+  "Ocupação do Google ainda não verificada neste período.": { es: "La ocupación de Google aún no se ha verificado en este período." },
+  "Marcar compromisso": {es:"Programar cita"},
+  "Recuperação encerrada. Revise o próximo passo.": {es:"Recuperación finalizada. Revise el siguiente paso."},
+  "Acompanhamento encerrado sem novo envio": {es:"Seguimiento finalizado sin nuevo envío"},
+  "Só começa após falta confirmada pela equipe. Remarcação, cancelamento ou nova resposta interrompem a recuperação. Outro acompanhamento ativo impede o início.": {es:"Solo comienza tras una ausencia confirmada por el equipo. Reprogramar, cancelar o una nueva respuesta interrumpen la recuperación. Otro seguimiento activo impide el inicio."},
+  "Tipos de compromisso (nenhum selecionado = todos)": {es:"Tipos de cita (ninguno seleccionado = todos)"},
+  "Não foi possível carregar os tipos de compromisso.": {es:"No se pudieron cargar los tipos de cita."},
+  // Agenda: presença confirmada pela equipe e recuperação.
+  "Abrir compromisso": { es: "Abrir cita" },
+  "Abra o compromisso e confirme a presença.": { es: "Abra la cita y confirme la asistencia." },
+  "Confira o motivo e escolha o próximo passo no compromisso.": { es: "Revise el motivo y elija el siguiente paso en la cita." },
+  "Compromisso": { es: "Cita" },
+  "Este compromisso está indisponível para você.": { es: "Esta cita no está disponible para usted." },
+  "Compareceu": { es: "Asistió" },
+  "Compromisso pessoal, sem cliente vinculado.": { es: "Cita personal, sin cliente vinculado." },
+  "Presença registrada pela equipe": { es: "Asistencia registrada por el equipo" },
+  "O horário sozinho não confirma falta. A equipe precisa registrar o que aconteceu.": { es: "La hora por sí sola no confirma una ausencia. El equipo debe registrar lo ocurrido." },
+  "Falta confirmada. O resultado da recuperação ainda não está disponível.": { es: "Ausencia confirmada. El resultado de la recuperación todavía no está disponible." },
+  "O compromisso mudou ou a alteração não foi concluída. Revise os dados antes de decidir novamente.": {es:"La cita cambió o la modificación no se completó. Revise los datos antes de decidir de nuevo."},
+  "Descartar rascunho e revisar": {es:"Descartar borrador y revisar"},
+  "Recuperação iniciada": { es: "Recuperación iniciada" },
+  "Não iniciada: outro acompanhamento já está ativo.": { es: "No iniciada: ya hay otro seguimiento activo." },
+  "Não iniciada: mais de um fluxo foi configurado para esta falta.": { es: "No iniciada: hay más de un flujo configurado para esta ausencia." },
+  "Não iniciada: configure um fluxo e habilite-o em um assistente publicado.": { es: "No iniciada: configure un flujo y actívelo en un asistente publicado." },
+  "Não iniciada: o atendimento ou a resposta do cliente mudou.": { es: "No iniciada: cambió la atención o la respuesta del cliente." },
+  "Sem contato vinculado. Este compromisso não inicia uma recuperação.": { es: "Sin contacto vinculado. Esta cita no inicia una recuperación." },
+  "Recuperação iniciada e interrompida porque o cliente respondeu.": { es: "Recuperación iniciada e interrumpida porque el cliente respondió." },
+  "Revise o próximo passo.": { es: "Revise el siguiente paso." },
+  "Revisar acompanhamentos": { es: "Revisar seguimientos" },
+  "Mensagem do cliente usada como evidência (opcional)": { es: "Mensaje del cliente usado como evidencia (opcional)" },
+  "Mensagem de evidência": { es: "Mensaje de evidencia" },
+  "Confirmação da equipe, sem mensagem": { es: "Confirmación del equipo, sin mensaje" },
+  "Mensagem sem texto": { es: "Mensaje sin texto" },
+  "Ao confirmar, você valida o significado da mensagem para este compromisso.": { es: "Al confirmar, valida el significado del mensaje para esta cita." },
+  "Lembrar em uma hora": { es: "Recordar en una hora" },
+  "Motivo do cancelamento": { es: "Motivo de cancelación" },
+  "Confirmação de presença": { es: "Confirmación de asistencia" },
+  "Depois do compromisso, peça confirmação à equipe. Sem confirmação, o sistema mantém a presença desconhecida e nunca presume falta.": { es: "Después de la cita, solicite confirmación al equipo. Sin confirmación, el sistema mantiene la asistencia desconocida y nunca presupone una ausencia." },
+  "Pedir confirmação após o fim (minutos)": { es: "Pedir confirmación después del final (minutos)" },
+  "Proteger de cobranças por silêncio após o fim (minutos)": { es: "Proteger de mensajes por silencio después del final (minutos)" },
+  "Quando esse prazo acabar, a pendência continua visível. Outro compromisso vivo ainda protege o contato.": { es: "Al vencer este plazo, el pendiente sigue visible. Otra cita vigente sigue protegiendo al contacto." },
+  "Salvar prazos": { es: "Guardar plazos" },
+  "Prazos salvos.": { es: "Plazos guardados." },
+  "Buscar cliente": { es: "Buscar cliente" },
+  "Quem será atendido": { es: "Quién será atendido" },
+  "Compromisso pessoal, sem cliente": { es: "Cita personal, sin cliente" },
+  "Conversa vinculada (opcional)": { es: "Conversación vinculada (opcional)" },
+  "Sem conversa vinculada": { es: "Sin conversación vinculada" },
+  "Não foi possível carregar os vínculos. Tente novamente.": { es: "No se pudieron cargar los vínculos. Inténtelo de nuevo." },
+  "Falta confirmada pela equipe": { es: "Ausencia confirmada por el equipo" },
+  "Gatilho: falta confirmada pela equipe": { es: "Disparador: ausencia confirmada por el equipo" },
+  "Presença não confirmada · revise o compromisso": { es: "Asistencia sin confirmar · revise la cita" },
+  "Confirme a presença · cobrança aguardando": { es: "Confirme la asistencia · mensaje en espera" },
+  "Compromisso agendado · cobrança aguardando": { es: "Cita programada · mensaje en espera" },
+  "Ver compromisso": { es: "Ver cita" },
+  "Confirmar presença": { es: "Confirmar asistencia" },
+  "Revisar recuperação": { es: "Revisar recuperación" },
+
+  "Abrir conversa": { es: "Abrir conversación" },
+  "Abrir negócio": { es: "Abrir negocio" },
+  "Abrir acompanhamento": { es: "Abrir seguimiento" },
+  "Revisar conexão": { es: "Revisar conexión" },
+  "Revisar agente": { es: "Revisar agente" },
+  "Testar ou revisar resposta": { es: "Probar o revisar respuesta" },
+  "Abrir base de conhecimento": { es: "Abrir base de conocimiento" },
+  "Abrir evolução do assistente": { es: "Abrir evolución del asistente" },
+  "Revisar conexões": { es: "Revisar conexiones" },
+  "Revisar provedores de IA": { es: "Revisar proveedores de IA" },
+  "Revisar modelos do canal": { es: "Revisar plantillas del canal" },
+  "Abrir uma conversa afetada": { es: "Abrir una conversación afectada" },
+  "Abrir uso de IA": { es: "Abrir uso de IA" },
+  "Abrir Radar": { es: "Abrir Radar" },
+  "Peça a quem administra para revisar a conexão do WhatsApp.": { es: "Pide a quien administra que revise la conexión de WhatsApp." },
+  "Confira o motivo deste aviso com quem administra antes de tentar a operação novamente.": { es: "Revisa el motivo de este aviso con quien administra antes de intentar la operación de nuevo." },
+  "Peça a quem administra para conferir o processamento descrito neste aviso.": { es: "Pide a quien administra que revise el procesamiento descrito en este aviso." },
+  "Peça ao gestor para revisar o limite e o uso de IA.": { es: "Pide al responsable que revise el límite y el uso de IA." },
+  "Confira o atendimento descrito e combine quem assume o próximo passo.": { es: "Revisa la atención descrita y acuerda quién asume el siguiente paso." },
+  "Na evolução do assistente, confira as propostas disponíveis. Este aviso não identifica uma proposta específica.": { es: "En la evolución del asistente, revisa las propuestas disponibles. Este aviso no identifica una propuesta específica." },
+  "Na evolução do assistente, confira a avaliação de qualidade. Este aviso não identifica uma avaliação específica.": { es: "En la evolución del asistente, revisa la evaluación de calidad. Este aviso no identifica una evaluación específica." },
+  "Peça ao gestor para revisar o acompanhamento que parou.": { es: "Pide al responsable que revise el seguimiento que se detuvo." },
+  "Confira se cabe retomar o atendimento descrito neste aviso.": { es: "Revisa si corresponde retomar la atención descrita en este aviso." },
+  "Confira os negócios do contato e escolha a qual deles pertence a próxima ação.": { es: "Revisa los negocios del contacto y elige a cuál pertenece la siguiente acción." },
+  "Revise os negócios parados no Radar e defina o próximo passo.": { es: "Revisa los negocios detenidos en el Radar y define el siguiente paso." },
+  "Revise no Radar se ainda cabe retomar os negócios indicados.": { es: "Revisa en el Radar si todavía corresponde retomar los negocios indicados." },
+  "Peça ao gestor para revisar as ferramentas habilitadas para o assistente deste atendimento.": { es: "Pide al responsable que revise las herramientas habilitadas para el asistente de esta atención." },
+  "Confira a resposta que não chegou antes de decidir se precisa enviar novamente.": { es: "Revisa la respuesta que no llegó antes de decidir si debes enviarla de nuevo." },
+  "Peça ao gestor para revisar o provedor e as credenciais de leitura de fotos e áudios.": { es: "Pide al responsable que revise el proveedor y las credenciales para leer fotos y audios." },
+  "Confira os modelos na conexão WhatsApp via Parceiro. Este aviso não identifica um modelo específico.": { es: "Revisa las plantillas en la conexión de WhatsApp vía Socio. Este aviso no identifica una plantilla específica." },
+  "Peça a quem administra para revisar a situação do número nas conexões.": { es: "Pide a quien administra que revise la situación del número en las conexiones." },
+  "Confira o compromisso descrito e defina quem fica responsável.": { es: "Revisa el compromiso descrito y define quién se hace responsable." },
+  "A sugestão venceu. Se a informação ainda for relevante, confirme com o cliente antes de editar sua ficha.": { es: "La sugerencia venció. Si la información sigue siendo relevante, confírmala con el cliente antes de editar su ficha." },
+  "Peça ao gestor para conferir o material e o motivo da falha na base de conhecimento.": { es: "Pide al responsable que revise el material y el motivo del fallo en la base de conocimiento." },
+  "Confira a situação descrita neste aviso com a pessoa responsável.": { es: "Revisa la situación descrita en este aviso con la persona responsable." },
+  "Este aviso não tem um contexto que possa ser aberto nesta versão.": { es: "Este aviso no tiene un contexto que pueda abrirse en esta versión." },
+  "Este contexto não está disponível para você. Ele pode ter sido removido ou seu acesso pode ter mudado.": { es: "Este contexto no está disponible para ti. Puede haber sido eliminado o tu acceso puede haber cambiado." },
+  "Peça a quem administra para revisar este contexto.": { es: "Pide a quien administra que revise este contexto." },
+  "Peça ao gestor para revisar este contexto.": { es: "Pide al responsable que revise este contexto." },
+  "Seu acesso aos avisos não está disponível. Confira sua sessão e tente novamente.": { es: "Tu acceso a los avisos no está disponible. Revisa tu sesión e inténtalo de nuevo." },
+  "Não foi possível atualizar os avisos. A lista abaixo pode estar desatualizada.": { es: "No se pudieron actualizar los avisos. La lista de abajo puede estar desactualizada." },
+  "Não foi possível carregar os avisos. Tente novamente.": { es: "No se pudieron cargar los avisos. Inténtalo de nuevo." },
+  "Não foi possível atualizar este aviso. Tente novamente.": { es: "No se pudo actualizar este aviso. Inténtalo de nuevo." },
+  "Encerrar demanda": { es: "Cerrar solicitud" },
+  "Desfecho registrado.": { es: "Resultado registrado." },
+  "Não foi possível encerrar. Cancele esta edição e abra novamente para revisar o desfecho.": { es: "No se pudo cerrar. Cancela esta edición y vuelve a abrirla para revisar el resultado." },
+  "Desfecho da demanda": { es: "Resultado de la solicitud" },
+  "Resolvida": { es: "Resuelta" },
+  "Convertida": { es: "Convertida" },
+  "Não procede": { es: "No procede" },
+  "Encerrada pelo cliente": { es: "Cerrada por el cliente" },
+  "Perdida": { es: "Perdida" },
+  "Expirada sem resposta": { es: "Vencida sin respuesta" },
+  "Registra o resultado desta demanda. As conversas dos outros canais permanecem disponíveis.": { es: "Registra el resultado de esta solicitud. Las conversaciones de los otros canales siguen disponibles." },
+  "Confirmar desfecho": { es: "Confirmar resultado" },
+  "Demanda vigente neste canal": { es: "Solicitud vigente en este canal" },
+  "Memória do contato": { es: "Memoria del contacto" },
+  "Fatos duráveis registrados nas notas. Pendências pertencem à demanda vigente.": { es: "Hechos duraderos registrados en las notas. Las tareas pendientes pertenecen a la solicitud vigente." },
+  "Nenhum fato durável registrado.": { es: "No hay hechos duraderos registrados." },
+  "Histórico encerrado — sem tarefas pendentes": { es: "Historial cerrado — sin tareas pendientes" },
+
+  "Interface": { es: "Interfaz" },
+  "Perfil de interface": { es: "Perfil de interfaz" },
+  "Completa": { es: "Completa" },
+  "Simplificada": { es: "Simplificada" },
+  "Personalizada": { es: "Personalizada" },
+  "Define quais áreas aparecem na navegação. As permissões continuam sendo determinadas pelo papel. Links de conversas e avisos podem abrir áreas autorizadas que estejam ocultas.": { es: "Define qué áreas aparecen en la navegación. Los permisos siguen determinados por el rol. Los enlaces de conversaciones y avisos pueden abrir áreas autorizadas que estén ocultas." },
+  "Trocar o perfil restaura sua seleção padrão. Perfil, segurança e acesso à equipe de quem administra continuam disponíveis.": { es: "Cambiar el perfil restaura su selección predeterminada. El perfil, la seguridad y el acceso al equipo de quien administra siguen disponibles." },
+  "A seleção contém áreas antigas. Confira e salve novamente.": { es: "La selección contiene áreas antiguas. Revísala y vuelve a guardar." },
+  "Personalizar áreas visíveis": { es: "Personalizar áreas visibles" },
+  " (personalizada)": { es: " (personalizada)" },
+  "Selecione ao menos uma área de trabalho permitida ao papel.": { es: "Selecciona al menos un área de trabajo permitida para el rol." },
+  "Interface atualizada.": { es: "Interfaz actualizada." },
+  "Interface de": { es: "Interfaz de" },
+  "membro": { es: "miembro" },
+  "A alteração vale apenas nesta organização e aparece para o membro sem sair da conta.": { es: "El cambio solo se aplica a esta organización y aparece para el miembro sin cerrar la sesión." },
+  "A seleção anterior contém áreas que não existem mais. Confira e salve novamente.": { es: "La selección anterior contiene áreas que ya no existen. Revísala y vuelve a guardar." },
+  "Salvar interface": { es: "Guardar interfaz" },
+  "Sua navegação foi atualizada. Você pode continuar nesta tela.": { es: "Tu navegación se ha actualizado. Puedes continuar en esta pantalla." },
   // ─── Cabeçalhos de grupo da barra lateral ───
   //
   // ⚠️ NUNCA TIVERAM TRADUÇÃO, e o defeito era invisível: `Sidebar.tsx:83` já
@@ -80,6 +362,19 @@ export const DICIONARIO: Traducoes = {
   Canais: { es: "Canales" },
   Análise: { es: "Análisis" },
   Organização: { es: "Organización" },
+  "Selecionar org": { es: "Seleccionar org" },
+  "o dia todo": { es: "todo el día" },
+  "Dias sem atendimento": { es: "Días sin atención" },
+  "Feriado, férias, viagem. Nesses dias o sistema deixa de oferecer horários — e o que já estava marcado continua marcado, para você decidir o que fazer com cada um.": { es: "Feriado, vacaciones, viaje. En esos días el sistema deja de ofrecer horarios — y lo que ya estaba agendado sigue agendado, para que decidas qué hacer con cada uno." },
+  "Ex.: feriado": { es: "Ej.: feriado" },
+  "Fechar este dia": { es: "Cerrar este día" },
+  "Nenhum dia fechado daqui para a frente.": { es: "Ningún día cerrado de aquí en adelante." },
+  "aberto excepcionalmente": { es: "abierto excepcionalmente" },
+  "Abrir atendimento": { es: "Abrir atención" },
+  "Abra o atendimento e diga o que fazer: concluir, pedir informação ao cliente ou passar para uma pessoa.": { es: "Abre la atención y di qué hacer: concluir, pedir información al cliente o pasarla a una persona." },
+  "Um atendimento espera decisão da equipe": { es: "Una atención espera decisión del equipo" },
+  "Soltar o horário de um pedido não confirmado após (minutos)": { es: "Liberar el horario de una solicitud no confirmada después de (minutos)" },
+  "Vale só para tipos de atendimento que pedem confirmação. Enquanto o pedido espera, o horário fica reservado e ninguém mais o pega; passado o prazo sem decisão, ele volta a ser oferecido. O cliente não é avisado, e o pedido continua na fila.": { es: "Vale solo para tipos de atención que piden confirmación. Mientras la solicitud espera, el horario queda reservado y nadie más lo toma; pasado el plazo sin decisión, vuelve a ofrecerse. El cliente no recibe aviso, y la solicitud sigue en la fila." },
 
   // ─── Navegação (a barra lateral, presente em toda tela) ───
   Inbox: { es: "Inbox" },
@@ -117,8 +412,12 @@ export const DICIONARIO: Traducoes = {
   Buscar: { es: "Buscar" },
 
   // ─── Inbox: filtros e lista ───
-  "Buscar por nome, telefone ou mensagem…": {
-    es: "Buscar por nombre, teléfono o mensaje…",
+  "Nenhuma conversa com esses filtros": { es: "Ninguna conversación con esos filtros" },
+  "Ativos:": { es: "Activos:" },
+  "Busca": { es: "Búsqueda" },
+  "Etiqueta": { es: "Etiqueta" },
+  "Buscar por nome, telefone ou última mensagem…": {
+    es: "Buscar por nombre, teléfono o último mensaje…",
   },
   "Buscar mensagens…": { es: "Buscar mensajes…" },
   "Todos os números": { es: "Todos los números" },
@@ -262,6 +561,61 @@ export const DICIONARIO: Traducoes = {
   "Dados da empresa, retenção de mídia, DPO. Admin only.": {
     es: "Datos de la empresa, retención de medios, DPO. Solo administradores.",
   },
+
+  // ─── Hub de IA (NavHub: seções, rótulos e descrições) ───
+  "Montar o agente": { es: "Configurar el agente" },
+  "Ensinar o agente": { es: "Enseñar al agente" },
+  "Acompanhar o agente": { es: "Acompañar al agente" },
+  "Tudo que define quem atende por você — e como acompanhar o que ele faz.": {
+    es: "Todo lo que define quién atiende por ti — y cómo seguir lo que hace.",
+  },
+  "Quem atende por você: instruções, modelo, ferramentas e publicação.": {
+    es: "Quién atiende por ti: instrucciones, modelo, herramientas y publicación.",
+  },
+  "Como o agente retoma uma conversa que esfriou, para nenhuma morrer no silêncio.": {
+    es: "Cómo el agente retoma una conversación que se enfrió, para que ninguna muera en silencio.",
+  },
+  "Qual agente pega qual conversa, e quando o humano assume.": {
+    es: "Qué agente toma cada conversación y cuándo interviene una persona.",
+  },
+  Credenciais: { es: "Credenciales" },
+  "A chave do provedor de IA que os agentes usam para pensar.": {
+    es: "La clave del proveedor de IA que los agentes usan para pensar.",
+  },
+  Provedores: { es: "Proveedores" },
+  "Qual inteligência atende cada parte do sistema — e o que acontece se ela falhar.": {
+    es: "Qué inteligencia atiende cada parte del sistema y qué ocurre si falla.",
+  },
+  Conhecimento: { es: "Conocimiento" },
+  "Os materiais que o agente consulta antes de responder sobre o seu negócio.": {
+    es: "Los materiales que el agente consulta antes de responder sobre tu negocio.",
+  },
+  Memória: { es: "Memoria" },
+  "O que o agente já aprendeu sobre a sua operação e reaproveita.": {
+    es: "Lo que el agente ya aprendió sobre tu operación y vuelve a utilizar.",
+  },
+  Skills: { es: "Skills" },
+  "As ações que o agente pode executar sozinho durante o atendimento.": {
+    es: "Las acciones que el agente puede ejecutar por sí solo durante la atención.",
+  },
+  "Os atendimentos que o agente conduziu, do início ao desfecho.": {
+    es: "Las atenciones que el agente condujo, desde el inicio hasta el desenlace.",
+  },
+  "O que a IA encontrou e precisa de uma decisão sua.": {
+    es: "Lo que la IA encontró y necesita una decisión tuya.",
+  },
+  Alertas: { es: "Alertas" },
+  "Melhorias que a IA sugere para si mesma, esperando sua decisão.": {
+    es: "Mejoras que la IA se propone a sí misma mientras espera tu decisión.",
+  },
+  "O que a IA fez — e, quando falhou, o que aconteceu e o que fazer.": {
+    es: "Lo que hizo la IA y, cuando falló, qué ocurrió y qué hacer.",
+  },
+  "Uso e orçamento": { es: "Uso y presupuesto" },
+  "Quanto a IA consumiu e qual é o teto de gasto do mês.": {
+    es: "Cuánto consumió la IA y cuál es el límite de gasto del mes.",
+  },
+
   // ─── Hub do CRM (NavHub: seções e subtítulo) ───
   //
   // As duas seções são a régua que decide o menu, escrita por extenso: o que se
@@ -425,6 +779,18 @@ export const DICIONARIO: Traducoes = {
   "Escolha por qual número de WhatsApp ele atende.": {
     es: "Elige por cuál número de WhatsApp atiende.",
   },
+  "Escolha por qual número de WhatsApp ele atende. O rascunho está salvo; conecte um número em Conexões e volte aqui para publicar.":
+    {
+      es: "Elige por cuál número de WhatsApp atiende. El borrador está guardado; conecta un número en Conexiones y vuelve aquí para publicar.",
+    },
+  "Nenhum número conectado ainda — o rascunho salva sem ele.": {
+    es: "Ningún número conectado todavía — el borrador se guarda sin él.",
+  },
+  "Conectar WhatsApp": { es: "Conectar WhatsApp" },
+  "para poder publicar.": { es: "para poder publicar." },
+  "Escolha o número para poder publicar. Sem ele, o rascunho salva mas não atende.": {
+    es: "Elige el número para poder publicar. Sin él, el borrador se guarda pero no atiende.",
+  },
   "Máximo de": { es: "Máximo de" },
   "capacidades por agente.": { es: "capacidades por agente." },
   "Campo inválido.": { es: "Campo inválido." },
@@ -526,6 +892,7 @@ export const DICIONARIO: Traducoes = {
   // ─── Agentes de IA: seletor de modelo, capacidades, credencial, handoff ───
   Modelo: { es: "Modelo" },
   "Selecione um modelo": { es: "Selecciona un modelo" },
+  "Digite o identificador do modelo": { es: "Escribe el identificador del modelo" },
   "Nenhum modelo disponível": { es: "Ningún modelo disponible" },
   "Nenhuma capacidade disponível ainda para esta jornada.": {
     es: "Todavía no hay capacidades disponibles para esta jornada.",
@@ -666,6 +1033,18 @@ export const DICIONARIO: Traducoes = {
   Custa: { es: "Cuesta" },
   ". O modelo usado se escolhe em": { es: ". El modelo usado se elige en" },
   "Provedores de IA": { es: "Proveedores de IA" },
+  "Modelo padrão": { es: "Modelo predeterminado" },
+  "Vale em todo ponto que você não configurou individualmente — hoje,": {
+    es: "Vale en todo punto que no configuraste individualmente — hoy,",
+  },
+  "Trocar aqui muda todos eles de uma vez.": {
+    es: "Cambiar aquí los cambia todos de una vez.",
+  },
+  "Salvar padrão": { es: "Guardar predeterminado" },
+  "O padrão agora é": { es: "El predeterminado ahora es" },
+  "pontos precisam de um modelo especialista (embedding ou áudio) e não seguem este padrão — configure cada um abaixo:": {
+    es: "puntos necesitan un modelo especialista (embedding o audio) y no siguen este predeterminado — configurá cada uno abajo:",
+  },
   "Antes de cada mensagem sair": { es: "Antes de que cada mensaje salga" },
   "O assistente escreve, e o sistema confere. São": {
     es: "El asistente escribe, y el sistema revisa. Son",
@@ -1013,6 +1392,17 @@ export const DICIONARIO: Traducoes = {
       es: "Inicio del flujo — sin configuración adicional. El disparo (manual, cambio de etapa, silencio o fin de conversación) se define en la configuración del flujo.",
     },
   "Condição da aresta": { es: "Condición de la arista" },
+  "Excluir nó": { es: "Eliminar nodo" },
+  "Excluir aresta": { es: "Eliminar arista" },
+  "Excluir este nó?": { es: "¿Eliminar este nodo?" },
+  "Excluir esta aresta?": { es: "¿Eliminar esta arista?" },
+  "Este nó e as arestas ligadas a ele são apagados. Não é possível desfazer.": {
+    es: "Este nodo y las aristas ligadas a él se borran. No se puede deshacer.",
+  },
+  "A aresta entre os dois nós é apagada. Não é possível desfazer.": {
+    es: "La arista entre los dos nodos se borra. No se puede deshacer.",
+  },
+  Organizar: { es: "Organizar" },
   "Quando seguir por esta aresta": { es: "Cuándo seguir por esta arista" },
   "São as saídas do nó": { es: "Son las salidas del nodo" },
   "as mesmas que aparecem no card.": { es: "las mismas que aparecen en la tarjeta." },
@@ -1060,6 +1450,7 @@ export const DICIONARIO: Traducoes = {
   "é pelo menos": { es: "es al menos" },
   "é no máximo": { es: "es como máximo" },
   "tem a etiqueta": { es: "tiene la etiqueta" },
+  "tem a tag": { es: "tiene la etiqueta" },
   "não tem a etiqueta": { es: "no tiene la etiqueta" },
   "é exatamente": { es: "es exactamente" },
   "não é": { es: "no es" },
@@ -1421,6 +1812,8 @@ export const DICIONARIO: Traducoes = {
   "O que o cliente precisa": { es: "Qué necesita el cliente" },
   "Por que a IA travou": { es: "Por qué se trabó la IA" },
   "O que você quer fazer?": { es: "¿Qué quieres hacer?" },
+  "Resposta registrada; não repassada porque o atendimento mudou. Revise a conversa.": { es: "Respuesta registrada; no se transmitió porque la atención cambió. Revisa la conversación." },
+  "Resposta registrada para processamento.": { es: "Respuesta registrada para su procesamiento." },
   "Resposta enviada.": { es: "Respuesta enviada." },
   "Escreva sua resposta para a IA...": { es: "Escribe tu respuesta para la IA..." },
   "Escolha uma das opções acima para enviar.": { es: "Elige una de las opciones de arriba para enviar." },
@@ -1660,6 +2053,11 @@ export const DICIONARIO: Traducoes = {
   "Limite mensal (US$)": { es: "Límite mensual (US$)" },
   "Linha do tempo do aprendizado": { es: "Línea de tiempo del aprendizaje" },
   "Marcar resolvido": { es: "Marcar resuelto" },
+  "Marcar todos resolvidos": { es: "Marcar todos como resueltos" },
+  "Não foi possível resolver todos os avisos. Confira a lista e tente novamente.": {
+    es: "No se pudieron resolver todos los avisos. Revisa la lista e inténtalo de nuevo.",
+  },
+  "Falha ao resolver os avisos.": { es: "Fallo al resolver los avisos." },
   "Me avisar ao passar de": { es: "Avisarme al pasar de" },
   "Melhorias que você aprovou": { es: "Mejoras que aprobaste" },
   "Memória da IA": { es: "Memoria de la IA" },
@@ -2266,6 +2664,17 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível iniciar impersonate": { es: "No se pudo iniciar el impersonate" },
   "Erro de rede ao iniciar impersonate": { es: "Error de red al iniciar el impersonate" },
   "Impersonate indisponível": { es: "Impersonate no disponible" },
+  "Acompanhar": { es: "Acompañar" },
+  "Acompanhe": { es: "Acompañe" },
+  "Acompanhar organização": { es: "Acompañar organización" },
+  "Iniciar acompanhamento?": { es: "¿Iniciar acompañamiento?" },
+  "com sua identidade de administrador. As ações pelo aplicativo serão registradas em seu nome. O acesso dura até uma hora.": { es: "con su identidad de administrador. Las acciones en la aplicación se registrarán en su nombre. El acceso dura hasta una hora." },
+  "Acompanhamento encerrado": { es: "Acompañamiento finalizado" },
+  "Suporte à organização": { es: "Soporte a la organización" },
+  "Edição permitida": { es: "Edición permitida" },
+  "Sair do acompanhamento": { es: "Salir del acompañamiento" },
+  "Encerre o acompanhamento para continuar": { es: "Finalice el acompañamiento para continuar" },
+  "O prazo ou as permissões desta sessão mudaram. Saia do acompanhamento para voltar à sua organização.": { es: "El plazo o los permisos de esta sesión cambiaron. Salga del acompañamiento para volver a su organización." },
   Impersonar: { es: "Impersonar" },
   "Impersonar tenant": { es: "Impersonar tenant" },
   "Iniciar impersonate?": { es: "¿Iniciar el impersonate?" },
@@ -3087,7 +3496,6 @@ export const DICIONARIO: Traducoes = {
   "Escopos:": { es: "Alcances:" },
   "Webhooks registrados:": { es: "Webhooks registrados:" },
   "Proteção de envio atualizada.": { es: "Protección de envío actualizada." },
-  "Não foi possível salvar.": { es: "No se pudo guardar." },
   "Proteção de envio —": { es: "Protección de envío —" },
   "Estes limites protegem o número contra bloqueio do WhatsApp. Campo vazio usa o padrão seguro do sistema (mostrado no campo).": {
     es: "Estos límites protegen el número contra el bloqueo de WhatsApp. Campo vacío usa el valor seguro predeterminado del sistema (que se muestra en el campo).",
@@ -3154,9 +3562,6 @@ export const DICIONARIO: Traducoes = {
     es: "Un número recién conectado envía poco y sube de a poco — enviar demasiado al principio es la causa nº 1 de bloqueo.",
   },
   "Salvar proteção": { es: "Guardar protección" },
-  "não configurado nesta instalação — defina no servidor antes de continuar": {
-    es: "no configurado en esta instalación — defínelo en el servidor antes de continuar",
-  },
   "Copiado.": { es: "Copiado." },
   Copiar: { es: "Copiar" },
   "Conectado:": { es: "Conectado:" },
@@ -3288,6 +3693,7 @@ export const DICIONARIO: Traducoes = {
   "roteadores de IA": { es: "enrutadores de IA" },
   "ajuste de proteção de envio": { es: "ajuste de protección de envío" },
   "ajustes de proteção de envio": { es: "ajustes de protección de envío" },
+  "Não foi possível carregar a proteção de envio desta conexão. Ela pode ter sido removida, ou esta lista está desatualizada.": { es: "No se pudo cargar la protección de envío de esta conexión. Puede que se haya eliminado, o esta lista está desactualizada." },
   "conversa continua": { es: "conversación continúa" },
   "conversas continuam": { es: "conversaciones continúan" },
 
@@ -3559,6 +3965,35 @@ export const DICIONARIO: Traducoes = {
     es: "No pude iniciar la actualización. Intenta de nuevo en instantes.",
   },
   "Atualizando para a versão": { es: "Actualizando a la versión" },
+  // ── A espera antes de o servidor pegar o pedido, e o fim reconhecido na hora.
+  //    Os dois estados que a tela ganhou quando parou de fingir que a conversa
+  //    com o host é instantânea (ver o cabeçalho do `UpdatePanel`).
+  "Pedido enviado — esperando o servidor pegar": {
+    es: "Pedido enviado — esperando que el servidor lo tome",
+  },
+  "Anotei o pedido de atualizar para a versão": {
+    es: "Anoté el pedido de actualizar a la versión",
+  },
+  "O servidor confere se há algo a fazer de poucos em poucos minutos, então a atualização pode levar até cerca de cinco minutos para começar.": {
+    es: "El servidor revisa si hay algo que hacer cada pocos minutos, así que la actualización puede tardar hasta unos cinco minutos en empezar.",
+  },
+  "Esta tela ficar parada nesse tempo é normal": {
+    es: "Que esta pantalla quede quieta durante ese tiempo es normal",
+  },
+  " — ela se mexe sozinha assim que o servidor começar.": {
+    es: " — se mueve sola en cuanto el servidor empiece.",
+  },
+  "Esperando há": { es: "Esperando hace" },
+  "Pode fechar esta página: o pedido já está registrado e não se perde.": {
+    es: "Puedes cerrar esta página: el pedido ya está registrado y no se pierde.",
+  },
+  "Pronto — você está na versão": { es: "Listo — estás en la versión" },
+  "A atualização terminou e o sistema já está no ar na versão": {
+    es: "La actualización terminó y el sistema ya está en línea en la versión",
+  },
+  "O servidor confirma isso na próxima vez que falar comigo, daqui a alguns minutos — até lá, esta tela já sabe.": {
+    es: "El servidor lo confirma la próxima vez que hable conmigo, en unos minutos — hasta entonces, esta pantalla ya lo sabe.",
+  },
   "O sistema sai do ar por alguns instantes e volta sozinho. Pode deixar esta página aberta.": {
     es: "El sistema se apaga por unos instantes y vuelve solo. Puedes dejar esta página abierta.",
   },
@@ -3745,7 +4180,6 @@ export const DICIONARIO: Traducoes = {
     es: "¿Desactivar la verificación en dos pasos de esta cuenta?",
   },
   "Verificação desligada.": { es: "Verificación desactivada." },
-  "Desligando…": { es: "Desactivando…" },
 
   // ─── app/actions/auth/politicaDeMfa.ts (erros do painel de Segurança/MFA) ───
   "Sua sessão expirou. Entre de novo.": { es: "Tu sesión expiró. Entra de nuevo." },
@@ -3783,6 +4217,80 @@ export const DICIONARIO: Traducoes = {
   "Regenerar códigos de recuperação": { es: "Regenerar códigos de recuperación" },
   "Habilite MFA antes de gerar códigos.": { es: "Habilita MFA antes de generar códigos." },
   "Sessões ativas": { es: "Sesiones activas" },
+
+  // ── Chamada de voz pelo WhatsApp (spec 18) ──────────────────────────────
+  // O aviso de risco é a peça mais importante desta tela, e traduzi-lo pela
+  // metade seria pior que não traduzir: quem lê espanhol veria o botão em
+  // espanhol e o RISCO em português — a parte que precisa ser entendida.
+  "Chamada de voz pelo WhatsApp": { es: "Llamadas de voz por WhatsApp" },
+  "Ligada. Sua equipe pode ligar e receber chamadas pelo número conectado.": {
+    es: "Activada. Tu equipo puede llamar y recibir llamadas por el número conectado.",
+  },
+  "Desligada. Ninguém consegue ligar nem receber chamadas por aqui.": {
+    es: "Desactivada. Nadie puede llamar ni recibir llamadas por aquí.",
+  },
+  "A chamada de voz está desligada nesta empresa.": {
+    es: "La llamada de voz está desactivada en esta empresa.",
+  },
+  "Conectar o aparelho exige ligá-la antes, em Configurações › Segurança — é lá que está o aviso sobre o risco de o WhatsApp bloquear a conta, e quem liga precisa ter lido.":
+    {
+      es: "Conectar el dispositivo exige activarla antes, en Configuración › Seguridad — allí está el aviso sobre el riesgo de que WhatsApp bloquee la cuenta, y quien la activa tiene que haberlo leído.",
+    },
+  "Leia antes de ligar": { es: "Lee antes de activar" },
+  "Para fazer chamadas, o sistema precisa conectar um segundo aparelho ao mesmo número de WhatsApp que você já usa para atender. Essa conexão não é feita pelo caminho oficial do WhatsApp.":
+    {
+      es: "Para hacer llamadas, el sistema necesita conectar un segundo dispositivo al mismo número de WhatsApp que ya usas para atender. Esa conexión no se hace por la vía oficial de WhatsApp.",
+    },
+  "O WhatsApp pode entender isso como uso indevido e bloquear a CONTA — não só a chamada. Se isso acontecer, você perde também as mensagens desse número, e recuperar depende do WhatsApp, não de nós.":
+    {
+      es: "WhatsApp puede considerarlo un uso indebido y bloquear la CUENTA, no solo la llamada. Si eso ocurre, también pierdes los mensajes de ese número, y recuperarlo depende de WhatsApp, no de nosotros.",
+    },
+  "Ligue apenas se a chamada de voz valer esse risco para o seu negócio. Você pode desligar a qualquer momento aqui mesmo — e o aparelho é desconectado na hora.":
+    {
+      es: "Actívala solo si las llamadas de voz valen ese riesgo para tu negocio. Puedes desactivarla en cualquier momento aquí mismo, y el dispositivo se desconecta al instante.",
+    },
+  "Este servidor não tem a chamada de voz instalada. Quem cuida da instalação precisa ligá-la antes — depois esta opção fica disponível aqui.":
+    {
+      es: "Este servidor no tiene las llamadas de voz instaladas. Quien administra la instalación debe activarlas antes; después esta opción aparece aquí.",
+    },
+  "Só quem é administrador desta empresa pode mudar isto.": {
+    es: "Solo quien es administrador de esta empresa puede cambiar esto.",
+  },
+  "Risco aceito em": { es: "Riesgo aceptado el" },
+  "Não consegui verificar se a chamada de voz está ligada nesta empresa. Recarregue a página; se continuar, avise quem cuida da instalação.":
+    {
+      es: "No pude verificar si las llamadas de voz están activadas en esta empresa. Recarga la página; si continúa, avisa a quien administra la instalación.",
+    },
+  "Desligar e desconectar o aparelho": { es: "Desactivar y desconectar el dispositivo" },
+  "Desligando…": { es: "Desactivando…" },
+  "Eu li o aviso acima e aceito o risco de o WhatsApp bloquear esta conta.": {
+    es: "He leído el aviso anterior y acepto el riesgo de que WhatsApp bloquee esta cuenta.",
+  },
+  "Ligar chamada de voz": { es: "Activar llamadas de voz" },
+  "Ligando…": { es: "Activando…" },
+  // Mensagens que as rotas de voz devolvem traduzidas (`traduzir(..., idioma)`).
+  "Chamada de voz ligada.": { es: "Llamadas de voz activadas." },
+  "Chamada de voz desligada.": { es: "Llamadas de voz desactivadas." },
+  "O número de voz está sem conexão com o WhatsApp neste momento. Aguarde alguns segundos e tente de novo; se continuar, desconecte o número e pareie de novo em Configurações › Canais.":
+    {
+      es: "El número de voz está sin conexión con WhatsApp en este momento. Espera unos segundos y vuelve a intentarlo; si continúa, desconecta el número y vuelve a vincularlo en Configuración › Canales.",
+    },
+  "Chamada de voz desligada e aparelho desconectado.": {
+    es: "Llamadas de voz desactivadas y dispositivo desconectado.",
+  },
+  "Não foi possível salvar.": { es: "No se pudo guardar." },
+  "Para ligar a chamada de voz é preciso aceitar o risco de vincular um segundo aparelho ao seu número.":
+    {
+      es: "Para activar las llamadas de voz hay que aceptar el riesgo de vincular un segundo dispositivo a tu número.",
+    },
+  "A chamada de voz não está disponível neste servidor. Quem administra a instalação precisa ligá-la antes.":
+    {
+      es: "Las llamadas de voz no están disponibles en este servidor. Quien administra la instalación debe activarlas antes.",
+    },
+  "A chamada de voz não está disponível neste servidor — sem ela o aparelho não pode ser desconectado.":
+    {
+      es: "Las llamadas de voz no están disponibles en este servidor; sin ellas el dispositivo no puede desconectarse.",
+    },
   "Listagem de sessões — em breve. Por enquanto, deslogue todos os dispositivos:": {
     es: "Listado de sesiones — próximamente. Por ahora, cierra sesión en todos los dispositivos:",
   },
@@ -4019,6 +4527,7 @@ export const DICIONARIO: Traducoes = {
   "Entrou por": { es: "Entró por" },
   "Posição": { es: "Posición" },
   "na fila": { es: "en la cola" },
+  "Última mensagem do cliente": { es: "Último mensaje del cliente" },
   Arquivada: { es: "Archivada" },
   "Aguardando o cliente": { es: "Esperando al cliente" },
 
@@ -4381,8 +4890,8 @@ export const DICIONARIO: Traducoes = {
   "Este servidor ainda não está pronto para RECEBER por este caminho.": {
     es: "Este servidor todavía no está listo para RECIBIR por este camino.",
   },
-  "Dá para conectar e já enviar, mas as respostas do cliente não vão chegar até quem instalou o sistema completar uma configuração no servidor. Se você quer atender hoje, o caminho do código com o celular funciona agora — e dá para trocar depois, sem perder nada.": {
-    es: "Se puede conectar y ya enviar, pero las respuestas del cliente no van a llegar hasta que quien instaló el sistema complete una configuración en el servidor. Si quieres atender hoy, el camino del código con el celular funciona ahora — y se puede cambiar después, sin perder nada.",
+  "Dá para conectar e já enviar, mas as respostas do cliente não vão chegar até quem administra a instalação cadastrar o App da Meta, em Admin › API Oficial (Meta). Se você quer atender hoje, o caminho do código com o celular funciona agora — e dá para trocar depois, sem perder nada.": {
+    es: "Se puede conectar y ya enviar, pero las respuestas del cliente no van a llegar hasta que quien administra la instalación registre la App de Meta, en Admin › API Oficial (Meta). Si quieres atender hoy, el camino del código con el celular funciona ahora — y se puede cambiar después, sin perder nada.",
   },
   "O WhatsApp desta instalação ainda não subiu.": { es: "El WhatsApp de esta instalación todavía no arrancó." },
   "Ele roda no seu próprio servidor. Dá para seguir sem ele agora e conectar o número depois, em": {
@@ -5094,6 +5603,14 @@ export const DICIONARIO: Traducoes = {
   },
   "CPF (opcional)": { es: "CPF (opcional)" },
   "Criar contato": { es: "Crear contacto" },
+  "Trocar contato": { es: "Cambiar contacto" },
+  "Sem contato, este lead não recebe WhatsApp nem entra nas automações.": {
+    es: "Sin contacto, este lead no recibe WhatsApp ni entra en las automatizaciones.",
+  },
+  "Procure pelo nome ou telefone": { es: "Busque por nombre o teléfono" },
+  "Nenhum contato com esse nome ou telefone.": {
+    es: "Ningún contacto con ese nombre o teléfono.",
+  },
   "Contato criado": { es: "Contacto creado" },
   "Não foi possível carregar as sugestões agora.": { es: "No se pudieron cargar las sugerencias ahora." },
   "Não foi possível registrar a decisão.": { es: "No se pudo registrar la decisión." },
@@ -5108,6 +5625,8 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma atividade registrada ainda.": { es: "Ninguna actividad registrada todavía." },
   "Todas as origens": { es: "Todos los orígenes" },
   "Importado (CSV)": { es: "Importado (CSV)" },
+  "Anúncio da Meta": { es: "Anuncio de Meta" },
+  "Anúncio do Google": { es: "Anuncio de Google" },
 
   // ─── Settings: painel de atualização — histórico multi-versão (merge upstream) ───
   "Da versão": { es: "De la versión" },
@@ -5131,7 +5650,28 @@ export const DICIONARIO: Traducoes = {
   },
   "503 — Em manutenção": { es: "503 — En mantenimiento" },
   "Voltamos em alguns minutos.": { es: "Volvemos en unos minutos." },
+  // A recusa por modelo padrão passou a nomear as DUAS topologias: na nuvem o
+  // conserto é o script; num Supabase próprio ele não tem Management API para
+  // usar, e o caminho são as rotas do app.
+  "Este link veio do modelo de e-mail padrão do Supabase, que não fecha o acesso nesta instalação — pedir outro link não resolve. Quem administra o sistema precisa configurar os modelos de e-mail: na nuvem do Supabase, com ":
+    {
+      es: "Este enlace vino de la plantilla de correo predeterminada de Supabase, que no cierra el acceso en esta instalación — pedir otro enlace no lo resuelve. Quien administra el sistema necesita configurar las plantillas de correo: en la nube de Supabase, con ",
+    },
+  "; num Supabase próprio, apontando GOTRUE_MAILER_TEMPLATES_* para as rotas /email-templates/ do app.":
+    {
+      es: "; en un Supabase propio, apuntando GOTRUE_MAILER_TEMPLATES_* a las rutas /email-templates/ de la app.",
+    },
   "Conta suspensa": { es: "Cuenta suspendida" },
+  // Tela irmã de `/account-suspended`: quem TINHA acesso e não tem mais.
+  "Acesso revogado": { es: "Acceso revocado" },
+  "Seu acesso a esta organização foi retirado. Se você acredita que isso é um engano, fale com quem administra a empresa — só ela pode devolvê-lo.":
+    {
+      es: "Tu acceso a esta organización fue retirado. Si crees que es un error, habla con quien administra la empresa — solo ella puede devolvértelo.",
+    },
+  "Seu acesso a esta organização foi retirado. Fale com quem administra a empresa — criar uma organização nova não devolve o acesso.":
+    {
+      es: "Tu acceso a esta organización fue retirado. Habla con quien administra la empresa — crear una organización nueva no devuelve el acceso.",
+    },
   "Sua conta está suspensa. Entre em contato com": {
     es: "Tu cuenta está suspendida. Contacta a",
   },
@@ -5480,6 +6020,34 @@ export const DICIONARIO: Traducoes = {
   "Novo nome de": { es: "Nuevo nombre de" },
   "Padrão": { es: "Predeterminado" },
   "Tornar padrão": { es: "Hacer predeterminado" },
+  "Clientes": { es: "Clientes" },
+  "Funil de clientes": { es: "Embudo de clientes" },
+  "Deixar de ser funil de clientes": { es: "Dejar de ser embudo de clientes" },
+  "Quem já tem atendimento marcado entra pelo funil de clientes. Sem um funil marcado, entra pelo padrão.": { es: "Quien ya tiene una cita agendada entra por el embudo de clientes. Sin un embudo marcado, entra por el predeterminado." },
+  "Cliente desde": { es: "Cliente desde" },
+  // Clientes pela agenda (migration 0262): o interruptor em Tipos de agendamento e a porta no rodapé de Funis.
+  "Acompanhamento somente leitura ou encerrado.": { es: "Acompañamiento de solo lectura o finalizado." },
+  "Confirme a verificação em duas etapas.": { es: "Confirma la verificación en dos pasos." },
+  "Outra mudança estava em andamento. Tente de novo.": { es: "Otro cambio estaba en curso. Inténtalo de nuevo." },
+  "Clientes pela agenda": { es: "Clientes por la agenda" },
+  "Quem tem horário marcado vira cliente": { es: "Quien tiene una cita agendada pasa a ser cliente" },
+  "Com isto ligado, todo contato com horário marcado ganha a etiqueta “cliente” e a ficha passa a mostrar “Cliente desde”. Ao ligar, quem já teve horário marcado também ganha. Horário cancelado e falta não contam: se não sobrar nenhum horário que conte, sai a etiqueta que o sistema pôs — a que a equipe pôs à mão fica. Se alguém da equipe tirar a etiqueta, ela não volta.": { es: "Con esto activado, todo contacto con una cita agendada recibe la etiqueta “cliente” y su ficha pasa a mostrar “Cliente desde”. Al activarlo, quien ya tuvo una cita también la recibe. Las citas canceladas y las ausencias no cuentan: si no queda ninguna cita que cuente, se quita la etiqueta que puso el sistema — la que el equipo puso a mano se queda. Si alguien del equipo quita la etiqueta, no vuelve." },
+  "Desligado: ninguém ganha a etiqueta, a ficha não mostra “Cliente desde” e todo contato novo entra pelo funil padrão. As etiquetas que já existem ficam como estão.": { es: "Desactivado: nadie recibe la etiqueta, la ficha no muestra “Cliente desde” y todo contacto nuevo entra por el embudo predeterminado. Las etiquetas que ya existen se quedan como están." },
+  "Ligado: quem marcar horário ganha a etiqueta “cliente” na hora.": { es: "Activado: quien agende una cita recibe la etiqueta “cliente” en el momento." },
+  "As automações “Quando um contato ganhar uma tag” disparam uma vez por contato: na primeira vez que o sistema acrescenta a etiqueta. Não disparam para quem já era cliente ao ligar, para quem já tinha a etiqueta posta à mão, nem de novo para quem cancela e marca outra vez.": { es: "Las automatizaciones “Cuando un contacto reciba una etiqueta” se activan una vez por contacto: la primera vez que el sistema agrega la etiqueta. No se activan para quien ya era cliente al activarla, para quien ya tenía la etiqueta puesta a mano, ni de nuevo para quien cancela y vuelve a agendar." },
+  "Ligar clientes pela agenda?": { es: "¿Activar clientes por la agenda?" },
+  "Todos os contatos que já tiveram horário marcado (sem contar cancelados e faltas) ganham a etiqueta “cliente” agora. Se a regra já esteve ligada, quem ficou sem horário que conte perde a etiqueta que o sistema tinha posto. Desligar depois não tira a etiqueta de ninguém.": { es: "Todos los contactos que ya tuvieron una cita (sin contar canceladas ni ausencias) reciben la etiqueta “cliente” ahora. Si la regla ya estuvo activada, quien se quedó sin una cita que cuente pierde la etiqueta que había puesto el sistema. Desactivarlo después no le quita la etiqueta a nadie." },
+  "{n} contatos ganharam a etiqueta “cliente”.": { es: "{n} contactos recibieron la etiqueta “cliente”." },
+  "1 contato ganhou a etiqueta “cliente”.": { es: "1 contacto recibió la etiqueta “cliente”." },
+  "Nenhum contato tinha horário marcado ainda. Quem marcar daqui em diante ganha a etiqueta.": { es: "Ningún contacto tenía una cita todavía. Quien agende a partir de ahora recibirá la etiqueta." },
+  "Nenhum contato novo ganhou a etiqueta: {c} contatos já eram clientes.": { es: "Ningún contacto nuevo recibió la etiqueta: {c} contactos ya eran clientes." },
+  "Nenhum contato novo ganhou a etiqueta: 1 contato já era cliente.": { es: "Ningún contacto nuevo recibió la etiqueta: 1 contacto ya era cliente." },
+  "Nenhum contato ganhou a etiqueta.": { es: "Ningún contacto recibió la etiqueta." },
+  "Nenhum contato virou cliente: os horários que existem estão cancelados ou marcados como falta.": { es: "Ningún contacto pasó a ser cliente: las citas que existen están canceladas o marcadas como ausencia." },
+  "{m} contatos perderam a etiqueta “cliente”: enquanto a regra estava desligada, os horários deles foram cancelados, marcados como falta ou apagados.": { es: "{m} contactos perdieron la etiqueta “cliente”: mientras la regla estaba desactivada, sus citas se cancelaron, se marcaron como ausencia o se eliminaron." },
+  "1 contato perdeu a etiqueta “cliente”: enquanto a regra estava desligada, os horários dele foram cancelados, marcados como falta ou apagados.": { es: "1 contacto perdió la etiqueta “cliente”: mientras la regla estaba desactivada, sus citas se cancelaron, se marcaron como ausencia o se eliminaron." },
+  "Para separar quem já é cliente, ligue “Clientes pela agenda” em Configurações › Tipos de agendamento. Enquanto estiver desligado, todo contato novo entra pelo funil padrão.": { es: "Para separar a quien ya es cliente, active “Clientes por la agenda” en Configuración › Tipos de cita. Mientras esté desactivado, todo contacto nuevo entra por el embudo predeterminado." },
+  "Abrir Tipos de agendamento": { es: "Abrir Tipos de cita" },
   "Ele sai desta lista e para de receber negócio novo. O histórico continua guardado, e nada é apagado.": {
     es: "Sale de esta lista y deja de recibir negocio nuevo. El historial se conserva, y nada se borra.",
   },
@@ -5608,9 +6176,6 @@ export const DICIONARIO: Traducoes = {
   "Sua conta foi confirmada, mas o convite não vale mais — ele expirou ou foi emitido para outro e-mail. Peça um novo a quem te convidou. Não criamos uma empresa nova para você, porque não era isso que você estava fazendo.": {
     es: "Tu cuenta fue confirmada, pero la invitación ya no vale — venció o fue emitida para otro correo. Pide una nueva a quien te invitó. No creamos una empresa nueva para ti, porque no era eso lo que estabas haciendo.",
   },
-  "Este link veio do modelo de e-mail padrão do Supabase, que não fecha o acesso nesta instalação — pedir outro link não resolve. Quem administra o sistema precisa configurar os e-mails de acesso (": {
-    es: "Este enlace vino de la plantilla de correo predeterminada de Supabase, que no cierra el acceso en esta instalación — pedir otro enlace no resuelve. Quien administra el sistema necesita configurar los correos de acceso (",
-  },
   ", no kit de instalação).": { es: ", en el kit de instalación)." },
   "Sua conta foi confirmada, mas houve um erro ao preparar seu ambiente. Tente entrar novamente em instantes.": {
     es: "Tu cuenta fue confirmada, pero hubo un error al preparar tu ambiente. Intenta entrar de nuevo en unos instantes.",
@@ -5630,6 +6195,61 @@ export const DICIONARIO: Traducoes = {
   "em minutos": { es: "en minutos" },
   "Esse convite expirou ou não é mais válido. Peça um novo a quem te convidou — criar uma conta agora abriria uma empresa nova, e não é isso que você quer.": {
     es: "Esa invitación venció o ya no es válida. Pide una nueva a quien te invitó — crear una cuenta ahora abriría una empresa nueva, y no es eso lo que quieres.",
+  },
+  // ── Revogação reversível (2026-09-10) ─────────────────────────────────────
+  // ("Revogado" já existe mais acima — a chave é o texto, então repetir é erro
+  //  de compilação, e é assim que o dicionário evita duas traduções da mesma
+  //  frase divergirem.)
+  "Devolver acesso": { es: "Devolver el acceso" },
+  "Acesso devolvido.": { es: "Acceso devuelto." },
+  // ("Seu nome" já existe mais acima — a chave é o próprio texto.)
+  "Informe seu nome": { es: "Escribe tu nombre" },
+  "Você já tem uma conta com este e-mail": {
+    es: "Ya tienes una cuenta con este correo",
+  },
+  "Entre com ela para aceitar o convite — não é preciso criar outra.": {
+    es: "Entra con ella para aceptar la invitación — no hace falta crear otra.",
+  },
+  "Entrar e aceitar o convite": { es: "Entrar y aceptar la invitación" },
+  "Recebeu um convite novo? Abra o link que chegou no seu e-mail — ele funciona mesmo com esta tela aberta, e devolve o seu acesso.": {
+    es: "¿Recibiste una invitación nueva? Abre el enlace que llegó a tu correo — funciona incluso con esta pantalla abierta, y te devuelve el acceso.",
+  },
+  // ── Cadastro apenas por convite (migration 0253) ──────────────────────────
+  "Cadastro apenas por convite": { es: "Registro solo por invitación" },
+  "Esta instalação não aceita cadastro aberto. Se você foi convidado, use o link que chegou no seu e-mail — ele já vem com o convite.": {
+    es: "Esta instalación no acepta registro abierto. Si te invitaron, usa el enlace que llegó a tu correo — ya trae la invitación.",
+  },
+  "Esse convite expirou ou não é mais válido. Peça um novo a quem te convidou — esta instalação não aceita cadastro sem convite.": {
+    es: "Esa invitación venció o ya no es válida. Pide una nueva a quien te invitó — esta instalación no acepta registro sin invitación.",
+  },
+  "Esta instalação aceita cadastro apenas por convite. Se você foi convidado, use o link que chegou no seu e-mail.": {
+    es: "Esta instalación acepta registro solo por invitación. Si te invitaron, usa el enlace que llegó a tu correo.",
+  },
+  "Esta instalação aceita cadastro apenas por convite. Peça um convite a quem administra o sistema.": {
+    es: "Esta instalación acepta registro solo por invitación. Pide una invitación a quien administra el sistema.",
+  },
+  "Sua conta foi confirmada, mas esta instalação aceita cadastro apenas por convite — então não criamos uma empresa para você. Peça um convite a quem administra o sistema; o link dele já traz tudo o que falta.": {
+    es: "Tu cuenta fue confirmada, pero esta instalación acepta registro solo por invitación — así que no creamos una empresa para ti. Pide una invitación a quien administra el sistema; su enlace ya trae todo lo que falta.",
+  },
+  "Cadastro": { es: "Registro" },
+  "Quem pode criar conta": { es: "Quién puede crear una cuenta" },
+  "Quem pode criar uma conta nesta instalação.": {
+    es: "Quién puede crear una cuenta en esta instalación.",
+  },
+  "Vale para a instalação inteira, não para uma empresa só. Quem já tem conta continua entrando normalmente.": {
+    es: "Vale para toda la instalación, no para una sola empresa. Quien ya tiene cuenta sigue entrando normalmente.",
+  },
+  "Ligado: só entra quem recebeu um convite. Quem abrir a tela de cadastro sem convite vê um aviso e é levado ao login.": {
+    es: "Activado: solo entra quien recibió una invitación. Quien abra la pantalla de registro sin invitación ve un aviso y va al inicio de sesión.",
+  },
+  "Desligado: qualquer pessoa pode criar uma conta e abrir a própria empresa. É como o sistema sempre funcionou.": {
+    es: "Desactivado: cualquier persona puede crear una cuenta y abrir su propia empresa. Es como el sistema siempre funcionó.",
+  },
+  "Com isto ligado, a única porta de entrada é o convite — inclusive para você, se um dia precisar de uma conta nova. Convide pela tela de Equipe antes de precisar.": {
+    es: "Con esto activado, la única puerta de entrada es la invitación — incluso para ti, si algún día necesitas una cuenta nueva. Invita desde la pantalla de Equipo antes de necesitarlo.",
+  },
+  "Não deu para salvar. Tente de novo em instantes.": {
+    es: "No se pudo guardar. Inténtalo de nuevo en unos instantes.",
   },
   "Já tem conta?": { es: "¿Ya tienes cuenta?" },
   "Email ou senha incorretos.": { es: "Correo o contraseña incorrectos." },
@@ -5786,6 +6406,16 @@ export const DICIONARIO: Traducoes = {
   "Duração": { es: "Duración" },
   "Quem atende": { es: "Quién atiende" },
   "O que se pode marcar, quanto dura e quem atende. É isto que a tela de marcar e o agente de IA oferecem ao cliente.": { es: "Qué se puede agendar, cuánto dura y quién atiende. Esto es lo que la pantalla de agendar y el agente de IA le ofrecen al cliente." },
+  "Avisar o cliente antes do compromisso, pelo WhatsApp": { es: "Avisar al cliente antes de la cita, por WhatsApp" },
+  "Quantos minutos antes": { es: "Cuántos minutos antes" },
+  "E de novo, quantos minutos antes": { es: "Y de nuevo, cuántos minutos antes" },
+  "Opcional. Até 3, separados por vírgula. Ex.: 180 avisa de novo 3 horas antes.": {
+    es: "Opcional. Hasta 3, separados por coma. Ej.: 180 avisa de nuevo 3 horas antes.",
+  },
+  "avisa o cliente": { es: "avisa al cliente" },
+  "antes": { es: "antes" },
+  "O lembrete precisa sair pelo menos 15 minutos antes do compromisso.": { es: "El recordatorio debe salir al menos 15 minutos antes de la cita." },
+  "O lembrete não pode sair mais de 7 dias (10080 minutos) antes.": { es: "El recordatorio no puede salir más de 7 días (10080 minutos) antes." },
   "Ação contém": { es: "La acción contiene" },
   "Ator": { es: "Actor" },
   "Nenhum log no período.": { es: "Ningún registro en el período." },
@@ -5911,6 +6541,40 @@ export const DICIONARIO: Traducoes = {
     es: "cifrado no disponible en esta instalación (GUC app.nuvemshop_oauth_key ausente) — el secreto no fue guardado",
   },
   "Falta cadastrar o aplicativo do Google desta instalação. Leva um minuto e você faz por aqui mesmo.": { es: "Falta registrar la aplicación de Google de esta instalación. Toma un minuto y lo haces aquí mismo." },
+
+  // ─── O App da Meta da instalação (/admin/meta, migration 0257) ───
+  "API Oficial da Meta desta instalação": { es: "API Oficial de Meta de esta instalación" },
+  "É com estas duas informações que o sistema confere que cada mensagem recebida pelo número oficial veio mesmo da Meta. Elas valem para a instalação inteira — cada empresa conecta o próprio número depois, em Conexões.": { es: "Con estos dos datos el sistema comprueba que cada mensaje recibido por el número oficial vino realmente de Meta. Valen para toda la instalación — cada empresa conecta su propio número después, en Conexiones." },
+  "Não deu para ler a configuração salva agora, então o que aparece abaixo pode não ser o que está valendo. Recarregue a página antes de trocar qualquer coisa.": { es: "No se pudo leer la configuración guardada ahora, así que lo que aparece abajo puede no ser lo que está vigente. Recarga la página antes de cambiar cualquier cosa." },
+  "Chave secreta do aplicativo": { es: "Clave secreta de la aplicación" },
+  "••••••••  (já cadastrada)": { es: "••••••••  (ya registrada)" },
+  "32 letras e números": { es: "32 letras y números" },
+  "Fica no painel da Meta, em Configurações do app › Básico. Ela é guardada cifrada e nunca volta a aparecer nesta tela.": { es: "Está en el panel de Meta, en Configuración de la app › Básica. Se guarda cifrada y nunca vuelve a aparecer en esta pantalla." },
+  "Esta instalação já tem a chave e o token no arquivo de configuração do servidor. O que você salvar aqui passa a valer no lugar deles — e, a partir daí, é o token desta tela que precisa estar colado no painel da Meta.": { es: "Esta instalación ya tiene la clave y el token en el archivo de configuración del servidor. Lo que guardes aquí pasa a valer en su lugar — y, desde entonces, es el token de esta pantalla el que tiene que estar pegado en el panel de Meta." },
+  "Última alteração em": { es: "Último cambio el" },
+  "Já existe um token gerado.": { es: "Ya hay un token generado." },
+  "Ainda não existe. Ele é criado pelo sistema na primeira vez que você salva a chave secreta — ninguém precisa inventar nada.": { es: "Todavía no existe. El sistema lo crea la primera vez que guardas la clave secreta — nadie tiene que inventar nada." },
+  "Seu token de verificação": { es: "Tu token de verificación" },
+  "Copie agora.": { es: "Cópialo ahora." },
+  "Por segurança, ele não aparece de novo depois que você sair desta página. Se perder, é só gerar outro aqui.": { es: "Por seguridad, no vuelve a aparecer después de que salgas de esta página. Si lo pierdes, basta con generar otro aquí." },
+  "No painel da Meta, em WhatsApp › Configuração › Webhook, este token vai no campo “Verificar token”. O outro campo, “URL de callback”, é de cada número: ele aparece em Conexões › API Oficial (Meta), depois que o número é conectado. Abra Conexões em outra aba, para não perder o token desta página.": { es: "En el panel de Meta, en WhatsApp › Configuración › Webhook, este token va en el campo “Verificar token”. El otro campo, “URL de devolución de llamada”, es de cada número: aparece en Conexiones › API Oficial (Meta), después de conectar el número. Abre Conexiones en otra pestaña, para no perder el token de esta página." },
+  "Abrir Conexões em outra aba": { es: "Abrir Conexiones en otra pestaña" },
+  "Abrir API Oficial (Meta) na administração": { es: "Abrir API Oficial (Meta) en la administración" },
+  "Gerar token": { es: "Generar token" },
+  "Gerar novo token": { es: "Generar nuevo token" },
+  "Gerar um novo token de verificação?": { es: "¿Generar un nuevo token de verificación?" },
+  "O token atual deixa de valer na hora. As mensagens que já chegam continuam chegando, porque elas são conferidas pela chave secreta. O que muda: a Meta só consegue confirmar o endereço do webhook de novo depois que você colar o token novo no painel dela.": { es: "El token actual deja de valer en el acto. Los mensajes que ya llegan siguen llegando, porque se comprueban con la clave secreta. Lo que cambia: Meta solo puede volver a confirmar la dirección del webhook después de que pegues el token nuevo en su panel." },
+  "A chave parece incompleta. Copie de novo do painel da Meta — ela tem 32 caracteres.": { es: "La clave parece incompleta. Cópiala de nuevo del panel de Meta — tiene 32 caracteres." },
+  "Cadastre a chave secreta do aplicativo primeiro. Sem ela o token não vale.": { es: "Registra primero la clave secreta de la aplicación. Sin ella el token no vale." },
+  "Nada mudou. Digite uma chave nova para substituir a atual.": { es: "Nada cambió. Escribe una clave nueva para reemplazar la actual." },
+  "Não consegui conferir o que já está gravado, então nada foi alterado. Tente de novo em instantes.": { es: "No pude comprobar lo que ya está guardado, así que no se cambió nada. Inténtalo de nuevo en unos instantes." },
+  "Não deu para salvar, e nada foi gravado.": { es: "No se pudo guardar, y no se grabó nada." },
+  "Chave secreta salva.": { es: "Clave secreta guardada." },
+  "Token de verificação gerado.": { es: "Token de verificación generado." },
+  "Não deu para copiar. Selecione o texto e copie à mão.": { es: "No se pudo copiar. Selecciona el texto y cópialo a mano." },
+  "Já cadastrado na administração da instalação. Ele aparece uma vez só, quando é gerado — se não foi guardado, quem administra a instalação gera outro em Admin › API Oficial (Meta).": { es: "Ya registrado en la administración de la instalación. Aparece una sola vez, cuando se genera — si no se guardó, quien administra la instalación genera otro en Admin › API Oficial (Meta)." },
+  "Ainda não configurado. Quem administra a instalação cadastra em Admin › API Oficial (Meta), e o token aparece lá pronto para copiar.": { es: "Todavía no configurado. Quien administra la instalación lo registra en Admin › API Oficial (Meta), y el token aparece allí listo para copiar." },
+  "cifra indisponível nesta instalação (GUC app.nuvemshop_oauth_key ausente) — o verify token não foi gravado": { es: "cifrado no disponible en esta instalación (GUC app.nuvemshop_oauth_key ausente) — el verify token no fue guardado" },
   "O que ele consulta antes de responder": { es: "Qué consulta antes de responder" },
   "Marque o material do seu negócio que este assistente pode ler. Ele procura ali antes de responder, em vez de improvisar — e cita de onde tirou.": { es: "Marca el material de tu negocio que este asistente puede leer. Busca ahí antes de responder, en vez de improvisar — y cita de dónde lo sacó." },
   "Você ainda não cadastrou nenhum material.": { es: "Todavía no registraste ningún material." },
@@ -6341,6 +7005,7 @@ export const DICIONARIO: Traducoes = {
   "Funil não encontrado.": { es: "Embudo no encontrado." },
   "Informe o novo horário.": { es: "Indica el nuevo horario." },
   "Já existe um fluxo com este nome.": { es: "Ya existe un flujo con este nombre." },
+  "Já existe um contato com este telefone.": { es: "Ya existe un contacto con este teléfono." },
   "Janela inválida.": { es: "Ventana inválida." },
   "Janela inválida: 'from' deve ser anterior a 'to'.": { es: "Ventana inválida: 'from' debe ser anterior a 'to'." },
   "Lead não encontrado.": { es: "Lead no encontrado." },
@@ -6450,6 +7115,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Este horário não está disponível. Consulte os horários livres e escolha outro.": {
     es: "Este horario no está disponible. Consulta los horarios libres y elige otro.",
+  },
+  "Este horário já está ocupado na agenda de quem atende — por outro compromisso ou pelo Google Agenda.": {
+    es: "Este horario ya está ocupado en la agenda de quien atiende — por otro compromiso o por Google Calendar.",
   },
   "listagem sem recorte: informe contato, lead, dia, período (de+ate) ou responsável.": {
     es: "listado sin recorte: indica contacto, lead, día, período (de+ate) o responsable.",
@@ -6769,6 +7437,15 @@ export const DICIONARIO: Traducoes = {
   "você ainda não publicou seus horários": { es: "todavía no publicaste tus horarios" },
   "não consegui carregar os horários": { es: "no pude cargar los horarios" },
   "nenhum horário livre neste dia": { es: "ningún horario libre en este día" },
+  // O encaixe no painel de marcação (#858): a pessoa digita um horário fora da grade.
+  "Outro horário": { es: "Otro horario" },
+  "Usar": { es: "Usar" },
+  "nenhum horário publicado neste dia": { es: "ningún horario publicado en este día" },
+  "Nenhum horário publicado neste dia.": { es: "Ningún horario publicado en este día." },
+  "Vale fora dos horários publicados. A agenda só recusa se o horário já estiver ocupado.": {
+    es: "Vale fuera de los horarios publicados. La agenda solo lo rechaza si el horario ya está ocupado.",
+  },
+  "Não foi marcado. Tente de novo.": { es: "No se agendó. Inténtalo de nuevo." },
   "Marcar outro": { es: "Agendar otro" },
   "Ver na agenda": { es: "Ver en la agenda" },
   "horários": { es: "horarios" },
@@ -6832,6 +7509,78 @@ export const DICIONARIO: Traducoes = {
   "Salvar produto": { es: "Guardar producto" },
   "em estoque": { es: "en stock" },
   "sem controle de estoque": { es: "sin control de stock" },
+
+  // Chamada de voz WhatsApp (WaCalls, spec 18)
+  // "Chamar", não "Ligar" — a chave já existe com outro sentido (ativar/toggle,
+  // linha ~3725: "Ligar" -> "Activar"). Mesma palavra em PT, contextos
+  // diferentes; o dicionário é chaveado pelo texto, não por significado, então
+  // a colisão vira TS1117 (chave duplicada) se as duas usarem a mesma string.
+  "Chamar": { es: "Llamar" },
+  "Em ligação": { es: "En llamada" },
+  "Chamada de voz recebida": { es: "Llamada de voz recibida" },
+  "Recusar chamada": { es: "Rechazar llamada" },
+  "Atender chamada": { es: "Atender llamada" },
+  "Chamando…": { es: "Llamando…" },
+  // "Conectando…" já existe (linha ~3708, saúde do canal) com a MESMA
+  // tradução — reaproveitado, não duplicado aqui.
+  "Chamada em andamento": { es: "Llamada en curso" },
+  "Reativar microfone": { es: "Reactivar micrófono" },
+  "Silenciar microfone": { es: "Silenciar micrófono" },
+  "Encerrar chamada": { es: "Finalizar llamada" },
+  // Estado do TRANSPORTE de áudio, não da ligação — ver
+  // `hooks/voice/useVoiceCallSession.ts` (`EstadoDaMidia`).
+  "Abrindo o áudio…": { es: "Abriendo el audio…" },
+  "Sem áudio: o canal de voz não abriu": { es: "Sin audio: el canal de voz no se abrió" },
+  "O áudio desta ligação está em outra aba": { es: "El audio de esta llamada está en otra pestaña" },
+  "Ouvir aqui": { es: "Escuchar aquí" },
+  "O áudio caiu": { es: "El audio se cayó" },
+  "Não consegui abrir o áudio. Confira o microfone.": { es: "No pude abrir el audio. Revisa el micrófono." },
+  "Reconectar o áudio": { es: "Reconectar el audio" },
+  "Chamada de voz": { es: "Llamada de voz" },
+  "Chamada de voz sem resposta": { es: "Llamada de voz sin respuesta" },
+  "A chamada de voz não está configurada.": { es: "La llamada de voz no está configurada." },
+  "Falta o endereço do serviço (": { es: "Falta la dirección del servicio (" },
+  ") nas variáveis de ambiente desta instalação.": {
+    es: ") en las variables de entorno de esta instalación.",
+  },
+  "Chamada de voz por WhatsApp": { es: "Llamada de voz por WhatsApp" },
+  "Um segundo aparelho vinculado ao mesmo número já conectado, só para ligar e atender chamadas. Escaneie uma vez para ativar.":
+    {
+      es: "Un segundo dispositivo vinculado al mismo número ya conectado, solo para llamar y atender llamadas. Escanee una vez para activar.",
+    },
+  "Não pareado": { es: "No emparejado" },
+  "Aparelho pareado": { es: "Dispositivo emparejado" },
+  "QR Code para parear chamada de voz": { es: "Código QR para emparejar llamada de voz" },
+  "Parear chamada de voz": { es: "Emparejar llamada de voz" },
+  "Risco aceito: um segundo aparelho vinculado ao mesmo número pode ser sinalizado pelo WhatsApp.":
+    {
+      es: "Riesgo aceptado: un segundo dispositivo vinculado al mismo número puede ser señalado por WhatsApp.",
+    },
+  "Pronto para ligar — o botão de chamar aparece nos contatos com telefone.": {
+    es: "Listo para llamar — el botón de llamar aparece en los contactos con teléfono.",
+  },
+  "Chamada de voz pareada!": { es: "¡Llamada de voz emparejada!" },
+  // Central de avisos: o RÓTULO DO KIND e a ORIENTAÇÃO passam por `t()`; o
+  // título e o corpo do aviso NÃO — são linha de `agent_inbox_items`, escrita
+  // pelo worker com dado de gente dentro (o telefone de quem ligou), e o
+  // dicionário é chaveado pela frase inteira. Mesma regra de todo kind irmão:
+  // nenhum título de aviso está aqui.
+  "Alguém ligou e ninguém atendeu": { es: "Alguien llamó y nadie atendió" },
+  "Retorne a ligação quando puder — quem ligou não foi atendido.": {
+    es: "Devuelva la llamada cuando pueda — quien llamó no fue atendido.",
+  },
+  "Ligar de volta": { es: "Devolver la llamada" },
+  // Diálogo de exclusão de canal (`frasesDoImpacto`): singular e plural.
+  "chamada de voz": { es: "llamada de voz" },
+  "chamadas de voz": { es: "llamadas de voz" },
+  "Não foi possível iniciar o pareamento.": { es: "No fue posible iniciar el emparejamiento." },
+  "O código de pareamento venceu. Clique em parear para gerar outro.": {
+    es: "El código de vinculación venció. Haz clic en vincular para generar otro.",
+  },
+  "Não foi possível receber o código de pareamento. Tente novamente.": {
+    es: "No fue posible recibir el código de emparejamiento. Inténtalo de nuevo.",
+  },
+
   // Mensajes de error de importación de planilha (lib/catalogo/planilha.ts)
   "A planilha está vazia.": { es: "La planilla está vacía." },
   // Uma frase por combinação do que falta: a recusa NOMEIA a coluna ausente, e
@@ -7242,6 +7991,7 @@ export const DICIONARIO: Traducoes = {
   "Este negócio não tem contato, então não há proposta do agente.": { es: "Este negocio no tiene contacto, así que no hay propuesta del agente." },
   "Este número foi excluído da Central de Conexões — reconectar não o traz de volta. Conecte um número para voltar a atender.": { es: "Este número fue eliminado de la Central de Conexiones — reconectar no lo trae de vuelta. Conecta un número para volver a atender." },
   "Falha ao processar o envio do arquivo.": { es: "Falla al procesar el envío del archivo." },
+  "Esta chave de idempotência já foi usada com outro conteúdo.": { es: "Esta clave de idempotencia ya fue usada con otro contenido." },
   "Filtros inválidos.": { es: "Filtros inválidos." },
   "Header Idempotency-Key é obrigatório.": { es: "El header Idempotency-Key es obligatorio." },
   "JSON inválido.": { es: "JSON inválido." },
@@ -7270,6 +8020,9 @@ export const DICIONARIO: Traducoes = {
     es: "no conseguí extraer texto de este PDF. Si son solo imágenes escaneadas, no hay ninguna letra para leer — envía una versión con texto seleccionable.",
   },
   "o arquivo não tem texto nenhum para indexar": { es: "el archivo no tiene ningún texto para indexar" },
+  "não consegui ler este arquivo como texto: os bytes não formam Markdown nem texto puro. Salve o material em UTF-8 (ou ANSI) e envie de novo — se o arquivo não for de texto, envie PDF.": {
+    es: "no conseguí leer este archivo como texto: los bytes no forman Markdown ni texto puro. Guarda el material en UTF-8 (o ANSI) y envíalo de nuevo — si el archivo no es de texto, envía PDF.",
+  },
   "Não é possível desativar o agent default da organização.": { es: "No es posible desactivar el agent default de la organización." },
   "Não é possível revogar o último admin do tenant.": { es: "No es posible revocar al último admin del tenant." },
   "O WhatsApp (WAHA) não está configurado neste ambiente (faltam WAHA_API_BASE_URL e/ou WAHA_API_KEY) — sem ele o número não pode ser desconectado do aparelho.": { es: "El WhatsApp (WAHA) no está configurado en este ambiente (faltan WAHA_API_BASE_URL y/o WAHA_API_KEY) — sin él el número no puede ser desconectado del aparato." },
@@ -7784,6 +8537,86 @@ export const DICIONARIO: Traducoes = {
   "A lista mostra só os mais recentes.": { es: "La lista muestra solo los más recientes." },
   "No período houve": { es: "En el período hubo" },
   "acontecimentos.": { es: "sucesos." },
+  "Carregando organização…": { es: "Cargando organización…" },
+  "Gerenciar organizações": { es: "Administrar organizaciones" },
+  "Não foi possível trocar de organização. Seu acesso pode ter mudado. Tente novamente.": { es: "No se pudo cambiar de organización. Su acceso puede haber cambiado. Inténtelo de nuevo." },
+  "Não foi possível trocar de organização. Tente novamente.": { es: "No se pudo cambiar de organización. Inténtelo de nuevo." },
+  "Confirmando…": { es: "Confirmando…" },
+  "Não foi possível aceitar este convite. Ele pode ter vencido ou seu acesso foi revogado. Peça um novo link ao administrador.": { es: "No se pudo aceptar esta invitación. Puede haber caducado o su acceso fue revocado. Solicite un nuevo enlace al administrador." },
+  "Organização criada": { es: "Organización creada" },
+  "Você já é administrador de": { es: "Ya es administrador de" },
+  "Convite enviado por e-mail.": { es: "Invitación enviada por correo electrónico." },
+  "O envio por e-mail não foi confirmado. Copie o link e compartilhe com o responsável.": { es: "No se confirmó el envío por correo electrónico. Copie el enlace y compártalo con el responsable." },
+  "Link do convite": { es: "Enlace de la invitación" },
+  "Válido até": { es: "Válido hasta" },
+  "Link copiado": { es: "Enlace copiado" },
+  "Selecione e copie o link acima.": { es: "Seleccione y copie el enlace de arriba." },
+  "Copiar convite": { es: "Copiar invitación" },
+  "Se o convite vencer, abra Equipe na organização para gerar outro.": { es: "Si la invitación caduca, abra Equipo en la organización para generar otra." },
+  "Voltar ao aplicativo": { es: "Volver a la aplicación" },
+  "Ver organização": { es: "Ver organización" },
+  "Você terá acesso como administrador e poderá concluir a configuração inicial.": { es: "Tendrá acceso como administrador y podrá completar la configuración inicial." },
+  "Nova organização": { es: "Nueva organización" },
+  "Dados da organização": { es: "Datos de la organización" },
+  "Criar organização": { es: "Crear organización" },
+
+  // Meet: estados, falhas e ações da agenda e mensagem transacional.
+  "Google Meet": { es: "Google Meet" },
+  "Abrir reunião": { es: "Abrir reunión" },
+  "Conversa que receberá o link": { es: "Conversación que recibirá el enlace" },
+  "Nenhum atendimento aberto para este contato": { es: "No hay ninguna atención abierta para este contacto" },
+  "Link ainda não solicitado": { es: "Enlace aún no solicitado" },
+  "Criando link do Google Meet": { es: "Creando enlace de Google Meet" },
+  "Link do Google Meet pronto": { es: "Enlace de Google Meet listo" },
+  "Não foi possível confirmar o link": { es: "No se pudo confirmar el enlace" },
+  "Solicitação de link cancelada": { es: "Solicitud de enlace cancelada" },
+  "Link não enviado ainda.": { es: "Enlace aún no enviado." },
+  "O envio do link ainda não foi autorizado.": { es: "El envío del enlace aún no ha sido autorizado." },
+  "Este atendimento está ocupado neste instante. Aguarde alguns segundos e tente de novo.": {
+    es: "Esta atención está ocupada en este momento. Espera unos segundos e inténtalo de nuevo.",
+  },
+  "Envio autorizado: aguardando o link ficar pronto.": { es: "Envío autorizado: esperando a que el enlace esté listo." },
+  "Link aguardando envio nesta conversa.": { es: "Enlace pendiente de envío en esta conversación." },
+  "Link enviado na conversa autorizada.": { es: "Enlace enviado en la conversación autorizada." },
+  "Entrega impedida. Confira o atendimento e o canal antes de autorizar novamente.": { es: "Entrega bloqueada. Revisa la atención y el canal antes de autorizar de nuevo." },
+  "O atendimento mudou. Autorize uma nova entrega na conversa desejada.": { es: "La atención cambió. Autoriza una nueva entrega en la conversación deseada." },
+  "O envio falhou. Confira o canal e tente novamente.": { es: "El envío falló. Revisa el canal e inténtalo de nuevo." },
+  "Não foi possível copiar. Use o link de abrir reunião para acessar a sala.": { es: "No se pudo copiar. Usa el enlace para abrir la reunión y acceder a la sala." },
+  "Tentar criar link novamente": { es: "Intentar crear el enlace de nuevo" },
+  "Verificar link novamente": { es: "Verificar el enlace de nuevo" },
+  "Link já enviado": { es: "Enlace ya enviado" },
+  "Envio já autorizado": { es: "Envío ya autorizado" },
+  "Enviar link ao cliente": { es: "Enviar enlace al cliente" },
+  "Enviar quando ficar pronto": { es: "Enviar cuando esté listo" },
+  "O Google não conseguiu criar o link. Tente criar novamente.": { es: "Google no pudo crear el enlace. Intenta crearlo de nuevo." },
+  "Esta agenda não permite Google Meet. Confira as configurações da conta.": { es: "Este calendario no permite Google Meet. Revisa la configuración de la cuenta." },
+  "O link ainda não foi confirmado. Tente verificar novamente.": { es: "El enlace aún no se ha confirmado. Intenta verificarlo de nuevo." },
+  "O Google não devolveu um link de vídeo válido. Verifique novamente.": { es: "Google no devolvió un enlace de video válido. Verifícalo de nuevo." },
+  "O contato bloqueou mensagens. O envio permanece impedido; respeite essa escolha.": { es: "El contacto bloqueó los mensajes. El envío sigue bloqueado; respeta su decisión." },
+  "Os dados do contato não permitem o envio. Confira a situação e a base legal no cadastro.": { es: "Los datos del contacto no permiten el envío. Revisa su situación y la base legal en su ficha." },
+  "O canal foi arquivado ou mudou. Escolha um atendimento em um canal disponível.": { es: "El canal fue archivado o cambió. Elige una atención en un canal disponible." },
+  "O acesso do solicitante ou o atendimento mudou. Confira o responsável e escolha um atendimento disponível.": { es: "El acceso del solicitante o la atención cambió. Revisa al responsable y elige una atención disponible." },
+  "O contato está em atendimento humano. O responsável pode autorizar este link pelo botão de envio, sem ativar a IA.": { es: "El contacto está siendo atendido por una persona. El responsable puede autorizar este enlace con el botón de envío, sin activar la IA." },
+  "A IA está silenciada neste atendimento. O responsável pode autorizar somente este link pelo botão de envio.": { es: "La IA está silenciada en esta atención. El responsable puede autorizar solo este enlace con el botón de envío." },
+  "Este atendimento está atribuído a uma pessoa. O responsável pode autorizar somente este link pelo botão de envio.": { es: "Esta atención está asignada a una persona. El responsable puede autorizar solo este enlace con el botón de envío." },
+  "O contato não está autorizado para atendimento automático. O responsável pode autorizar somente este link pelo botão de envio.": { es: "El contacto no está autorizado para la atención automática. El responsable puede autorizar solo este enlace con el botón de envío." },
+  "A autorização de atendimento automático expirou. O responsável pode autorizar somente este link pelo botão de envio.": { es: "La autorización de atención automática venció. El responsable puede autorizar solo este enlace con el botón de envío." },
+  "O envio atingiu uma janela ou limite do canal. Aguarde a liberação antes de tentar novamente.": { es: "El envío alcanzó una ventana o un límite del canal. Espera a que se habilite antes de intentarlo de nuevo." },
+  "Uma regra de envio impediu a mensagem. Confira o aviso na Central antes de tentar novamente.": { es: "Una regla de envío bloqueó el mensaje. Revisa el aviso en la Central antes de intentarlo de nuevo." },
+  "Sua reunião está marcada para": { es: "Tu reunión está programada para" },
+  "Link do Google Meet:": { es: "Enlace de Google Meet:" },
+
+
+  // ─── app/api/v1/cron/agenda-reminder (o lembrete que sai no WhatsApp) ───
+  //
+  // Não é tela: é mensagem que sai para o telefone de um cliente. Sem estas
+  // entradas, uma instalação em espanhol mandaria a frase em português com a
+  // data em espanhol — a mesma metade-traduzida que o guarda de data proíbe,
+  // só que irreversível, porque a mensagem já saiu. `às` já existia acima.
+  "Oi,": { es: "¡Hola," },
+  "Oi!": { es: "¡Hola!" },
+  "Passando pra lembrar do seu compromisso:": { es: "Te recuerdo tu cita:" },
+  "Endereço": { es: "Dirección" },
 
   // ─── lib/ai/pontos/resolver.ts (avisos do painel de Provedores de IA) ───
   "Este ponto usa o modelo definido na versão publicada do agente; a escolha do painel não se aplica.": {
@@ -7794,6 +8627,88 @@ export const DICIONARIO: Traducoes = {
   "Preenchido automaticamente pela IA a partir da conversa.": { es: "Completado automáticamente por la IA a partir de la conversación." },
   "Campos estratégicos": { es: "Campos estratégicos" },
   "(a IA também preenche)": { es: "(la IA también los completa)" },
+  // ─── app/app/team/_components/TeamInvitesClient.tsx (lista de convites) ───
+  "Convites": { es: "Invitaciones" },
+  "Convites enviados e seu status. Um convite aceito vira membro na lista acima.": {
+    es: "Invitaciones enviadas y su estado. Una invitación aceptada se vuelve miembro en la lista de arriba.",
+  },
+  "Nenhum convite enviado.": { es: "Ninguna invitación enviada." },
+  "Erro ao carregar convites.": { es: "Error al cargar las invitaciones." },
+  "E-mail enviado": { es: "Correo enviado" },
+  "Enviado em": { es: "Enviado el" },
+  "Convidado por": { es: "Invitado por" },
+  "Expirado": { es: "Expirada" },
+  "Não saiu": { es: "No salió" },
+  "reenviado": { es: "reenviado" },
+  "Revogar convite": { es: "Revocar invitación" },
+  "não poderá mais usar este convite para entrar. Você pode enviar um novo depois.": {
+    es: "ya no podrá usar esta invitación para entrar. Puedes enviar una nueva después.",
+  },
+  "Link do convite copiado.": { es: "Enlace de la invitación copiado." },
+  "Não foi possível copiar. Copie da barra do navegador.": {
+    es: "No se pudo copiar. Cópialo desde la barra del navegador.",
+  },
+  "Convite reenviado.": { es: "Invitación reenviada." },
+  "Convite revogado.": { es: "Invitación revocada." },
+
+  // ─── issue #651 — tabelas de rótulo que só o guarda ampliado alcança ───
+  //
+  // `chavesUsadas()` passou a resolver `t(X[k])`/`t(X.k)` quando `X` é tabela
+  // `const` de módulo. Estas 8 chaves saíam em português com o guarda antigo
+  // verde — medido rodando o guarda ampliado contra `main` antes de adicionar
+  // qualquer entrada aqui: as 8 abaixo, e só elas, reprovavam.
+  // ─── app/app/lgpd/requests/RequestsTable.tsx (SLA_LABELS) ───
+  "OK": { es: "OK" },
+  // ─── lib/kanban/score-band.ts (SCORE_BAND_LABELS) ───
+  "Frio": { es: "Frío" },
+  "Morno": { es: "Tibio" },
+  "Quente": { es: "Caliente" },
+  // ─── components/ai/GuardrailsEditor.tsx (KIND_LABELS) ───
+  //
+  // As 4 chaves abaixo já nascem em INGLÊS, não em português — bug à parte de
+  // #651: a convenção do projeto é "a chave é o texto em português", e aqui
+  // não é. Fora do escopo deste PR (é a fonte que precisa mudar, não a
+  // tradução), sinalizado no PR para abrir issue própria.
+  "Regex output block": { es: "Bloqueo de salida por regex" },
+  "RAG must hit": { es: "RAG debe coincidir" },
+  "Regex input block": { es: "Bloqueo de entrada por regex" },
+  "Contact flag": { es: "Marca de contacto" },
+  "Falha ao avançar:": { es: "Error al avanzar:" },
+  "Nuvemshop": { es: "Nuvemshop" },
+  "Billing": { es: "Facturación" },
+  "API Tokens": { es: "Tokens de API" },
+  "As colunas de cada funil, o vocabulário do negócio e os motivos de perda.": { es: "Las columnas de cada embudo, el vocabulario del negocio y los motivos de pérdida." },
+  "As conversas de WhatsApp, com você e a IA atendendo lado a lado.": { es: "Las conversaciones de WhatsApp, contigo y la IA atendiendo lado a lado." },
+  "As pessoas do outro lado da conversa e seu histórico.": { es: "Las personas del otro lado de la conversación y su historial." },
+  "Avise outros sistemas quando algo acontecer aqui dentro.": { es: "Avisa a otros sistemas cuando algo ocurra aquí dentro." },
+  "Conectar a conta de anúncios para ler o desempenho das campanhas.": { es: "Conectar la cuenta de anuncios para leer el rendimiento de las campañas." },
+  "Conecte a loja para trazer pedidos e clientes para dentro do CRM.": { es: "Conecta la tienda para traer pedidos y clientes al CRM." },
+  "Devolver ao anúncio as vendas que ele trouxe, para ele aprender a procurar mais clientes parecidos.": { es: "Devolver al anuncio las ventas que trajo, para que aprenda a buscar más clientes parecidos." },
+  "Funil e performance por atendente nos últimos 30 dias.": { es: "Embudo y rendimiento por agente en los últimos 30 días." },
+  "O catálogo da loja, com o preço que o atendente de IA responde.": { es: "El catálogo de la tienda, con el precio que responde el agente de IA." },
+  "O que se pode marcar, quanto dura, onde acontece e quem atende.": { es: "Qué se puede agendar, cuánto dura, dónde ocurre y quién atiende." },
+  "Quanto custou cada resultado das campanhas que trazem gente para cá.": { es: "Cuánto costó cada resultado de las campañas que traen gente aquí." },
+  "Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta.": { es: "Quién se enfrió y sigue abierto — lo que corre riesgo de morir sin respuesta." },
+  "Quem fez o quê, quando — o histórico que não se apaga.": { es: "Quién hizo qué, cuándo — el historial que no se borra." },
+  "Relatório do que a equipe e os agentes fizeram no período: quanto, quem e de que tipo.": { es: "Informe de lo que el equipo y los agentes hicieron en el período: cuánto, quién y de qué tipo." },
+  "Scripts salvos para responder mais rápido, seus ou da equipe.": { es: "Scripts guardados para responder más rápido, tuyos o del equipo." },
+  "Se o agente está melhorando, onde ele erra e o que falta ensinar.": { es: "Si el agente está mejorando, dónde se equivoca y qué falta enseñar." },
+  "Seus funis de venda — clique em um para abrir o quadro de clientes.": { es: "Tus embudos de venta — haz clic en uno para abrir el tablero de clientes." },
+  "Seus números de WhatsApp: por QR ou canal oficial da Meta, com saúde, reconexão e templates.": { es: "Tus números de WhatsApp: por QR o canal oficial de Meta, con salud, reconexión y plantillas." },
+  "Agendamento criado.": { es: "Cita creada." },
+  "Agendamento remarcado.": { es: "Cita reprogramada." },
+  "Agendamento cancelado.": { es: "Cita cancelada." },
+  "Horário confirmado.": { es: "Horario confirmado." },
+  "Confirmar horário": { es: "Confirmar horario" },
+  "Marcado como realizado.": { es: "Marcado como realizado." },
+  "Marcado como falta — o horário volta a ficar livre.": { es: "Marcado como inasistencia — el horario vuelve a quedar libre." },
+  "Mídia": { es: "Multimedia" },
+  "Tenant suspenso com sucesso": { es: "Tenant suspendido con éxito" },
+  "Erro ao suspender tenant": { es: "Error al suspender el tenant" },
+  "Tenant reativado com sucesso": { es: "Tenant reactivado con éxito" },
+  "Erro ao reativar tenant": { es: "Error al reactivar el tenant" },
+  "Incidente resolvido com sucesso": { es: "Incidente resuelto con éxito" },
+  "Erro ao resolver incidente": { es: "Error al resolver el incidente" },
 };
 
 /**

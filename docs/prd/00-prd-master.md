@@ -7,7 +7,7 @@ owner: Rafael Melgaço
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
-# LUA CRM — PRD-Mestre
+# DeskcommCRM — PRD-Mestre
 
 > Documento-índice da visão, escopo e estrutura do produto. Cada subsistema é detalhado em sub-PRDs (`01-plataforma-base.md` ... `06-nuvemshop-lgpd.md`). Decisões arquiteturais herdadas estão em `docs/research/reference-synthesis.md`.
 
@@ -30,7 +30,7 @@ Implicações de leitura deste documento e dos sub-PRDs:
 
 **O que é.** DeskcommCRM é um sistema operacional de vendas open source com agentes de IA nativos — um CRM operacional onde a IA atende, qualifica e move o funil junto com humanos. Unifica atendimento humano, agentes com RAG por tenant, gestão de pedidos/negócios e pipeline de pós-venda numa única plataforma multi-tenant, tendo WhatsApp como canal primário (via WAHA, API não-oficial). Nasceu especializado em e-commerce (vertical de origem, com integração Nuvemshop); hoje serve qualquer negócio que vende conversando — ver Nota de transição (§0).
 
-**Quem usa.** Hoje, em modo BPO: a empresa operadora (TBD) usa o LUA CRM internamente pra prestar atendimento como serviço aos e-commerces clientes contratados. Atendentes humanos operam múltiplos tenants através de uma "caixa de entrada unificada" via *super-admin role*. Amanhã, em modo SaaS: o mesmo produto será comercializado direto pra e-commerces operarem por conta própria. Toda a arquitetura é multi-tenant desde o dia 1, sem refactor previsto pro pivot.
+**Quem usa.** Cada pessoa opera as organizações às quais possui vínculo ativo, com papel próprio em cada uma. A administração da plataforma gerencia a instalação; quando precisa acompanhar dados de uma organização, abre uma sessão temporária de edição ou somente leitura, vinculada à sessão autenticada e auditada com o ator real. Esse acompanhamento não cria membership nem uma caixa unificada cross-tenant. O contrato vigente está em [`docs/support-sessions.md`](../support-sessions.md).
 
 **Quem é o cliente alvo (tenant).** PME brasileira que vende pelo WhatsApp — e-commerce, clínica, imobiliária, infoprodutor, agência ou serviço — na faixa de ~300 atendimentos/dia, 2–5 atendentes humanos e 1–2 números WhatsApp. O perfil de calibração original (e-commerce Nuvemshop com ~5 mil pedidos/mês) segue sendo a referência de carga.
 
@@ -46,7 +46,7 @@ Implicações de leitura deste documento e dos sub-PRDs:
 
 ## 2. Problema & Visão
 
-### Problemas que o LUA CRM resolve
+### Problemas que o DeskcommCRM resolve
 
 1. **Atendimento desfragmentado.** PMEs hoje atendem via WhatsApp Web pessoal + planilha + memória do atendente. Sem histórico unificado, sem multi-atendente real, sem auditoria. Quando o atendente sai da empresa, o relacionamento com o cliente vai junto.
 
@@ -68,15 +68,15 @@ Em três anos: ser a resposta padrão pra "melhor CRM open source com agentes de
 
 ## 3. Personas & Stakeholders
 
-### 3.1 Operador BPO (atendente da empresa operadora) — *persona primária no MVP*
-**Quem.** Funcionário da empresa operadora, gerencia atendimentos de **múltiplos tenants** simultaneamente pela "caixa de entrada unificada".
-**Dores.** Trocar de aba entre tenants é lento. Esquecer contexto do cliente entre conversas. Não saber se já respondeu uma dúvida frequente. Saber a hora certa de escalar.
-**Precisa.** Visualização cross-tenant, contexto do cliente em 1 clique, sugestões de resposta da IA, marcação de status (resolvido / pendente / esperando cliente), quotas por tenant.
+### 3.1 Operador de atendimento — *persona primária no MVP*
+**Quem.** Pessoa com vínculo nas organizações em que atende; o papel e a interface podem variar por vínculo.
+**Dores.** Trocar de contexto sem carregar dados da organização anterior. Esquecer contexto do cliente entre conversas. Não saber se já respondeu uma dúvida frequente. Saber a hora certa de escalar.
+**Precisa.** Troca segura entre vínculos, contexto do cliente em 1 clique, sugestões de resposta da IA e estados claros de conversa e demanda.
 
 ### 3.2 Super-admin de plataforma — *persona primária no MVP*
-**Quem.** Sócio/líder operacional da empresa operadora; acesso irrestrito a todos os tenants.
-**Dores.** Gerenciar SLAs por tenant, ver saúde de cada número WAHA, identificar tenant que está perto de banimento, distribuir carga entre atendentes.
-**Precisa.** Dashboard cross-tenant, alertas de saúde WAHA, audit trail completo, gestão de roles por tenant.
+**Quem.** Responsável pela instalação e pela governança da plataforma. Para acompanhar uma organização, escolhe uma sessão temporária de edição ou somente leitura.
+**Dores.** Diagnosticar uma organização sem assumir a identidade de cliente, deixar uma sessão privilegiada aberta ou perder a autoria real das ações.
+**Precisa.** Gestão de organizações, entrada e saída explícitas do acompanhamento, prazo limitado, MFA conforme a política vigente, modo somente leitura que prevalece sobre vínculos físicos e auditoria com o ator real.
 
 ### 3.3 Tenant — gestor do e-commerce (lojista) — *persona secundária no MVP, primária no SaaS*
 **Quem.** Dono ou gerente do e-commerce cliente. Acessa o sistema via super-admin do tenant.
@@ -171,7 +171,7 @@ Em três anos: ser a resposta padrão pra "melhor CRM open source com agentes de
 
 ## 5. Arquitetura de Referência Herdada
 
-LUA CRM **adota integralmente** a doutrina arquitetural extraída do material da *Aula CRM Nichado com WhatsApp (WAHA)*. Síntese completa em `docs/research/reference-synthesis.md`.
+DeskcommCRM **adota integralmente** a doutrina arquitetural extraída do material da *Aula CRM Nichado com WhatsApp (WAHA)*. Síntese completa em `docs/research/reference-synthesis.md`.
 
 **Pontos não negociáveis herdados:**
 - Stack Next.js + Supabase + WAHA Plus + Vercel
@@ -193,7 +193,7 @@ Toda decisão de spec/epic que conflitar com o bundle herdado **requer justifica
 
 ## 6. Capacidades Diferenciadoras (gaps sobre a referência)
 
-São os 6 deltas que o LUA CRM constrói sobre a base herdada — onde reside o valor competitivo e onde a engenharia adiciona algo não-trivial:
+São os 6 deltas que o DeskcommCRM constrói sobre a base herdada — onde reside o valor competitivo e onde a engenharia adiciona algo não-trivial:
 
 ### 6.1 Integração Nuvemshop nativa
 OAuth + 8+ webhooks (incluindo LGPD redact/data_request) + sync inicial. Adapter pattern (`EcommercePlatformAdapter`) abstrai a interface pra VTEX/Shopify entrarem em fases posteriores sem reescrita.
@@ -205,7 +205,7 @@ Cada mensagem inbound roda análise leve (Haiku 4.5 ou modelo dedicado) em paral
 Vector store por tenant (pgvector ou Supabase Vector — a definir na spec). Pipeline de ingestão com 4 fontes: FAQ manual, política da loja (PDF/markdown), catálogo Nuvemshop sincronizado, conversas resolvidas anteriores como exemplos. Roteamento de chamada combina contexto (últimas 20 messages + perfil do contato + último pedido) + RAG hits. Modelo default: Sonnet 4.6 via AI Gateway, Haiku 4.5 pra triagem de sentimento.
 
 ### 6.4 Super-admin de plataforma
-Coluna `is_platform_admin` em tabela `auth.users` ou tabela auxiliar `platform_admins`. Helper RLS retorna TRUE pra essa role em qualquer tabela tenant-aware. UI separada `/admin` (talvez subdomínio `admin.lua-crm.example`). Operação BPO ganha "caixa de entrada unificada" cross-tenant; clientes SaaS futuros não veem essa UI.
+`platform_admins` mantém a autoridade transversal de administração da instalação. Acesso operacional aos dados de uma organização acontece por acompanhamento temporário vinculado à sessão Supabase, com alvo, modo efetivo, prazo máximo de uma hora, política de MFA e saída explícita. O modo somente leitura bloqueia efeitos mesmo se o ator também tiver membership admin no alvo; o modo de edição projeta papel efetivo sem criar membership. Os direitos de plataforma fora do alvo permanecem existentes, isto é, o mecanismo não confina globalmente o JWT. As operações feitas pelas superfícies do aplicativo registram o ator real e a sessão de suporte. Contrato completo: [`docs/support-sessions.md`](../support-sessions.md).
 
 ### 6.5 AI Provider strategy via Vercel AI Gateway
 Default: Vercel AI Gateway com fallback de provedor (Anthropic primário; OpenAI de backup). Observability nativa (tokens, latência, custo por tenant). Zero data retention configurável. Strings `"anthropic/claude-sonnet-4-6"` em vez de import direto de SDK específico, conforme guidance da plataforma.
@@ -266,7 +266,7 @@ Interface `EcommercePlatformAdapter` define `fetchOrders`, `fetchCustomers`, `su
 - Tempo médio de ciclo de pipeline (carrinho → entregue)
 
 ### 8.3 Critério de sucesso geral do MVP
-LUA CRM é considerado MVP-validado quando:
+DeskcommCRM é considerado MVP-validado quando:
 1. Pelo menos **1 tenant real** está em produção atendendo clientes finais por **30 dias contínuos** sem incidente que cause banimento WAHA ou perda de dados.
 2. Pelo menos **5 KPIs dos 7 listados acima** estão sendo medidos automaticamente e dentro do target ou com plano de correção.
 3. Audit log e LGPD passam revisão manual sem encontrar lacuna crítica.
@@ -307,8 +307,8 @@ Roadmap revisado a cada 4 semanas. Estimativa otimista; recalibrar a cada milest
 ## 11. Glossário
 
 - **Tenant** — uma organização cliente do DeskcommCRM (um negócio que vende pelo WhatsApp: e-commerce, clínica, imobiliária, infoprodutor, etc.). No DB = `organizations`. Sinônimo: organização.
-- **Operador BPO** — funcionário da empresa operadora que atende múltiplos tenants. Tem role super-admin de plataforma.
-- **Super-admin de plataforma** — role que cruza tenants. Distinto do `admin` de um tenant específico.
+- **Operador de atendimento** — pessoa que atende nas organizações em que possui vínculo ativo; papel e interface pertencem a cada vínculo.
+- **Super-admin de plataforma** — autoridade transversal para administrar a instalação. O acompanhamento de dados de uma organização é temporário, por sessão, e não cria membership nem troca a identidade do ator.
 - **Lead / Cliente** — registro central no CRM (`crm_leads`). No vocabulary de e-commerce, lead = "Cliente". Engloba cliente em qualquer estágio (interesse, comprou, pós-venda).
 - **Deal / Pedido** — instância de oportunidade comercial; em e-commerce, sinônimo de Pedido. Modelado como `crm_leads` (não `crm_deals`).
 - **Activity** — evento da timeline polimórfica (`crm_lead_activities`). Pode ser whatsapp_inbound, whatsapp_outbound, payment_received, stage_changed, agent_action, etc.

@@ -38,7 +38,7 @@ import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin";
 
 type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -414,6 +414,13 @@ export async function publishAgentAction(
     .insert({
       organization_id: activeOrg.orgId,
       event_type: "ai_agent.published",
+      // `entity_kind` é NOT NULL sem default (`baseline.sql`): sem esta linha o
+      // insert viola a constraint e o evento de publicação NUNCA é gravado. E o
+      // insert é `void` + `.then()`, então a violação cai num `console.error`
+      // que ninguém lê — o Sistema Vivo perde o registro em silêncio. Visto no
+      // log do CI de hoje: `null value in column "entity_kind" ... violates
+      // not-null constraint`.
+      entity_kind: "ai_agent",
       payload: {
         agent_id: result.agent_id,
         version_id: result.version_id,
@@ -506,7 +513,9 @@ export async function revertToVersionAction(
     credential_id: string;
     tool_ids: string[];
     trigger_config: Record<string, unknown> | null;
-    channel_session_id: string;
+    // Nulo desde a 0239: a versão de origem pode ser um rascunho de quem ainda
+    // não conectou o WhatsApp, e duplicá-la copia o "sem número" adiante.
+    channel_session_id: string | null;
     max_steps: number;
     token_budget: number;
     cost_budget_cents: number;
@@ -614,6 +623,13 @@ export async function revertToVersionAction(
     .insert({
       organization_id: activeOrg.orgId,
       event_type: "ai_agent.published",
+      // `entity_kind` é NOT NULL sem default (`baseline.sql`): sem esta linha o
+      // insert viola a constraint e o evento de publicação NUNCA é gravado. E o
+      // insert é `void` + `.then()`, então a violação cai num `console.error`
+      // que ninguém lê — o Sistema Vivo perde o registro em silêncio. Visto no
+      // log do CI de hoje: `null value in column "entity_kind" ... violates
+      // not-null constraint`.
+      entity_kind: "ai_agent",
       payload: {
         agent_id: result.agent_id,
         version_id: result.version_id,

@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
+import { BarraDeProgressoNavegacao } from "@/components/shell/BarraDeProgressoNavegacao";
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
@@ -22,6 +23,7 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
     // `min-h-screen` aqui; trocar por ele devolveria a barra de rolagem da
     // página e quebraria o inbox, que mede a própria altura a partir deste nó.
     <div className="flex h-dvh w-full overflow-hidden bg-background">
+      <BarraDeProgressoNavegacao />
       {/*
         `hidden md:block` veio do upstream (1.4.0, usabilidade no celular): no
         telefone a barra lateral sai da linha e quem a abre é o botão da TopBar.

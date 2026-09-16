@@ -1,3 +1,4 @@
+import { createAdminClient } from "@/lib/supabase/admin";
 /**
  * Core handlers para /api/v1/conversations.
  *
@@ -20,6 +21,8 @@ import type {
 import type { Conversation } from "@/lib/types/messaging";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import { normalizarTermoDeBusca } from "@/lib/inbox/termo-de-busca";
+import { ORDEM_DA_ESPERA, ehAFila } from "@/lib/inbox/comando-da-conversa";
 
 /**
  * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
@@ -86,7 +89,7 @@ function idsQueCabemNaURL(ids: string[]): string[] {
 
 const SELECT_COLS = `
   id, organization_id, contact_id, channel_session_id, channel, status,
-  status_changed_at, assigned_to_user_id, assigned_to_user_name, assignee_kind, assigned_at, last_inbound_at,
+  status_changed_at, service_revision, service_closed_at, service_started_at, current_demanda_id, assigned_to_user_id, assigned_to_user_name, assignee_kind, assigned_at, last_inbound_at,
   last_outbound_at, last_message_at, last_message_preview,
   unread_count_for_assignee, is_group, group_chat_id, tags, metadata,
   snooze_until, created_at, updated_at,
@@ -161,15 +164,21 @@ export async function listConversationsHandler(
   // a ordenação por tempo de espera sumiria **sem nenhum sintoma na tela**: a
   // lista continuaria populada, só que ordenada por atividade recente, e quem
   // espera desde ontem afundaria embaixo de quem escreveu agora.
-  const isQueue = q.comando?.includes("aguardando") ?? q.assigned_to === "unassigned";
-  const sortCol = isQueue ? "last_inbound_at" : "last_message_at";
+  const isQueue = ehAFila(q);
+  // A régua da Fila não se escreve aqui: vem de `ORDEM_DA_ESPERA`, a mesma que
+  // numera a posição da linha na tela e o número que o cliente ouve. Enquanto
+  // cada lugar tinha a sua cópia, trocar uma só fazia a lista ordenar por uma
+  // pergunta e a posição responder outra — sem sintoma nenhum, porque as duas
+  // telas continuam populadas e plausíveis.
+  const sortCol = isQueue ? ORDEM_DA_ESPERA.coluna : "last_message_at";
+  const ordem = isQueue ? ORDEM_DA_ESPERA.opcoes : ({ ascending: false, nullsFirst: false } as const);
   const asc = isQueue;
 
   let query = supabase
     .from("conversations")
     .select(SELECT_COLS)
     .eq("organization_id", ctx.organization_id)
-    .order(sortCol, { ascending: asc, nullsFirst: false })
+    .order(sortCol, ordem)
     .order("id", { ascending: asc })
     .limit(q.limit + 1);
 
@@ -192,6 +201,15 @@ export async function listConversationsHandler(
   }
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
   if (q.tag) query = query.contains("tags", [q.tag]); // tags @> array[tag] (GIN)
+
+  // No BANCO, e não em memória: filtrar depois de paginar devolveria páginas curtas —
+  // e, quando a página inteira estivesse lida, uma lista vazia que a tela apresentava
+  // como caixa vazia, sem sequer oferecer "Carregar mais".
+  //
+  // ⛔ Compõe sobre `query`, que JÁ tem `.eq("organization_id", ctx.organization_id)`.
+  // Este handler usa o admin client, que passa por cima da RLS: esse filtro é a Única
+  // barreira. Consulta nova só para os não lidos nasceria sem barreira nenhuma.
+  if (q.unread) query = query.gt("unread_count_for_assignee", 0);
 
   if (q.assigned_to === "me") {
     if (ctx.actor.type !== "user") {
@@ -248,7 +266,16 @@ export async function listConversationsHandler(
     //
     // O controle que impede o degenerado está no teste: termo inexistente
     // continua devolvendo ZERO. Sem ele, "troque tudo por `*`" passaria.
-    const s = termoSeguroParaOr(q.search);
+    // Duas normalizações, em ordem, com responsabilidades diferentes:
+    //   normalizarTermoDeBusca → como a PESSOA digitou (espaço duplo, vírgula e
+    //                            ponto e vírgula viram o mesmo curinga)
+    //   termoSeguroParaOr      → a GRAMÁTICA do `or=` do PostgREST (não mexer)
+    //
+    // A ordem importa e a composição é segura: `termoSeguroParaOr` escapa `%` e
+    // `_` e troca `,()` por `*`, mas NÃO escapa `*` — então o curinga posto pela
+    // primeira chega inteiro ao banco. O telefone também sobrevive: `somenteDigitos`
+    // descarta tudo que não é dígito, inclusive o curinga.
+    const s = termoSeguroParaOr(normalizarTermoDeBusca(q.search));
 
     // ─── A BUSCA ALCANÇA O CONTATO, NÃO SÓ A ÚLTIMA MENSAGEM ──────────────
     //
@@ -397,7 +424,6 @@ export async function patchConversationHandler(
   conversationId: string,
   input: PatchConversationInput,
 ): Promise<Conversation> {
-  const now = new Date().toISOString();
   const update: Record<string, unknown> = {};
 
   /**
@@ -434,19 +460,24 @@ export async function patchConversationHandler(
   }
 
   if (input.status !== undefined) {
-    update.status = input.status;
-    update.status_changed_at = now;
+    const observed = await getConversationHandler(supabase, ctx, conversationId);
+    const { error: statusError } = await createAdminClient().rpc("fn_service_status", {
+      p_org: ctx.organization_id, p_conversation: conversationId, p_status: input.status,
+      p_expected: input.expected_revision ?? observed.service_revision,
+    });
+    if (statusError) throw new ApiError(statusError.code === "40001" ? 409 : statusError.code === "P0002" ? 404 : 500,
+      statusError.code === "40001" ? "conflict" : statusError.code === "P0002" ? "not_found" : "internal_error", undefined, ctx.requestId, statusError.message);
   }
   if (input.tags !== undefined) {
     update.tags = input.tags;
   }
 
-  const { data, error } = await supabase
-    .from("conversations")
-    .update(update)
+  const query = Object.keys(update).length > 0
+    ? supabase.from("conversations").update(update)
+    : supabase.from("conversations");
+  const { data, error } = await query.select(SELECT_COLS)
     .eq("id", conversationId)
     .eq("organization_id", ctx.organization_id)
-    .select(SELECT_COLS)
     .maybeSingle();
 
   if (error) {
@@ -464,20 +495,6 @@ export async function patchConversationHandler(
 
   const conv = data as unknown as Conversation;
 
-  // MESMA REGRA DO `POST /close`, senão existem dois jeitos de fechar com efeitos
-  // opostos sobre a trava do automático. Condicionado a `last_handoff_at is null`
-  // pelo mesmo motivo de lá: fechar encerra o EPISÓDIO, não desfaz uma escalação.
-  const virouTerminal =
-    input.status !== undefined &&
-    (CONVERSATION_TERMINAL_STATUSES as readonly string[]).includes(input.status);
-  if (virouTerminal) {
-    await supabase
-      .from("conversations")
-      .update({ bot_silenced_until: null })
-      .eq("id", conversationId)
-      .eq("organization_id", ctx.organization_id)
-      .is("last_handoff_at", null);
-  }
   const a = actorAuditPayload(ctx.actor);
 
   if (input.status !== undefined) {

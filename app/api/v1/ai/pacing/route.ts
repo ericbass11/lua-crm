@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * Épico Operação Visível (F2ii) — knobs do anti-ban por conexão.
  *
@@ -15,6 +16,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 import {
   pacingKnobsUpdateSchema,
   knobsView,
@@ -44,6 +46,9 @@ export async function GET(): Promise<Response> {
       .eq("organization_id", org.orgId)
       // Canal arquivado foi excluído pelo usuário: não volta como opção aqui.
       .is("archived_at", null)
+      // Ritmo de envio é regra de canal de MENSAGEM. A linha de chamada de voz
+      // (spec 18) não dispara nada e não tem intervalo a calibrar.
+      .in("provider", [...PROVIDERS_DE_MENSAGEM])
       .order("created_at", { ascending: true }),
     admin
       .from("channel_knobs")
@@ -65,6 +70,9 @@ export async function GET(): Promise<Response> {
 }
 
 export async function PUT(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "channel_knobs" });
   if (!authz.ok) return authz.response;

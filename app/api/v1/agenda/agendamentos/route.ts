@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * `/api/v1/agenda/agendamentos` — a rota, FINA.
  *
@@ -78,6 +79,7 @@ const marcarSchema = z.object({
   starts_at: z.string().datetime({ offset: true }),
   owner_user_id: z.string().uuid().optional(),
   contact_id: z.string().uuid().optional(),
+  conversation_id: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional(),
   notes: z.string().max(2000).optional(),
   guest_email: emailDoConvidado.optional(),
@@ -86,6 +88,9 @@ const marcarSchema = z.object({
 const alterarSchema = z
   .object({
     id: z.string().uuid(),
+    revision: z.number().int().positive().optional(),
+    outcome_message_id: z.string().uuid().optional(),
+    confirmation_next_at: z.string().datetime({offset:true}).optional(),
     /** Remarcar: o novo início. A duração vem do tipo, como na criação. */
     starts_at: z.string().datetime({ offset: true }).optional(),
     /**
@@ -98,6 +103,7 @@ const alterarSchema = z
   })
   .refine(
     (c) =>
+      c.confirmation_next_at !== undefined ||
       c.starts_at !== undefined ||
       c.status !== undefined ||
       c.notes !== undefined ||
@@ -109,6 +115,7 @@ const alterarSchema = z
 
 const cancelarSchema = z.object({
   id: z.string().uuid(),
+  revision: z.number().int().positive().optional(),
   /**
    * ⚠️ OBRIGATÓRIO, e não é burocracia: é o que a equipe lê ao ver o horário
    * vago. "Cancelado" sem motivo faz alguém ligar para o cliente perguntando o
@@ -173,12 +180,24 @@ export async function GET(req: NextRequest): Promise<Response> {
   });
 
   if (!resultado.ok) {
-    return fail(
-      resultado.codigo === "sem_alvo" ? "agenda_listagem_sem_recorte" : "internal_error",
-      t(resultado.motivoParaOperador),
-      resultado.codigo === "sem_alvo" ? 422 : 500,
-      { requestId },
-    );
+    // ⚠️ DUAS DAS TRÊS RECUSAS SÃO ERRO DE QUEM CHAMA — e o `else` de antes
+    // chamava todas de falha do servidor.
+    //
+    // `sem_alvo` (falta recorte) e `alvo_nao_e_lead` (o `lead_id` veio com o id
+    // de um CONTATO — a confusão medida em #509) são consulta malformada: o
+    // servidor está inteiro, e 500 diz ao cliente server-to-server que a culpa é
+    // nossa. Pior: acorda o Sentry por requisição malformada, que é ruído.
+    //
+    // O mapa é explícito — mesmo desenho de `CODIGO_DA_RECUSA` em `_handler.ts`
+    // — porque status e código andam juntos, e a indexação pelo código faz o
+    // compilador reclamar se `consulta.ts` ganhar uma recusa sem desfecho aqui.
+    const recusa = {
+      sem_alvo: { status: 422, code: "agenda_listagem_sem_recorte" },
+      alvo_nao_e_lead: { status: 422, code: "agenda_listagem_alvo_nao_e_lead" },
+      erro_interno: { status: 500, code: "internal_error" },
+    } as const;
+    const { status, code } = recusa[resultado.codigo];
+    return fail(code, t(resultado.motivoParaOperador), status, { requestId });
   }
 
   // ─── A OCUPAÇÃO DO GOOGLE ENTRA AQUI, e não em `listaAgendamentos` ────────
@@ -203,7 +222,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const externos: AgendamentoDaResposta[] = [];
   if (parsed.data.de && parsed.data.ate) {
     const { data: ocupacao, error: erroOcupacao } = await supabase
-      .from("calendar_external_events")
+      .from("calendar_selected_external_events")
       .select("id, starts_at, ends_at, calendar_connections!inner(user_id)")
       .eq("organization_id", activeOrg.orgId)
       .gte("starts_at", parsed.data.de)
@@ -225,7 +244,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       const dono = Array.isArray(conexao) ? conexao[0]?.user_id : conexao?.user_id;
       externos.push({
         id: e.id,
-        // Rótulo, NUNCA o título do evento: a tabela guarda o `title` e esta
+        // Rótulo, NUNCA o título do evento: a tabela tem a coluna `title` e esta
         // resposta não o lê. Despejar o conteúdo da agenda pessoal na tela de
         // trabalho é o que a consulta da semente também recusa.
         titulo: "Ocupado",
@@ -249,14 +268,23 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   return despachar(req, marcarSchema, marcarAgendamentoHandler, 201);
 }
 
 export async function PATCH(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   return despachar(req, alterarSchema, alterarAgendamentoHandler, 200);
 }
 
 export async function DELETE(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   return despachar(req, cancelarSchema, cancelarAgendamentoHandler, 200);
 }
 

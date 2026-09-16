@@ -8,7 +8,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { orgTemAutomatico } from "@/lib/ai/agents/org-tem-automatico";
-import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
+import { ORDEM_DA_ESPERA, comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 
 import { loadEligibleAttendants } from "./eligibles";
 
@@ -51,7 +51,7 @@ export async function getQueueStatus(
   }
   const avgWaitSeconds = queueSize === 0 ? 0 : Math.round(totalWaitMs / queueSize / 1000);
 
-  const eligibles = await loadEligibleAttendants(supabase, organizationId, now);
+  const eligibles = await loadEligibleAttendants(supabase, organizationId, now, { kind: "organization_summary" });
 
   return {
     queue_size: queueSize,
@@ -77,7 +77,7 @@ export async function getQueuePositions(
     .select("id")
     .eq("organization_id", organizationId)
     .in("comando_da_conversa", naFila)
-    .order("last_inbound_at", { ascending: true, nullsFirst: false })
+    .order(ORDEM_DA_ESPERA.coluna, ORDEM_DA_ESPERA.opcoes)
     .order("id", { ascending: true });
 
   const rows = (data ?? []) as Array<{ id: string }>;

@@ -73,23 +73,45 @@ LUA CRM é um CRM operacional multi-tenant para e-commerce com IA conversacional
 ### Audit log
 - Toda mutação POST/PATCH/DELETE bem-sucedida → 1 entrada em `api_audit_log` (fire-and-forget, p99 ≤500ms)
 - **Rodada de cron que não fez nada NÃO é mutação e não audita** — e a que fez, audita. `routing-worker` (1×/min) e `attendant-heartbeat` (1×/5min) auditavam incondicionalmente: ~51.840 linhas/mês numa instalação que não atende ninguém, e numa VPS real **95% do audit log** era batida de cron vazia (`docs/testing/user-journey-map.md`, achado 17). A guarda certa é *auditar quando houve efeito*, nunca *parar de auditar* — as duas direções são medidas por `tests/unit/cron-audita-so-quando-ha-efeito.test.ts`, que varre o AST de **toda** rota de `app/api/v1/cron/`
-- Audit é append-only, e isso é do SCHEMA e não da prosa: nenhum papel tem GRANT de UPDATE/DELETE em `api_audit_log` — **nem `service_role`**. Para conferir na fonte em vez de acreditar nesta linha:
+- Audit é append-only para os papéis do PostgREST, e isso é do SCHEMA e não da prosa: `anon`, `authenticated` e `service_role` não têm GRANT de UPDATE, DELETE **nem TRUNCATE** em `api_audit_log` — **nem `service_role`** (migration 0258). O dono (`postgres`) pode tudo, como em qualquer tabela: a garantia é sobre os papéis que o PostgREST assume, nunca absoluta. Para conferir na fonte em vez de acreditar nesta linha:
 
   ```bash
   psql "$SUPABASE_DB_URL" -c "select grantee, privilege_type from information_schema.role_table_grants
-    where table_name='api_audit_log' and privilege_type in ('DELETE','UPDATE','TRUNCATE');"
+    where table_schema='public' and table_name='api_audit_log'
+      and privilege_type in ('DELETE','UPDATE','TRUNCATE')
+      and grantee in ('anon','authenticated','service_role','PUBLIC');"
   ```
 
-  **`TRUNCATE` entra na consulta de propósito, e o resultado não é vazio.** Ele
-  está concedido a `anon`, `authenticated` e `service_role` — resíduo de o dump
-  enumerar os privilégios desta tabela (as demais recebem `GRANT ALL`, e quem as
-  protege é a RLS). Uma sonda que pergunte só por `DELETE`/`UPDATE` devolve zero
-  linhas e deixa quem leu concluindo que a tabela não pode ser esvaziada, quando
-  o privilégio que a esvazia INTEIRA está lá. Não é alcançável pela REST (o
-  PostgREST não emite `TRUNCATE`), então não é buraco de superfície — mas a
-  frase "append-only é do schema" só é inteira com esta ressalva escrita.
+  O resultado esperado é **vazio**. Sem o filtro de `grantee` aparecem as linhas
+  do dono `postgres` — e elas não são defeito.
+
+  **Até a 0258 a primeira frase deste item era falsa no Supabase real, com o
+  gate verde.** Todo projeto Supabase nasce com um default ACL de TABELAS em
+  `public` que concede tudo aos três papéis — confira com
+  `select defaclacl from pg_default_acl where defaclobjtype = 'r' and defaclnamespace = 'public'::regnamespace;`
+  —, e o `GRANT` enumerado que o dump emite para esta tabela só ACRESCENTA, não
+  retira. Com a service key, que ignora RLS, uma linha escolhida da auditoria
+  era apagada ou reescrita pela REST; `anon`/`authenticated` só não o faziam
+  porque a RLS não tem policy de UPDATE/DELETE.
+
+  **A lição que sobrevive ao conserto é sobre a régua, não sobre o grant.** A
+  sonda de `tests/invariants/retencao-poda-e-expurgo.test.ts` ficou verde duas
+  vezes medindo o universo errado: primeiro perguntando só por DELETE/UPDATE com
+  TRUNCATE concedido ao lado; depois perguntando pelos três num Postgres onde o
+  prelude de `scripts/test-db.sh` reproduz o default ACL do Supabase para
+  FUNÇÕES e não para TABELAS — um banco onde o defeito não pode existir. Quem
+  mede o Supabase real é
+  `tests/invariants/audit-log-sob-o-default-acl-do-supabase.test.ts`: concede o
+  default ACL à tabela, reaplica o bloco da 0258 extraído do baseline e só então
+  sonda. **Enumerar privilégios no dump não protege tabela nenhuma no Supabase
+  real**; o que protege é `revoke` explícito no apêndice. Quais tabelas o dump
+  enumera em vez de `GRANT ALL`:
+
+  ```bash
+  grep -nE '^GRANT [A-Z,]+ ON TABLE' supabase/baseline.sql | grep -v 'GRANT ALL'
+  ```
 - **Retenção default de 5 anos, configurável, e agora EXECUTADA.** O expurgo é `public.fn_expurgar_auditoria_vencida` (`security definer`, **piso de 90 dias dentro do corpo**, revogada de anon/authenticated), chamada em lotes pelo cron `app/api/v1/cron/data-retention` (diário). O knob é `AUDIT_LOG_RETENTION_DAYS`. **Não há camada cold/S3** — o "hot 90 dias, cold (S3) o resto" que este arquivo afirmava por meses nunca existiu em código (auditoria de 2026-08-14: zero ocorrência de arquivamento), e um self-host não tem para onde arquivar: o Storage do cliente é a MESMA cota de 1 GB, já dividida com `whatsapp-media`. Para ver o que está em vigor: `grep -n "RETENCAO_AUDITORIA_DIAS" lib/retencao/politica.ts`
-- Por que uma `security definer` de expurgo não é porta de adulteração (o argumento inteiro está no cabeçalho da migration 0167): ela **não tem seletor de linha** — nenhum parâmetro de org, ator, ação ou id, e o único predicado é `created_at < now() - N dias`; o piso mora **no corpo**, não em quem chama; não é alcançável pela REST; não amplia o raio de quem já tem a service key; e **registra a própria erosão** (`retention.sweep_run`, com a contagem, numa linha nova demais para a chamada seguinte alcançar)
+- Por que uma `security definer` de expurgo não é porta de adulteração (o argumento inteiro está no cabeçalho da migration 0167): ela **não tem seletor de linha** — nenhum parâmetro de org, ator, ação ou id, e o único predicado é `created_at < now() - N dias`; o piso mora **no corpo**, não em quem chama; não é alcançável pela REST; é, desde a 0258, o **único** apagamento de auditoria ao alcance da service key — e não escolhe linha, só alcança a ponta mais velha que o piso; e **registra a própria erosão** (`retention.sweep_run`, com a contagem, numa linha nova demais para a chamada seguinte alcançar)
 - Falha de write em audit gera alerta Sentry, não bloqueia mutação principal
 
 ### LGPD
@@ -100,7 +122,7 @@ LUA CRM é um CRM operacional multi-tenant para e-commerce com IA conversacional
 - Action audit obrigatória: `lgpd.data_request_received`, `lgpd.export_generated`, `lgpd.redact_executed`, `lgpd.consent_changed`
 
 ### WAHA
-- Plus obrigatório (Core não suporta multi-tenant, sem retry, sem S3)
+- Default fixo `devlikeapro/waha:latest-2026.7.2`, NOWEB. A prova local criou duas sessões CORE simultâneas até `SCAN_QR_CODE`; não prova pairing, duas contas `WORKING` nem envio. Não bloquear segunda sessão por tier: conferir resposta estruturada e pós-condição da operação.
 - Engine NOWEB default; WEBJS apenas se precisar stickers animados / botões
 - Auth: env do WAHA recebe **hash SHA512 hex** da api key; cliente envia plaintext em `X-Api-Key`
 - Webhooks: HMAC SHA512 com `crypto.timingSafeEqual`
@@ -322,7 +344,28 @@ Duas armadilhas irmãs, as duas pagas no mesmo dia:
   ```
 
   Se não baterem, a sonda está cega — troque por `--reporter=verbose` e rode de
-  novo, em vez de acreditar no silêncio. (Comparar contra `Test Files` dá
+  novo, em vez de acreditar no silêncio.
+
+  **E as duas podem bater em zero com a suíte reprovada.** O Vitest sai com
+  `exit=1` quando há **erro não tratado** durante a execução, mesmo com todos os
+  testes passando — e esse erro aparece numa TERCEIRA linha do rodapé, que
+  nenhuma das duas sondas acima lê:
+
+  ```
+   Test Files  866 passed (866)
+        Tests  8904 passed | 1 expected fail (8905)
+       Errors  1 error          ← só o exit code viu isto
+  ```
+
+  Medido em 2026-09-15: `EnvironmentTeardownError: [vitest-worker]: Closing rpc
+  while "onUserConsoleLog" was pending`, sob carga. Rodapé `0 failed`, `grep FAIL`
+  vazio, exit 1. **O exit code é a autoridade; o rodapé e o grep são explicação
+  dele.** Quando o exit diverge dos dois, leia a linha `Errors` antes de concluir
+  qualquer coisa:
+
+  ```bash
+  grep -aE "^ *Errors " /tmp/vt.log      # vazio é o esperado
+  ``` (Comparar contra `Test Files` dá
   divergência falsa: `2 failed` de arquivos contra `7` de casos parece defeito
   da sonda e é só régua trocada.)
 
@@ -338,7 +381,7 @@ No CI não há `UPSTASH` nenhum, então lá o caminho é o contador em memória 
 Checks **obrigatórios** na branch protection da `main` (verificado na configuração, não só no papel):
 
 - **`verify`** (`ci.yml`) — typecheck + lint + test:unit.
-- **`invariants`** (`ci.yml`) — `pnpm test:db`: sobe `pgvector/pgvector:pg15` — o PISO que dizemos suportar, não a versão mais rica que temos à mão —, aplica `supabase/baseline.sql` em modo install (`ON_ERROR_STOP=1`) e update (idempotência), e roda os testes de invariante, incluindo o de isolamento RLS entre 2 organizações.
+- **`invariants`** (`ci.yml`) — **job de fachada**: ele não roda suíte nenhuma; reprova quando a matriz `invariants-majors` não fecha em `success`. Quem roda é a matriz, uma perna por major do Postgres que o produto diz suportar, e cada perna faz duas passadas: `pnpm test:db` (baseline em modo install com `ON_ERROR_STOP=1` e update, mais os invariantes, incluindo o isolamento RLS entre 2 organizações) e `pnpm test:db:update` (atualização de um banco COM dados). Para saber quais majors hoje, pergunte ao arquivo em vez de a esta linha: `awk '/^  invariants-majors:/,/^  [a-z-]+:/' .github/workflows/ci.yml | grep -A6 'matrix:'`.
 - **`build-and-size`** (`perf.yml`) — `pnpm build` em Node 22.
 - **`e2e`** (`e2e.yml`) — sobe Supabase local, aplica o `baseline.sql` e roda **todas as specs Playwright menos as que `FORA_DO_CI` declara**. O número saiu daqui de propósito: ele apodreceu **cinco** vezes (a quinta em 2026-08-24, quando `inbox-quem-manda.spec.ts` entrou), e a condição que o PR #242 pôs para parar de recontar já tinha vencido na quarta. Quem precisa do número roda o comando abaixo — comando não envelhece. Quais ficam de fora, e por quê, é o que a própria variável diz — **não confie nesta linha, leia-a**:
 
@@ -422,7 +465,17 @@ Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webh
 
 Processo padrão (siga sempre):
 
-1. **Arquivo versionado** em `supabase/migrations/` com o padrão do repo: `<timestamp>_<NNNN>_<slug>.sql` (ex.: `20260706210000_0027_whatsapp_conversation_unification.sql`). `NNNN` é o próximo número sequencial (veja o último em `ls supabase/migrations/`).
+1. **Arquivo versionado** em `supabase/migrations/` com o padrão do repo: `<timestamp>_<NNNN>_<slug>.sql` (ex.: `20260706210000_0027_whatsapp_conversation_unification.sql`). `NNNN` é o próximo número sequencial — e **não** é o do último arquivo da listagem:
+
+   ```bash
+   ls supabase/migrations/ | grep -oE '_[0-9]{4}_' | tr -d _ | sort -n | tail -1
+   ```
+
+   O nome do arquivo começa pelo **timestamp**, e timestamp e `NNNN` podem discordar: em
+   09/09/2026 o `ls | tail -1` devolvia o `_0230_` (timestamp de 07/09) enquanto o maior `NNNN`
+   era `_0231_` (timestamp de 05/09). Um contribuidor externo seguiu a instrução antiga ao pé da
+   letra, escolheu `0231`, e o `manifest-x-migrations` reprovou o PR dele por colisão — a
+   instrução é que estava errada, não ele. Ordene pelo número, nunca pela listagem.
 2. **Idempotente sempre que possível**: `add column if not exists`, `create ... if not exists`, `create or replace function`. Uma migration deve poder ser re-aplicada sem quebrar nem duplicar efeito.
 3. **Portável em `psql` puro** (clones podem não usar o MCP/CLI Supabase): **sem** `create temporary table ... on commit drop` fora de transação explícita; **sem** `BEGIN`/`COMMIT` explícito (o runner já envolve em transação, como as demais migrations). Prefira CTEs, subqueries de janela e colunas-mapa (ex.: `is_merged_into`) a temp tables.
 4. **Data migrations genéricas**: se a migration corrige/deduplica dados, escreva pensando em QUALQUER banco de clone (não hardcode IDs do seu tenant). Repointe FKs conferindo o catálogo (`information_schema` FK map) para não perder histórico.
@@ -444,6 +497,16 @@ Processo padrão (siga sempre):
 ---
 
 ## Skills relevantes a usar (Claude Code)
+
+**Guias embutidos neste repositório** (`.claude/skills/`, espelho gerado de `.agents/skills/` — a
+mesma tabela vale para Codex, Cursor, OpenCode e Antigravity; ver `AGENTS.md`):
+
+- `deskcomm-instalar` — instalar, atualizar ou consertar a instalação numa VPS
+- `deskcomm-cliente-novo` — configurar o CRM para um cliente ou nicho (agentes, roteadores, follow-ups, conhecimento)
+- `deskcomm-metricas` — desempenho, conversão, custo de IA, funil, relatório
+- `deskcomm-prompt` — afinar o prompt de um agente que não performa
+- `deskcomm-contribuir` — o espelho da triagem, antes do PR; fica quieto para o mantenedor
+- `deskcomm-doutrina` — as três regras que mais custam, antes de escrever código
 
 - `superpowers:brainstorming` — antes de implementar feature não-trivial
 - `superpowers:writing-plans` — pra task com mais de 1 etapa de DB/API
@@ -475,7 +538,17 @@ Antes de declarar uma task pronta:
 11. **Mudança de schema saiu como migration versionada + linha no MANIFEST** (ver Doutrina de Migrations) — clones conseguem atualizar
 12. **Se tocou UI/fluxo de usuário: provado pela tela como um leigo faria**, em ambiente fresco estilo VPS, com evidência visual (ver Doutrina de QA Visual com Recursos Reais) — curl não conta
 13. **Living System Checklist respondido** (lei em `docs/doctrine/sistema-vivo.md`; racional no manual `docs/doctrine/sistema-vivo/`) — a feature não é ilha: tem entrada + saída, emite atividade/log, aparece na tela, tem porta na navegação, tem mecanismo anti-morte, **declara seu laço de retorno** (invariante 7 — o que muda no sistema quando ela erra), e o mapa vivo (`docs/architecture/`) reflete peça nova com ≥2 arestas. Resposta que não **nomeia o artefato concreto** (consumidor real, tela real, log real) não conta
-14. **Tela nova tem porta** — declarada em `lib/navigation/registry.ts` com seu grupo, ou na allowlist de `tests/unit/navegacao-completude.test.ts` **com justificativa escrita**. Ter tela e ser alcançável são coisas diferentes: o CI reprova tela que existe mas em que só se chega digitando a URL
+14. **Tela nova tem porta** — declarada em **`lib/navigation/catalogo.ts`** (no `NAV_CATALOG`, com seu grupo), ou na allowlist de `tests/unit/navegacao-completude.test.ts` **com justificativa escrita**. Ter tela e ser alcançável são coisas diferentes: o CI reprova tela que existe mas em que só se chega digitando a URL.
+
+    ⚠️ Esta linha dizia `lib/navigation/registry.ts`, e quem a seguisse abria um
+    arquivo **sem um único lugar onde declarar**: o `registry.ts` só deriva
+    (`NAV_DESTINATIONS` sai de `NAV_CATALOG`) e reexporta. Ele é a FACE do
+    módulo — é dele que o teste importa, e por isso o engano é fácil. Quem
+    declara é o catálogo. Para conferir sem acreditar nesta linha:
+
+    ```bash
+    grep -c 'href:' lib/navigation/catalogo.ts lib/navigation/registry.ts
+    ```
 15. **Se tocou Dockerfile, compose ou setup kit: a mudança chega a quem já instalou** (lei em `docs/doctrine/packaging.md`) — nenhum serviço de produção ficou `build:`-only; variável nova tem default que não quebra `.env` antigo; a atualização não pede edição manual de arquivo; e, se mudou o que a imagem contém, o `update.sh` alcança essa peça. Rode `pnpm test:shell` — é o único gate que exercita o kit
 16. **Se o PR muda comportamento, procure a afirmação de estado sobre esse comportamento.** Só
     sobre o que você mudou, e só nos documentos de autoridade — não saia caçando pelo repo. A

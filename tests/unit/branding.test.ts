@@ -227,6 +227,30 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "é a guarda do contrato acima: este teste é o que reprova quem renomear o header. Trocar a string aqui para 'limpar a marca' desarmaria a única proteção que o contrato tem",
     marcas: ["x-deskcomm-event", "x-deskcomm-signature", "x-deskcomm-signature"],
   },
+  "lib/mcp/server.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "nome do servidor MCP, que o cliente (Claude Desktop e afins) grava na própria configuração. Renomear derruba as conexões já configuradas de quem usa",
+    marcas: ["deskcomm-crm"],
+  },
+  "lib/supabase/admin.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "`X-Client-Info` enviado ao Supabase — identifica o cliente nos logs e na telemetria DELES. Não é texto de interface e nunca chega ao usuário",
+    marcas: ["deskcomm-crm"],
+  },
+  "lib/wacalls/events-bridge.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "X-Client-Id enviado ao processo WaCalls (spec 18) — identifica o worker como o operador dono da conexão SSE nos logs e na lógica de exclusividade de chamada dele. Não é texto de interface e nunca chega ao usuário",
+    marcas: ["deskcomm-worker"],
+  },
+  "lib/nuvemshop/config.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "User-Agent exigido pela Nuvemshop, que identifica a aplicação registrada na plataforma deles. Trocar pelo nome do revendedor descreveria uma aplicação que não existe lá",
+    marcas: ["deskcommcrm"],
+  },
   "lib/agenda/google/evento.ts": {
     categoria: "PROTOCOLO",
     motivo:

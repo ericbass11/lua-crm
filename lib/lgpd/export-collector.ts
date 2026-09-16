@@ -8,6 +8,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import type { Json } from "@/lib/database.types";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -29,6 +30,8 @@ export interface ContactSnapshot {
   source_metadata: Record<string, unknown> | null;
   created_at: string;
   last_activity_at: string | null;
+  /** Primeiro atendimento marcado. Sobrevive à anonimização: é registro de operação. */
+  first_service_at: string | null;
 }
 
 export interface ConsentRow {
@@ -110,6 +113,11 @@ export interface AppointmentRow {
   ends_at: string;
   time_zone: string;
   status: string;
+  google_base_projection?: Json | null;
+  google_conflict?: Json | null;
+  google_pending_write?: Json | null;
+  meeting_url?: string | null;
+  meeting_state?: string;
 }
 
 /**
@@ -171,6 +179,39 @@ export interface AuditRow {
   created_at: string;
 }
 
+/** Entrega do link: estado e referência ao compromisso, sem autorização/claim. */
+export interface MeetingDeliveryRow {
+  id: string;
+  status: string;
+  created_at: string;
+  run_after: string;
+  appointment_id: string | null;
+}
+
+/** Aviso sobre um compromisso comprovadamente ligado ao titular. */
+export interface AppointmentNoticeRow {
+  id: string;
+  ref_id: string | null;
+  title: string;
+  body: string | null;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+/** Uma chamada de voz do titular — o registro, não a gravação (não gravamos). */
+export interface VoiceCallRow {
+  id: string;
+  direction: string;
+  peer_phone: string;
+  status: string;
+  end_reason: string | null;
+  started_at: string;
+  answered_at: string | null;
+  ended_at: string | null;
+  duration_ms: number | null;
+}
+
 export interface ExportPayload {
   request_id: string;
   organization_id: string;
@@ -198,6 +239,28 @@ export interface ExportPayload {
   tasks: TaskRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
+  meeting_deliveries: MeetingDeliveryRow[];
+  appointment_notices: AppointmentNoticeRow[];
+  /**
+   * Chamadas de voz (migration 0232).
+   *
+   * Entra porque a anonimização APAGA: a 0235 pôs `voice_calls` na cascata de
+   * redação, e o que se apaga a pedido do titular é o que se entrega a pedido
+   * dele. Sem este bloco o relatório dizia "houve uma atividade de chamada" na
+   * linha do tempo e não mostrava chamada nenhuma — export incoerente com o
+   * próprio cascade.
+   */
+  voice_calls: VoiceCallRow[];
+  reply_drafts?: Array<{
+    id: string;
+    status: string;
+    original_body: string | null;
+    edited_body: string | null;
+    approved_body: string | null;
+    proposals: unknown;
+    feedback: unknown;
+    created_at: string;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -290,7 +353,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("contacts")
       .select(
-        "id, name, display_name, email, phone_number, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at",
+        "id, name, display_name, email, phone_number, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
       )
       .eq("organization_id", organizationId)
       .eq("id", contactId)
@@ -318,6 +381,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         source_metadata: (data.source_metadata as Record<string, unknown> | null) ?? null,
         created_at: data.created_at,
         last_activity_at: data.last_activity_at ?? null,
+        first_service_at: data.first_service_at ?? null,
       };
     }
   }
@@ -392,9 +456,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
 
     const { data, error } = await admin
       .from("messages")
-      .select(
-        "id, conversation_id, direction, type, status, body, media_url, sent_at, created_at",
-      )
+      .select("id, conversation_id, direction, type, status, body, media_url, sent_at, created_at")
       .eq("organization_id", organizationId)
       .eq("contact_id", contactId)
       .order("created_at", { ascending: false })
@@ -424,9 +486,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   if (contactId) {
     const { data, error } = await admin
       .from("crm_leads")
-      .select(
-        "id, pipeline_id, stage_id, title, status, value_cents, currency, created_at",
-      )
+      .select("id, pipeline_id, stage_id, title, status, value_cents, currency, created_at")
       .eq("organization_id", organizationId)
       .eq("contact_id", contactId)
       .order("created_at", { ascending: false })
@@ -509,7 +569,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("calendar_appointments")
       .select(
-        "id, title, description, notes, location_details, cancellation_reason, starts_at, ends_at, time_zone, status",
+        "id, title, description, notes, location_details, cancellation_reason, starts_at, ends_at, time_zone, status, google_base_projection, google_conflict, google_pending_write, meeting_url, meeting_state",
       )
       .eq("organization_id", organizationId)
       .eq("contact_id", contactId)
@@ -546,6 +606,32 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       });
     } else if (data) {
       tasks = data;
+    }
+  }
+
+  // Chamadas de voz — `contact_id` direto em `voice_calls` (migration 0232).
+  //
+  // O que existe aqui é o REGISTRO da ligação, nunca o áudio: gravação está
+  // deliberadamente fora do produto (spec 18 §1.2), então não há mídia a
+  // enfileirar como acontece com foto e anexo.
+  let voice_calls: VoiceCallRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("voice_calls")
+      .select(
+        "id, direction, peer_phone, status, end_reason, started_at, answered_at, ended_at, duration_ms",
+      )
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("started_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] voice calls load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      voice_calls = data as VoiceCallRow[];
     }
   }
 
@@ -597,6 +683,109 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // A 0226/0229 redige estes registros. Só o FK de contato e os compromissos
+  // comprovados abaixo dão escopo: nunca o conteúdo livre de um aviso ou a
+  // autorização privada do job. Paginar os IDs evita perder avisos de consultas
+  // antigas além do recorte de appointments mostrado no relatório.
+  const reply_drafts: NonNullable<ExportPayload["reply_drafts"]> = [];
+  if (contactId) {
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await admin
+        .from("ai_reply_drafts")
+        .select("id,status,original_body,edited_body,approved_body,proposals,feedback,created_at")
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contactId)
+        .order("id")
+        .range(offset, offset + 499);
+      if (error) throw error;
+      reply_drafts.push(...(data ?? []));
+      if (!data || data.length < 500) break;
+    }
+  }
+  const meeting_deliveries: MeetingDeliveryRow[] = [];
+  const appointment_notices: AppointmentNoticeRow[] = [];
+  if (contactId) {
+    const appointmentIds = new Set<string>();
+    const pageSize = 500;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await admin
+        .from("calendar_appointments")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contactId)
+        .order("id")
+        .range(offset, offset + pageSize - 1);
+      if (error) {
+        logger.warn("[lgpd-export-worker] meeting references load failed", {
+          request_id: requestId,
+        });
+        break;
+      }
+      for (const appointment of data ?? []) appointmentIds.add(appointment.id);
+      if (!data || data.length < pageSize) break;
+    }
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await admin
+        .from("job_queue")
+        .select("id,status,created_at,run_after,appointment_id:payload->>appointment_id")
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contactId)
+        .eq("kind", "transactional_delivery")
+        .order("id")
+        .range(offset, offset + pageSize - 1);
+      if (error) {
+        logger.warn("[lgpd-export-worker] meeting deliveries load failed", {
+          request_id: requestId,
+        });
+        break;
+      }
+      for (const job of data ?? [])
+        meeting_deliveries.push({
+          id: job.id,
+          status: job.status,
+          created_at: job.created_at,
+          run_after: job.run_after,
+          appointment_id:
+            typeof job.appointment_id === "string" && appointmentIds.has(job.appointment_id)
+              ? job.appointment_id
+              : null,
+        });
+      if (!data || data.length < pageSize) break;
+    }
+    const ids = [...appointmentIds];
+    const refBatchSize = 100; // Mantém o filtro IN abaixo dos limites de URL dos proxies.
+    for (let batch = 0; batch < ids.length; batch += refBatchSize) {
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await admin
+          .from("agent_inbox_items")
+          .select("id,ref_id,title,body,status,created_at,resolved_at")
+          .eq("organization_id", organizationId)
+          .eq("ref_kind", "appointment")
+          .in("kind", ["other", "appointment_outcome_required", "appointment_recovery_review"])
+          .in("ref_id", ids.slice(batch, batch + refBatchSize))
+          .order("id")
+          .range(offset, offset + pageSize - 1);
+        if (error) {
+          logger.warn("[lgpd-export-worker] appointment notices load failed", {
+            request_id: requestId,
+          });
+          break;
+        }
+        for (const notice of data ?? [])
+          appointment_notices.push({
+            id: notice.id,
+            ref_id: notice.ref_id,
+            title: notice.title,
+            body: notice.body,
+            status: notice.status,
+            created_at: notice.created_at,
+            resolved_at: notice.resolved_at,
+          });
+        if (!data || data.length < pageSize) break;
+      }
+    }
+  }
+
   return {
     request_id: requestId,
     organization_id: organizationId,
@@ -617,6 +806,10 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     tasks,
     webhook_captures,
     audit_log_extract,
+    reply_drafts,
+    meeting_deliveries,
+    appointment_notices,
+    voice_calls,
   };
 }
 
@@ -645,5 +838,8 @@ function emptyPayload(
     tasks: [],
     webhook_captures: [],
     audit_log_extract: [],
+    meeting_deliveries: [],
+    appointment_notices: [],
+    voice_calls: [],
   };
 }
