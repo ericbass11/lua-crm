@@ -7794,7 +7794,6 @@ export const DICIONARIO: Traducoes = {
   "Preenchido automaticamente pela IA a partir da conversa.": { es: "Completado automáticamente por la IA a partir de la conversación." },
   "Campos estratégicos": { es: "Campos estratégicos" },
   "(a IA também preenche)": { es: "(la IA también los completa)" },
-  "Sim": { es: "Sí" },
 };
 
 /**
