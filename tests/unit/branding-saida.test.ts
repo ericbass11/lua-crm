@@ -241,7 +241,7 @@ describe("emailDeSuporte", () => {
     const original = process.env.SUPPORT_EMAIL;
     delete process.env.SUPPORT_EMAIL;
     const { emailDeSuporte } = await carregar();
-    expect(emailDeSuporte()).toBe("");
+    expect(await emailDeSuporte()).toBe("");
     if (original !== undefined) process.env.SUPPORT_EMAIL = original;
   });
 
@@ -249,7 +249,7 @@ describe("emailDeSuporte", () => {
     const original = process.env.SUPPORT_EMAIL;
     process.env.SUPPORT_EMAIL = "  ajuda@revenda.com.br  ";
     const { emailDeSuporte } = await carregar();
-    expect(emailDeSuporte()).toBe("ajuda@revenda.com.br");
+    expect(await emailDeSuporte()).toBe("ajuda@revenda.com.br");
     if (original === undefined) delete process.env.SUPPORT_EMAIL;
     else process.env.SUPPORT_EMAIL = original;
   });

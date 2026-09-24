@@ -82,7 +82,7 @@ async function login(page: Page, email: string): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app\//);
 }
 
@@ -90,7 +90,7 @@ async function loginWithTotp(page: Page, email: string, secret: string): Promise
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/login\/mfa/);
 
   // Até 2 tentativas: um código pode expirar na borda da janela de 30s.
@@ -319,11 +319,17 @@ test("o dono vê a versão nova na sidebar e atualiza pela tela", async ({ page,
   // volta "Versão 1.1.0 disponível" e o botão "Atualizar agora", oferecendo a
   // versão que acabou de ser instalada. Repare que NENHUM heartbeat foi enviado
   // entre o `run_result` e esta linha: é exatamente a janela do defeito.
+  //
+  // E a tela NÃO pode preencher esse silêncio afirmando a 1.1.0: o host nunca
+  // confirmou essa versão. O que ela diz é que o pedido terminou e que a última
+  // versão confirmada pelo host é a 1.0.0 — que é a que está no ar até ele
+  // falar.
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: /pronto — você está na versão 1\.1\.0/i }),
+    page.getByRole("heading", { name: /a atualização para a versão 1\.1\.0 terminou/i }),
     "a tela voltou oferecendo a versão que acabou de ser instalada",
   ).toBeVisible();
+  await expect(page.getByText(/a última versão que ele confirmou é a 1\.0\.0/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /atualizar agora/i })).toHaveCount(0);
   await page.screenshot({ path: ".superpowers/evidence/task9-3a-acabou-de-atualizar.png" });
 

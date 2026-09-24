@@ -140,14 +140,18 @@ describe("crm_find_free_slots", () => {
     expect(params.ate.toISOString()).toBe("2026-09-14T14:00:00.000Z");
   });
 
-  it("não aceita dia específico e período relativo juntos", async () => {
+  it("prioriza dia específico quando dia e dias_a_frente forem informados juntos (#1436)", async () => {
+    respondeCom(SUCESSO);
     const r = (await crmFindFreeSlots.handler(
-      { event_type_slug: "c", dia: "2026-09-13", dias_a_frente: 7 },
+      { event_type_slug: "c", dia: "2026-09-01", dias_a_frente: 7 },
       ctx,
-    )) as { motivo: string; mensagem: string };
-    expect(r.motivo).toBe("periodo_ambiguo");
-    expect(r.mensagem).toMatch(/não os dois/);
-    expect(horariosLivresDaOrg).not.toHaveBeenCalled();
+    )) as { horarios: unknown[]; total_de_horarios: number };
+    expect(r.total_de_horarios).toBe(1);
+    expect(horariosLivresDaOrg).toHaveBeenCalled();
+    const params = vi.mocked(horariosLivresDaOrg).mock.calls[0]![2];
+    // A janela consultada é a ampla do dia 2026-09-01 (-14h/+38h), ignorando o dias_a_frente: 7
+    expect(params.de.toISOString()).toBe("2026-08-31T10:00:00.000Z");
+    expect(params.ate.toISOString()).toBe("2026-09-02T14:00:00.000Z");
   });
 
   it("⚠️ a recusa que sai é a do CLIENTE, nunca a do OPERADOR", async () => {
@@ -328,6 +332,36 @@ describe("as escritas de agenda", () => {
     expect(handlers.alterarAgendamentoHandler).toHaveBeenCalledTimes(1);
     expect(handlers.cancelarAgendamentoHandler).not.toHaveBeenCalled();
     expect(handlers.marcarAgendamentoHandler).not.toHaveBeenCalled();
+  });
+
+  it("endereço e observação passam ao handler; notes continua interno", async () => {
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+    await crmBookAppointment.handler(
+      {
+        event_type_slug: "consulta",
+        starts_at: "2026-09-01T14:00:00Z",
+        contact_id: "11111111-1111-4111-8111-111111111111",
+        location_details: "Rua 1",
+        description: "Trazer RG",
+        notes: "queixa interna",
+      },
+      ctx,
+    );
+    expect(handlers.marcarAgendamentoHandler).toHaveBeenCalledWith(
+      ctx.supabase,
+      expect.anything(),
+      expect.objectContaining({
+        location_details: "Rua 1",
+        description: "Trazer RG",
+        notes: "queixa interna",
+      }),
+    );
   });
 
   it("a organização vem do CONTEXTO do agente, nunca do argumento", async () => {

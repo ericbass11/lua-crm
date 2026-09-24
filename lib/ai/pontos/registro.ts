@@ -210,6 +210,16 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "llm_calls",
   },
   {
+    id: "prospecting_agent_setup_chat",
+    rotulo: "Montar agente por conversa",
+    oQueFaz: "Conversa com o administrador e prepara uma proposta de agente para uma campanha. A criação depende da confirmação no resumo.",
+    papel: "melhorar",
+    exige: {},
+    emissor: "lib/prospecting/agent-chat.ts",
+    sintomaDeFalha: "A conversa de configuração mostra um erro e preserva o que foi escrito; nenhum agente é criado.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "draft_suggestion",
     rotulo: "Sugerir resposta ao atendente",
     oQueFaz:
@@ -260,6 +270,24 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "llm_calls",
   },
   {
+    id: "case_chat",
+    rotulo: "Conversar sobre o caso com a equipe",
+    oQueFaz:
+      "Responde às perguntas de quem vai decidir um caso: lê o caso, o que a equipe já decidiu e a " +
+      "conversa com o cliente, e explica em português. Nunca fala com o cliente nem mexe no caso.",
+    papel: "entender",
+    // `exige: {}` porque o ponto roda SEM FERRAMENTA NENHUMA: o servidor monta o
+    // contexto inteiro antes de chamar o modelo. Ferramenta de leitura
+    // alcançaria outros casos e outros contatos da organização; ferramenta de
+    // efeito faria a consulta virar ação. Sem exigência, qualquer modelo barato
+    // serve — e a tela não recusa a escolha por falta de ferramentas.
+    exige: {},
+    emissor: "lib/agent-engine/agent/conversa-do-caso.ts",
+    sintomaDeFalha:
+      "Quem vai decidir o caso pergunta e não recebe resposta — decide sem o contexto, ou larga o caso na fila.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "sentiment_classify",
     rotulo: "Medir o clima da conversa",
     oQueFaz:
@@ -292,6 +320,19 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/agent-engine/agent/followup-flow-classify.ts",
     sintomaDeFalha:
       "As retomadas saem todas no mesmo horário fixo, sem respeitar o ritmo de cada cliente.",
+    registraEm: "llm_calls",
+  },
+
+  {
+    id: "flow_validate",
+    rotulo: "Validar a resposta do fluxo",
+    oQueFaz:
+      "Quando o fluxo está esperando uma resposta, lê a mensagem do cliente com o contexto da conversa e devolve SÓ o dado que deve ser salvo — ou diz que ele não respondeu.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/agent-engine/agent/flow-validate.ts",
+    sintomaDeFalha:
+      "Dado errado entra no cadastro do cliente (ex.: o modelo grava a resposta na pergunta errada) ou o cliente fica sem a pergunta seguinte.",
     registraEm: "llm_calls",
   },
 
