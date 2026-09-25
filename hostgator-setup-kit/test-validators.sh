@@ -1774,16 +1774,31 @@ STUB
 # pedir — o teste passaria a depender da máquina, e faria chamada de rede a
 # partir de um .env de mentira. O cenário declara o próprio ambiente.
 rodar() {
-  local script="$1" flags="$2"
+  local script="$1" flags="$2" repo_url_teste=""
+  local -a repo_env=()
   printf '%s\n%s\n' "$BASE_ENV" "${3-}" > "$VPS_PROJ/.env"
   : > "$VPS_LOG"
+  # O update.sh valida que tags, changelog e imagens vêm da mesma linhagem.
+  # Nas fixtures, o repositório nasce só com `git init`, sem origin; declare um
+  # espelho local explícito e use o mesmo valor no override documentado. Assim
+  # o teste exercita o fluxo inteiro sem abrir exceção no guard de produção.
+  if [ "$script" = "update.sh" ]; then
+    repo_url_teste="$(git -C "$VPS_PROJ" config --get remote.origin.url 2>/dev/null || true)"
+    if [ -z "$repo_url_teste" ]; then
+      repo_url_teste="file://$VPS_PROJ"
+      git -C "$VPS_PROJ" remote add origin "$repo_url_teste"
+    fi
+    repo_env=("REPO_URL=$repo_url_teste")
+  fi
   if [ $# -ge 4 ]; then
     printf '%s' "$4" > "$VPS_RAIZ/respostas.txt"
     (cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" DOCKER_LOG="$VPS_LOG" CRONTAB_SANDBOX="$CRONTAB_SANDBOX" \
+      "${repo_env[@]}" \
       SUPABASE_ACCESS_TOKEN= \
       bash "$VPS_RAIZ/$script" $flags <"$VPS_RAIZ/respostas.txt" 2>&1 || true) | sed -E 's/\x1b\[[0-9;]*m//g'
   else
     (cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" DOCKER_LOG="$VPS_LOG" CRONTAB_SANDBOX="$CRONTAB_SANDBOX" \
+      "${repo_env[@]}" \
       SUPABASE_ACCESS_TOKEN= \
       bash "$VPS_RAIZ/$script" $flags 2>&1 || true) | sed -E 's/\x1b\[[0-9;]*m//g'
   fi
