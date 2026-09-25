@@ -1,4 +1,4 @@
--- 0068: Skills instaláveis + marketplace (Fase 2 do épico harness — spec 2026-07-23).
+-- 0919: Skills instaláveis + marketplace (Fase 2 do épico harness — spec 2026-07-23).
 -- Manifest de arquivos na versão de skill + telemetria de ativação + bucket de
 -- assets + leitura do catálogo de plataforma por clientes user-scoped.
 

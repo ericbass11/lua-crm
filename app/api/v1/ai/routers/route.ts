@@ -3,7 +3,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * GET  /api/v1/ai/routers — lista routers da org (agent+), com member_count.
  * POST /api/v1/ai/routers — cria router (admin), audit `ai.router_created`.
  *
- * Intent Router (Fase 3 do épico harness — spec 2026-07-23, migration 0085).
+ * Intent Router (Fase 3 do épico harness — spec 2026-07-23, migration 0921).
  * organization_id vem SEMPRE de requireRole — nunca do body. Unique parcial
  * index (channel_session_id where is_active) garante 1 router ativo por sessão
  * — violação vira 409 tratado, não 500 cru.

@@ -3,7 +3,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * GET    /api/v1/ai/routers/:id — detalhe do router + membros (agent+).
  * PATCH  /api/v1/ai/routers/:id — atualiza campos (admin), audit `ai.router_updated`.
  * DELETE /api/v1/ai/routers/:id — remove o router (admin), audit `ai.router_deleted`.
- *   Cascade FK (migration 0085) já apaga ai_router_members junto.
+ *   Cascade FK (migration 0921) já apaga ai_router_members junto.
  *
  * organization_id sempre de requireRole — nunca do path/body.
  */

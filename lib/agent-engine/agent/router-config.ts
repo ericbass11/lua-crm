@@ -1,6 +1,6 @@
 /**
  * Loader do Intent Router (Fase 3 do épico harness — spec 2026-07-23,
- * migration 0085). `ai_routers`/`ai_router_members` são tabelas EDITÁVEIS
+ * migration 0921). `ai_routers`/`ai_router_members` são tabelas EDITÁVEIS
  * (não versão+ponteiro como ai_agents): mutação vem auditada por trigger.
  *
  * Contrato:

@@ -4812,7 +4812,7 @@ create policy "tenant_read_lgpd_exports" on storage.objects for select
     )
   );
 
--- ---- bucket de assets de skills (migration 0068) ----
+-- ---- bucket de assets de skills (migration 0919) ----
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('skill-assets', 'skill-assets', false, 5242880)
 on conflict (id) do nothing;
@@ -5037,15 +5037,9 @@ create table if not exists public.calendar_integrations (
 create index if not exists calendar_integrations_org_idx
   on public.calendar_integrations (organization_id);
 alter table public.calendar_integrations enable row level security;
-drop policy if exists tenant_isolation_calendar_integrations_select on public.calendar_integrations;
-create policy tenant_isolation_calendar_integrations_select
-  on public.calendar_integrations for select
-  using (organization_id in (select public.fn_user_org_ids()));
-drop policy if exists tenant_isolation_calendar_integrations_modify on public.calendar_integrations;
-create policy tenant_isolation_calendar_integrations_modify
-  on public.calendar_integrations
-  using (organization_id in (select public.fn_user_org_ids()))
-  with check (organization_id in (select public.fn_user_org_ids()));
+-- As policies finais ficam no bloco de endurecimento 0918, depois de todas as
+-- migrations importadas. Criá-las aqui e derrubá-las adiante produziria um
+-- estado intermediário inútil e fazia o baseline construir o que ele remove.
 create or replace view public.calendar_integrations_safe
   with (security_invoker = 'true') as
 select id, organization_id, provider, label, calendar_id, service_account_email,
@@ -5079,16 +5073,7 @@ create table if not exists public.followup_settings (
 
 alter table public.followup_settings enable row level security;
 
-drop policy if exists tenant_isolation_followup_settings_select on public.followup_settings;
-create policy tenant_isolation_followup_settings_select
-  on public.followup_settings for select
-  using (organization_id in (select public.fn_user_org_ids()));
-
-drop policy if exists tenant_isolation_followup_settings_modify on public.followup_settings;
-create policy tenant_isolation_followup_settings_modify
-  on public.followup_settings
-  using (organization_id in (select public.fn_user_org_ids()))
-  with check (organization_id in (select public.fn_user_org_ids()));
+-- Policies finais: bloco de endurecimento 0918.
 
 grant all on table public.followup_settings to service_role;
 grant select, insert, update, delete on table public.followup_settings to authenticated;
@@ -5119,16 +5104,7 @@ create table if not exists public.tag_definitions (
 
 alter table public.tag_definitions enable row level security;
 
-drop policy if exists tenant_isolation_tag_definitions_select on public.tag_definitions;
-create policy tenant_isolation_tag_definitions_select
-  on public.tag_definitions for select
-  using (organization_id in (select public.fn_user_org_ids()));
-
-drop policy if exists tenant_isolation_tag_definitions_modify on public.tag_definitions;
-create policy tenant_isolation_tag_definitions_modify
-  on public.tag_definitions
-  using (organization_id in (select public.fn_user_org_ids()))
-  with check (organization_id in (select public.fn_user_org_ids()));
+-- Policies finais: bloco de endurecimento 0918.
 
 grant all on table public.tag_definitions to service_role;
 grant select, insert, update, delete on table public.tag_definitions to authenticated;
@@ -5153,13 +5129,7 @@ create table if not exists public.notification_settings (
   updated_at timestamptz not null default now()
 );
 alter table public.notification_settings enable row level security;
-drop policy if exists tenant_isolation_notification_settings_select on public.notification_settings;
-create policy tenant_isolation_notification_settings_select
-  on public.notification_settings for select using (organization_id in (select public.fn_user_org_ids()));
-drop policy if exists tenant_isolation_notification_settings_modify on public.notification_settings;
-create policy tenant_isolation_notification_settings_modify
-  on public.notification_settings using (organization_id in (select public.fn_user_org_ids()))
-  with check (organization_id in (select public.fn_user_org_ids()));
+-- Policies finais: bloco de endurecimento 0918.
 grant all on table public.notification_settings to service_role;
 grant select, insert, update, delete on table public.notification_settings to authenticated;
 
@@ -5313,13 +5283,11 @@ create table if not exists public.mystery_shopper_campaigns (
 );
 create index if not exists mystery_campaigns_org_status_idx
   on public.mystery_shopper_campaigns (organization_id, status, started_at desc);
-create unique index if not exists uniq_mystery_active_per_session
-  on public.mystery_shopper_campaigns (shopper_session_id) where status = 'running';
+-- A unicidade final nasce depois de target_chat_id, por (sessão, alvo). Criar
+-- aqui o índice antigo por sessão só para derrubá-lo na 0039 bloquearia, no
+-- meio do update, auditorias simultâneas que o schema final permite.
 alter table public.mystery_shopper_campaigns enable row level security;
-drop policy if exists tenant_isolation_mystery_campaigns_all on public.mystery_shopper_campaigns;
-create policy tenant_isolation_mystery_campaigns_all on public.mystery_shopper_campaigns
-  for all using (organization_id in (select public.fn_user_org_ids()))
-  with check (organization_id in (select public.fn_user_org_ids()));
+-- Policies finais do Cliente Oculto: bloco de endurecimento 0918.
 grant all on table public.mystery_shopper_campaigns to service_role;
 grant select, insert, update, delete on table public.mystery_shopper_campaigns to authenticated;
 
@@ -5337,10 +5305,7 @@ create table if not exists public.mystery_shopper_messages (
 create index if not exists mystery_messages_campaign_idx
   on public.mystery_shopper_messages (campaign_id, sent_at);
 alter table public.mystery_shopper_messages enable row level security;
-drop policy if exists tenant_isolation_mystery_messages_all on public.mystery_shopper_messages;
-create policy tenant_isolation_mystery_messages_all on public.mystery_shopper_messages
-  for all using (organization_id in (select public.fn_user_org_ids()))
-  with check (organization_id in (select public.fn_user_org_ids()));
+-- Policies finais do Cliente Oculto: bloco de endurecimento 0918.
 grant all on table public.mystery_shopper_messages to service_role;
 grant select, insert, update, delete on table public.mystery_shopper_messages to authenticated;
 
@@ -8082,8 +8047,8 @@ alter table flywheel_distiller_proposals add constraint flywheel_distiller_propo
 -- é exatamente o conjunto que a lista enumerava (medido, tabela a tabela).
 do $$ begin perform public.fn_proteger_tabelas_de_organizacao(); end $$;
 
--- ---- skills instaláveis: manifest + skill_activations + catálogo (migration 0068) ----
--- 0068: Skills instaláveis + marketplace (Fase 2 do épico harness — spec 2026-07-23).
+-- ---- skills instaláveis: manifest + skill_activations + catálogo (migration 0919) ----
+-- 0919: Skills instaláveis + marketplace (Fase 2 do épico harness — spec 2026-07-23).
 -- Manifest de arquivos na versão de skill + telemetria de ativação + bucket de
 -- assets + leitura do catálogo de plataforma por clientes user-scoped.
 
@@ -8120,8 +8085,8 @@ drop policy if exists catalog_read_skill_pointers on skill_pointers;
 create policy catalog_read_skill_pointers on skill_pointers for select
   to authenticated using (organization_id is null);
 
--- ---- seed de skills de plataforma: catálogo inicial do marketplace (migration 0069) ----
--- 0069: seed de skills de plataforma (organization_id null) — catálogo inicial do
+-- ---- seed de skills de plataforma: catálogo inicial do marketplace (migration 0920) ----
+-- 0920: seed de skills de plataforma (organization_id null) — catálogo inicial do
 -- marketplace de skills (Fase 2 do épico harness). Duas skills de fábrica, qualidade
 -- sobre quantidade: `objecao-preco` (vendas/genérico) e `agendamento` (clínicas/
 -- serviços). Visíveis em toda org via a policy catalog_read_* acima.
@@ -9349,7 +9314,7 @@ update public.crm_stages
 -- escolha de índice em consultas de crm_leads (medido no G4-04). Custa
 -- milissegundos numa tabela vazia.
 analyze public.crm_leads;
--- ---- intent router: ai_routers/members/decisions + stickiness (migration 0085) ----
+-- ---- intent router: ai_routers/members/decisions + stickiness (migration 0921) ----
 
 -- 0085: Intent Router (Fase 3 do épico harness — spec 2026-07-23).
 -- Um router pluga num channel_session e roteia a conversa para o agente cuja
@@ -9458,7 +9423,7 @@ create policy tenant_isolation_ai_router_decisions_all on public.ai_router_decis
   using (organization_id in (select * from public.fn_user_org_ids()))
   with check (organization_id in (select * from public.fn_user_org_ids()));
 
--- ---- knowledge_searches: telemetria de busca de conhecimento (migration 0086) ----
+-- ---- knowledge_searches: telemetria de busca de conhecimento (migration 0922) ----
 
 -- 0086 — telemetria de busca de conhecimento (Fase 4 do épico do Harness)
 --
@@ -9467,7 +9432,7 @@ create policy tenant_isolation_ai_router_decisions_all on public.ai_router_decis
 -- do `threshold` que estava valendo naquele momento. Métrica agregada perde
 -- exatamente essa distância, que é o número que vira ação.
 --
--- SEM PII, pelo mesmo contrato de `ai_router_decisions` (0085): não gravamos o
+-- SEM PII, pelo mesmo contrato de `ai_router_decisions` (0921): não gravamos o
 -- texto da pergunta. `hits`/`top_score` respondem à pergunta do painel sem
 -- carregar conteúdo de conversa para uma tabela de telemetria de retenção longa.
 

@@ -1,4 +1,4 @@
--- 0174: Intent Router (Fase 3 do épico harness — spec 2026-07-23).
+-- 0921: Intent Router (Fase 3 do épico harness — spec 2026-07-23).
 -- Um router pluga num channel_session e roteia a conversa para o agente cuja
 -- intenção declarada casa com a mensagem. Tabelas EDITÁVEIS (não versão+ponteiro):
 -- mutação é auditada por trigger, como ai_agents.

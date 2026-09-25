@@ -1,7 +1,7 @@
--- 0069: seed de skills de plataforma (organization_id null) — catálogo inicial do
+-- 0920: seed de skills de plataforma (organization_id null) — catálogo inicial do
 -- marketplace de skills (Fase 2 do épico harness). Duas skills de fábrica, qualidade
 -- sobre quantidade: `objecao-preco` (vendas/genérico) e `agendamento` (clínicas/
--- serviços). Visíveis em toda org via a policy catalog_read_* da migration 0068.
+-- serviços). Visíveis em toda org via a policy catalog_read_* da migration 0919.
 --
 -- Idempotente: cada bloco só insere versão+ponteiro se o ponteiro de plataforma
 -- ainda não existir pra aquele nome — evita versão órfã (skill_versions é imutável,

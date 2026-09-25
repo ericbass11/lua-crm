@@ -1,6 +1,6 @@
 /**
  * Leitura de reference de skill instalável (Fase 2 do épico harness — Task 6).
- * Uma reference é um arquivo do PACOTE da skill (manifest, migration 0068) que não
+ * Uma reference é um arquivo do PACOTE da skill (manifest, migration 0919) que não
  * cabe no corpo (>200 linhas — regra 9): o modelo pede sob demanda via a tool
  * read_skill_reference (inbound-turn.ts). Duas invariantes de segurança, ambas
  * validadas ANTES de tocar storage:

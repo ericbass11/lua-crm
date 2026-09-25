@@ -1,5 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -49,23 +48,20 @@ const MARCAS = ["crm_lead_activities", "emitLeadActivity", "buildLeadActivityRow
 
 function arquivosQueEscrevemAtividade(): string[] {
   const achados = new Set<string>();
-  for (const marca of MARCAS) {
-    let saida = "";
-    try {
-      saida = execFileSync(
-        "rg",
-        ["-l", "-g", "*.ts", "-g", "*.tsx", marca, ...PASTAS],
-        { cwd: RAIZ, encoding: "utf8" },
-      );
-    } catch {
-      // `rg` sai com 1 quando não acha nada, e o `execFileSync` LANÇA. Sem
-      // este catch, a sabotagem da varredura vazia derrubava o arquivo inteiro
-      // com "Command failed" e nem chegava na guarda — o teste não passava por
-      // vacuidade, ele simplesmente NÃO RODAVA, que é igualmente cego.
-      saida = "";
+  const visitar = (dir: string): void => {
+    for (const entrada of readdirSync(dir, { withFileTypes: true })) {
+      const arquivo = path.join(dir, entrada.name);
+      if (entrada.isDirectory()) {
+        visitar(arquivo);
+      } else if (/\.tsx?$/.test(entrada.name)) {
+        const fonte = readFileSync(arquivo, "utf8");
+        if (MARCAS.some((marca) => fonte.includes(marca))) {
+          achados.add(path.relative(RAIZ, arquivo));
+        }
+      }
     }
-    for (const a of saida.split("\n").filter(Boolean)) achados.add(a);
-  }
+  };
+  for (const pasta of PASTAS) visitar(path.join(RAIZ, pasta));
   return [...achados].sort();
 }
 

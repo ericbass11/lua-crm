@@ -68,7 +68,7 @@ export interface LoadedSkill {
   body: string;
   matcher: SkillMatcher;
   /**
-   * Manifesto do pacote instalável (Fase 2 — migration 0068): lista de arquivos
+   * Manifesto do pacote instalável (Fase 2 — migration 0919): lista de arquivos
    * `{ path, size, sha256, kind }` (kind: 'reference' | 'asset'). Skill sem pacote
    * (body-only) tem manifest `[]`. Consumido por read_skill_reference (inbound-turn.ts)
    * para validar que um ref_path pedido pelo modelo é conhecido ANTES de tocar storage.

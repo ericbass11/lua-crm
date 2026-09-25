@@ -1050,7 +1050,7 @@ async function handleMysteryShopperInbound(
     direction: "target",
     body: p.body ?? null,
     external_id: p.id,
-    sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
+    sent_at: dataDoTimestamp(p.timestamp, now),
   });
   // unique (campaign_id, external_id): 23505 = já ingerido (message vs message.any).
   if (insErr && insErr.code !== "23505") {

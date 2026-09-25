@@ -37,6 +37,11 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Visão geral do atendimento, do funil e da concentração de contatos.": { es: "Visión general de la atención, del embudo y de la concentración de contactos." },
+  "Auditorias de atendimento e o funil de prospecção gerado por elas.": { es: "Auditorías de atención y el embudo de prospección generado por ellas." },
+  "A sequência de retomada quando um cliente para de responder.": { es: "La secuencia de reactivación cuando un cliente deja de responder." },
+  "Automação e integrações": { es: "Automatización e integraciones" },
+  "A agenda usada pelos agentes para consultar horários e marcar reuniões.": { es: "La agenda que usan los agentes para consultar horarios y programar reuniones." },
   "Sobre a empresa": { es: "Sobre la empresa" },
   "Não foi possível carregar o enriquecimento.": { es: "No se pudo cargar el enriquecimiento." },
   "Sem dados de enriquecimento para este contato.": { es: "Sin datos de enriquecimiento para este contacto." },

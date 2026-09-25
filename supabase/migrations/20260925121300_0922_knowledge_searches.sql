@@ -1,11 +1,11 @@
--- 0175 — telemetria de busca de conhecimento (Fase 4 do épico do Harness)
+-- 0922 — telemetria de busca de conhecimento (Fase 4 do épico do Harness)
 --
 -- POR QUE UMA TABELA E NÃO `metrics`: a pergunta que o painel precisa responder
 -- é "quantas buscas QUASE acertaram", e ela exige o `top_score` da busca ao lado
 -- do `threshold` que estava valendo naquele momento. Métrica agregada perde
 -- exatamente essa distância, que é o número que vira ação.
 --
--- SEM PII, pelo mesmo contrato de `ai_router_decisions` (0085): não gravamos o
+-- SEM PII, pelo mesmo contrato de `ai_router_decisions` (0921): não gravamos o
 -- texto da pergunta. `hits`/`top_score` respondem à pergunta do painel sem
 -- carregar conteúdo de conversa para uma tabela de telemetria de retenção longa.
 
