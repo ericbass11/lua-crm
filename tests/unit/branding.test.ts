@@ -48,10 +48,7 @@ describe("resolveBranding", () => {
 
 describe("guarda de white-label (self-host)", () => {
   const branding = fs.readFileSync(path.join(RAIZ, "lib/branding.ts"), "utf8");
-  const publicEnvScript = fs.readFileSync(
-    path.join(RAIZ, "app/public-env-script.tsx"),
-    "utf8",
-  );
+  const publicEnvScript = fs.readFileSync(path.join(RAIZ, "app/public-env-script.tsx"), "utf8");
   const layoutRaiz = fs.readFileSync(path.join(RAIZ, "app/layout.tsx"), "utf8");
 
   it("não usa prefixo NEXT_PUBLIC_ para a marca", () => {
@@ -101,7 +98,7 @@ describe("guarda de white-label (self-host)", () => {
       layoutRaiz.match(/await marcaResolvida\(\)/g) ?? [],
       "os quatro consumidores do layout raiz são `generateMetadata` (aba), " +
         "`EstiloDaMarca` (cor), `MarcaNoNavegador` (`window.__PUBLIC_ENV__`) e " +
-        "`MarcaDosClientComponents` (o contexto que os `\"use client\"` leem). " +
+        '`MarcaDosClientComponents` (o contexto que os `"use client"` leem). ' +
         "Consumidor a mais é legítimo — atualize o número. Consumidor a MENOS " +
         "significa que alguém voltou a montar a pilha por fora.",
     ).toHaveLength(4);
@@ -344,7 +341,12 @@ function marcasNoTexto(fonte: string): string[] {
     for (const casada of linha.matchAll(/[\w@.-]*deskcomm[\w@.-]*/gi)) {
       // Pontuação encostada (o ponto final de "no DeskcommCRM.") não faz parte
       // do identificador e faria a lista mudar por causa de uma vírgula.
-      achadas.push(casada[0].toLowerCase().replace(/^[.-]+/, "").replace(/[.-]+$/, ""));
+      achadas.push(
+        casada[0]
+          .toLowerCase()
+          .replace(/^[.-]+/, "")
+          .replace(/[.-]+$/, ""),
+      );
     }
   }
   return achadas.sort();
@@ -514,7 +516,9 @@ describe("catraca de marca hardcoded", () => {
       const atual = encontrado.get(arquivo) ?? [];
       const congelado = [...entrada.marcas].sort();
       if (JSON.stringify(atual) !== JSON.stringify(congelado)) {
-        divergentes.push(`  ${arquivo}\n    lista: ${JSON.stringify(congelado)}\n    disco: ${JSON.stringify(atual)}`);
+        divergentes.push(
+          `  ${arquivo}\n    lista: ${JSON.stringify(congelado)}\n    disco: ${JSON.stringify(atual)}`,
+        );
       }
     }
     expect(
@@ -542,7 +546,10 @@ describe("catraca de marca hardcoded", () => {
     const ruins = Object.entries(MARCA_CONGELADA)
       .filter(([, e]) => !validas.includes(e.categoria) || e.motivo.trim().length < 40)
       .map(([f]) => f);
-    expect(ruins, `entrada sem categoria válida ou sem justificativa escrita:\n  ${ruins.join("\n  ")}`).toEqual([]);
+    expect(
+      ruins,
+      `entrada sem categoria válida ou sem justificativa escrita:\n  ${ruins.join("\n  ")}`,
+    ).toEqual([]);
   });
 
   it("a Fase 4 fechou: sobra uma dívida, e ela declara por que sobrou", () => {
@@ -571,7 +578,10 @@ describe("catraca de marca hardcoded", () => {
     const semFase = Object.entries(MARCA_CONGELADA)
       .filter(([, e]) => (e.categoria === "DIVIDA") !== (typeof e.fase === "number"))
       .map(([f]) => f);
-    expect(semFase, `DIVIDA sem fase, ou fase declarada onde não é dívida:\n  ${semFase.join("\n  ")}`).toEqual([]);
+    expect(
+      semFase,
+      `DIVIDA sem fase, ou fase declarada onde não é dívida:\n  ${semFase.join("\n  ")}`,
+    ).toEqual([]);
   });
 });
 
@@ -645,7 +655,10 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
     for (const { arquivo } of ALVOS) {
       expect(fs.existsSync(path.join(RAIZ, arquivo)), `${arquivo} sumiu`).toBe(true);
     }
-    for (const modelo of ["supabase/templates/confirmation.html", "supabase/templates/recovery.html"]) {
+    for (const modelo of [
+      "supabase/templates/confirmation.html",
+      "supabase/templates/recovery.html",
+    ]) {
       const texto = fs.readFileSync(path.join(RAIZ, modelo), "utf8");
       expect(texto, `${modelo} não substitui a marca`).toContain("__APP_NAME__");
       expect(texto, `${modelo} não substitui o accent`).toContain("__ACCENT__");
@@ -654,13 +667,17 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
 
   it("comentário de HTML não conta, e `-->` no meio da linha não engole o resto", () => {
     expect(marcasNoTexto(semComentariosHtml("<!-- fala do DeskcommCRM -->"))).toEqual([]);
-    expect(marcasNoTexto(semComentariosHtml("<!--\n  DeskcommCRM\n  em várias linhas\n-->"))).toEqual([]);
+    expect(
+      marcasNoTexto(semComentariosHtml("<!--\n  DeskcommCRM\n  em várias linhas\n-->")),
+    ).toEqual([]);
     // O caso que a regra de `//` erraria: marca REAL depois do fecho.
     expect(marcasNoTexto(semComentariosHtml("<!-- nota --> Sua conta no DeskcommCRM"))).toEqual([
       "deskcommcrm",
     ]);
     // E a marca fora de comentário nenhum continua contando.
-    expect(marcasNoTexto(semComentariosHtml("<p>conta no DeskcommCRM</p>"))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosHtml("<p>conta no DeskcommCRM</p>"))).toEqual([
+      "deskcommcrm",
+    ]);
   });
 
   it("comentário de TOML não conta, mas `#` dentro de string não vira comentário", () => {
@@ -668,7 +685,9 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
     expect(marcasNoTexto(semComentariosToml('cor = "#506d48"  # DeskcommCRM'))).toEqual([
       "deskcommcrm",
     ]);
-    expect(marcasNoTexto(semComentariosToml('subject = "Olá — DeskcommCRM"'))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosToml('subject = "Olá — DeskcommCRM"'))).toEqual([
+      "deskcommcrm",
+    ]);
   });
 
   it("nenhum arquivo do GoTrue fixa a marca fora da lista", () => {
@@ -683,7 +702,10 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
 
   it("a lista do GoTrue não guarda arquivo que já não tem marca", () => {
     const obsoletos = Object.keys(CONGELADO_SUPABASE).filter((f) => !encontradoAqui.has(f));
-    expect(obsoletos, `apague a linha destes de CONGELADO_SUPABASE:\n  ${obsoletos.join("\n  ")}`).toEqual([]);
+    expect(
+      obsoletos,
+      `apague a linha destes de CONGELADO_SUPABASE:\n  ${obsoletos.join("\n  ")}`,
+    ).toEqual([]);
   });
 
   it("arquivo congelado do GoTrue não mudou de conjunto sem a lista acompanhar", () => {
@@ -772,6 +794,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da API da OpenAI (embeddings da busca e transcrição de áudio). É o destino do request: trocar pelo domínio do revendedor faria a chamada não chegar a lugar nenhum.",
   },
+  "api.typesafe.ai": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint do System One (`lib/ai/decisao/cliente.ts`) — o modelo que devolve decisão tipada em vez de texto, usado hoje no medidor de clima da conversa e na validação da chave dele (`GET /v1/models`, em lib/ai/provider-validators.ts). É o destino do request, com a chave da PRÓPRIA organização: trocar pelo domínio do revendedor faria a chamada não chegar a lugar nenhum. Mesma razão das outras entradas de FORNECEDOR, e vale registrar que a allowlist de egress deriva DESTA base (`baseDaApiDoJev()`), então esconder o nome aqui quebraria também a contenção de saída.",
+  },
   "api.anthropic.com": {
     categoria: "FORNECEDOR",
     motivo:
@@ -786,6 +813,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "FORNECEDOR",
     motivo:
       "endpoint da API da DeepSeek (OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito. É o destino do request, não texto de interface; trocar pelo domínio do revendedor faria a chamada não chegar.",
+  },
+  "router.requesty.ai": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da Requesty (roteador OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito. É o destino do request, não texto de interface.",
   },
   "generativelanguage.googleapis.com": {
     categoria: "FORNECEDOR",
@@ -856,10 +888,20 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "CONSOLE",
     motivo: "painel de chaves da Anthropic. Mesmo caso: é de onde a credencial do usuário sai.",
   },
+  "console.typesafe.ai": {
+    categoria: "CONSOLE",
+    motivo:
+      "painel onde o usuário gera a PRÓPRIA chave do Jev (`ondePegarAChave` de PROVEDORES_DE_DECISAO em lib/ai/pontos/provedores.ts). Endereço do fornecedor, não nosso.",
+  },
   "platform.deepseek.com": {
     categoria: "CONSOLE",
     motivo:
       "painel onde o usuário gera a PRÓPRIA chave da DeepSeek (`ondePegarAChave` em lib/ai/pontos/provedores.ts). Endereço do fornecedor, não nosso.",
+  },
+  "app.requesty.ai": {
+    categoria: "CONSOLE",
+    motivo:
+      "painel onde o usuário gera a PRÓPRIA chave da Requesty (`ondePegarAChave` em lib/ai/pontos/provedores.ts). Endereço do fornecedor, não nosso.",
   },
   "aistudio.google.com": {
     categoria: "CONSOLE",
@@ -1052,11 +1094,17 @@ describe("catraca de host de terceiro no código que embarca", () => {
     ).toEqual([
       "000000000000-xxxxxxxx.apps.googleusercontent.com",
       "aistudio.google.com",
+      // Decisão escrita: painel de chaves da Requesty, o mesmo caso dos outros
+      // CONSOLE (o link "Onde pegar a chave" da tela de Credenciais).
+      "app.requesty.ai",
       // Agenda por Service Account do fork: atalhos oficiais para criar o
       // projeto e conferir o calendário que será compartilhado com o robô.
       "calendar.google.com",
       "console.anthropic.com",
       "console.cloud.google.com",
+      // Decisão escrita: é o painel de chaves do Jev, o mesmo caso dos outros
+      // CONSOLE — o link "Onde pegar a chave" da tela de Credenciais.
+      "console.typesafe.ai",
       "deskcomm.app",
       // Link que abre o pino que o CLIENTE mandou (`lib/messaging/localizacao.ts`).
       // Mesma natureza do `wa.me` abaixo: o produto não fala com o host, quem

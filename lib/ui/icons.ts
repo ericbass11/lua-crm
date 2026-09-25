@@ -107,6 +107,7 @@ export {
   FileText,
   Lock,
   Key,
+  LockOpen,
   Receipt,
   Tag,
   Question,
