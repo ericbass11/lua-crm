@@ -628,13 +628,14 @@ export const NAV_CATALOG = [
   {
     // Painel exclusivo da instalação Lua CRM, preservado na sincronização com
     // o upstream. É a visão executiva que reúne atendimento, funil e contatos.
+    // Continua no hub de Análise e no ⌘K, mas cede a vaga medida do sidebar ao
+    // Cliente Oculto — o módulo diário e exclusivo que diferencia este fork.
     href: "/app/dashboard",
     label: "Painel",
     description: "Visão geral do atendimento, do funil e da concentração de contatos.",
     icon: "Gauge",
     group: "analise",
     section: "Os números do período",
-    sidebar: true,
   },
   {
     // A terceira ponta do módulo financeiro: Configurações › Financeiro descreve
@@ -675,7 +676,9 @@ export const NAV_CATALOG = [
     // pessoa — orçamento e criativo são da empresa inteira. Mesmo grau dos
     // outros dois vizinhos do grupo.
     minRole: "manager",
-    sidebar: true,
+    // No fork Lua CRM, Cliente Oculto ocupa a terceira vaga medida do grupo no
+    // sidebar. Meta Ads continua no hub de Análise e no ⌘K: é consulta semanal
+    // de gestão, enquanto as auditorias alimentam o funil comercial exclusivo.
   },
   {
     // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
