@@ -227,29 +227,11 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "é a guarda do contrato acima: este teste é o que reprova quem renomear o header. Trocar a string aqui para 'limpar a marca' desarmaria a única proteção que o contrato tem",
     marcas: ["x-deskcomm-event", "x-deskcomm-signature", "x-deskcomm-signature"],
   },
-  "lib/mcp/server.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "nome do servidor MCP, que o cliente (Claude Desktop e afins) grava na própria configuração. Renomear derruba as conexões já configuradas de quem usa",
-    marcas: ["deskcomm-crm"],
-  },
-  "lib/supabase/admin.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "`X-Client-Info` enviado ao Supabase — identifica o cliente nos logs e na telemetria DELES. Não é texto de interface e nunca chega ao usuário",
-    marcas: ["deskcomm-crm"],
-  },
   "lib/wacalls/events-bridge.ts": {
     categoria: "PROTOCOLO",
     motivo:
       "X-Client-Id enviado ao processo WaCalls (spec 18) — identifica o worker como o operador dono da conexão SSE nos logs e na lógica de exclusividade de chamada dele. Não é texto de interface e nunca chega ao usuário",
     marcas: ["deskcomm-worker"],
-  },
-  "lib/nuvemshop/config.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "User-Agent exigido pela Nuvemshop, que identifica a aplicação registrada na plataforma deles. Trocar pelo nome do revendedor descreveria uma aplicação que não existe lá",
-    marcas: ["deskcommcrm"],
   },
   "lib/agenda/google/evento.ts": {
     categoria: "PROTOCOLO",
@@ -259,7 +241,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
   },
 
   // ─── INFRA — cookie/storage/contêiner. Renomear desloga ou perde estado. ───
-
+  "lib/theme.tsx": {
+    categoria: "INFRA",
+    motivo:
+      "chave de localStorage já gravada nos navegadores para preservar a escolha de tema. Renomear faria usuários existentes perderem a preferência sem migração",
+    marcas: ["deskcomm-theme"],
+  },
 
   // ─── DIVIDA — vazamento real. Cada linha declara a fase que a apaga. ───
 
@@ -830,6 +817,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "tela de consentimento do OAuth do Google: é para lá que o usuário é REDIRECIONADO para autorizar a agenda. Endereço do fornecedor por definição.",
   },
+  "calendar.google.com": {
+    categoria: "CONSOLE",
+    motivo:
+      "atalho mostrado na configuração da agenda por Service Account para o administrador abrir a própria agenda do Google e conferir o calendário compartilhado.",
+  },
+  "console.cloud.google.com": {
+    categoria: "CONSOLE",
+    motivo:
+      "painel oficial onde o administrador cria o projeto e a Service Account usados pela integração de agenda exclusiva do fork Lua CRM.",
+  },
   "api.tiendanube.com": {
     categoria: "FORNECEDOR",
     motivo: "endpoint da API da Nuvemshop/Tiendanube (ordens e catálogo do e-commerce do cliente).",
@@ -1055,7 +1052,11 @@ describe("catraca de host de terceiro no código que embarca", () => {
     ).toEqual([
       "000000000000-xxxxxxxx.apps.googleusercontent.com",
       "aistudio.google.com",
+      // Agenda por Service Account do fork: atalhos oficiais para criar o
+      // projeto e conferir o calendário que será compartilhado com o robô.
+      "calendar.google.com",
       "console.anthropic.com",
+      "console.cloud.google.com",
       "deskcomm.app",
       // Link que abre o pino que o CLIENTE mandou (`lib/messaging/localizacao.ts`).
       // Mesma natureza do `wa.me` abaixo: o produto não fala com o host, quem

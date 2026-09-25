@@ -12,6 +12,7 @@ import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const ctx = await requireOrg("admin");
   if (!ctx.ok) return ctx.res;
+  const supportDenied = await requireSupportWrite(ctx.activeOrg.orgId);
+  if (supportDenied) return supportDenied;
 
   let rawBody: unknown;
   try {

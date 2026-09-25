@@ -52,6 +52,7 @@ import {
 } from "@/lib/escalacao/passagem";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 export type HandoffReason =
   | "requested_human"
@@ -535,7 +536,7 @@ export async function triggerHandoff(
         conversationId: input.conversationId,
         contactId: (convContact?.contact_id as string | null) ?? null,
         reason: input.reason,
-        contactName: contact?.display_name ?? contact?.name ?? null,
+        contactName: nomeDoContato(contact),
         contactPhone: contact?.phone_number ?? null,
         appUrl: process.env.NEXT_PUBLIC_APP_URL ?? null,
       });

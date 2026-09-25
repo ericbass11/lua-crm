@@ -20,6 +20,7 @@ import { bufToBytea, encryptKey } from "@/lib/crypto/aes_gcm";
 import { parseServiceAccountJson, validateCalendarAccess } from "@/lib/google/calendar";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const authz = await requireRole("admin", { requestId, resource: "calendar_integrations" });
   if (!authz.ok) return authz.response;
   const { user: authUser, org: activeOrg } = authz;
+  const supportDenied = await requireSupportWrite(activeOrg.orgId);
+  if (supportDenied) return supportDenied;
 
   let rawBody: unknown;
   try {

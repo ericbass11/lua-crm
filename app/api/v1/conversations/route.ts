@@ -19,6 +19,7 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 
 import { listConversationsHandler, startConversationHandler } from "./_handler";
 
@@ -120,6 +121,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!activeOrg) {
     return fail("no_active_org", "No active organization.", 403, { requestId });
   }
+  const supportDenied = await requireSupportWrite(activeOrg.orgId);
+  if (supportDenied) return supportDenied;
 
   let input;
   try {

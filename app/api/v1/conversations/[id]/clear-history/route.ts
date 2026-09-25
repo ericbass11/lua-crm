@@ -15,6 +15,7 @@ import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,8 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const authz = await requireRole("admin", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
   const { user: authUser, org: activeOrg } = authz;
+  const supportDenied = await requireSupportWrite(activeOrg.orgId);
+  if (supportDenied) return supportDenied;
 
   const admin = createAdminClient();
 

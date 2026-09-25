@@ -51,6 +51,7 @@ import { loadHistoryWithBudget } from "./history";
 import { mintEphemeralToken, revokeEphemeralToken } from "./mcp_token";
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from "./tools";
 import { modulosLigados } from "@/lib/instalacao/modulos";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { serializeSteps } from "./serialize";
 import { enrichInboundMedia } from "./media";
 import { retrieveKnowledge } from "./rag";
@@ -415,7 +416,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         channel_sessions: ChannelSessionRef | null;
       } | null;
       if (conv) {
-        contactName = conv.contacts?.display_name ?? conv.contacts?.name ?? null;
+        contactName = nomeDoContato(conv.contacts);
         contactPhone = conv.contacts?.phone_number ?? null;
         // Mesmo seam do handler de envio: quem sabe de que coluna sai o ref da
         // sessão, e como o telefone vira endereço, é `lib/channels/`.

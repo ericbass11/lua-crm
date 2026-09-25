@@ -43,7 +43,7 @@ export function TagPicker({ value, onChange }: Props) {
     void (async () => {
       try {
         const res = await apiClient.get<{ data: TagDef[] }>("/api/v1/tags");
-        setCatalog(res.data);
+        setCatalog(Array.isArray(res.data) ? res.data : []);
       } catch {
         /* catálogo indisponível — seleção manual continua funcionando */
       }
