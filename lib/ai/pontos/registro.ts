@@ -535,6 +535,22 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "ai_agent_runs",
   },
   {
+    id: "mystery_shopper",
+    rotulo: "Atuar como cliente oculto",
+    oQueFaz:
+      "Conversa com a empresa avaliada, interpreta o atendimento e prepara os insumos do laudo comercial.",
+    papel: "melhorar",
+    exige: {},
+    emissor: "lib/mystery/engine.ts",
+    fixo: {
+      razao:
+        "Usa o modelo do agente publicado da organização para manter a mesma credencial e o mesmo padrão de linguagem do Lua CRM. Para trocar o modelo, publique uma nova versão do agente.",
+    },
+    sintomaDeFalha:
+      "A auditoria não consegue continuar a conversa nem produzir a análise do atendimento avaliado.",
+    registraEm: "nenhum",
+  },
+  {
     id: "contagem_de_tokens",
     rotulo: "Medir o tamanho do contexto",
     oQueFaz:
