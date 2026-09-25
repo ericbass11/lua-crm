@@ -162,6 +162,7 @@ STUB
 # o dublê é 100% transparente.
 cat > "$WORK/bin/git" <<STUB
 #!/usr/bin/env bash
+[ -n "\${GIT_LOG:-}" ] && printf '%s\n' "\$*" >> "\$GIT_LOG"
 if [ "\${FORCE_UNSHALLOW_FAIL:-0}" = "1" ]; then
   for a in "\$@"; do
     if [ "\$a" = "--unshallow" ]; then
@@ -184,7 +185,7 @@ cat > "$WORK/bin/uname" <<STUB
 exec "$REAL_UNAME" "\$@"
 STUB
 chmod +x "$WORK/bin/docker" "$WORK/bin/crontab" "$WORK/bin/flock" "$WORK/bin/curl" "$WORK/bin/git" "$WORK/bin/uname"
-export DOCKER_LOG="$WORK/docker.log" CURL_LOG="$WORK/curl.log"
+export DOCKER_LOG="$WORK/docker.log" CURL_LOG="$WORK/curl.log" GIT_LOG="$WORK/git.log"
 export FAKE_CRONTAB="$WORK/crontab.txt"
 export PATH="$WORK/bin:$PATH"
 
@@ -231,6 +232,7 @@ git commit --quiet -m "v0.9.0"
 git tag v0.9.0
 # Instalação que SEGUE A MAIN: HEAD à frente da última tag publicada.
 echo topo > topo.txt; git add -A; git commit --quiet -m "topo da main"
+git remote add origin "file://$PROJ"
 
 OUTFILE="$WORK/saida.txt"
 run_update() {  # run_update <args...> → saída em $OUTFILE, status em $RC
@@ -241,8 +243,21 @@ run_update() {  # run_update <args...> → saída em $OUTFILE, status em $RC
   # o harness no meio do caso — a suíte saía 1 sem imprimir QUAL prova falhou,
   # que é justamente o silêncio que este arquivo existe para caçar.
   RC=0
-  bash hostgator-setup-kit/update.sh "$@" > "$OUTFILE" 2>&1 || RC=$?
+  REPO_URL="$(git config --get remote.origin.url)" \
+    bash hostgator-setup-kit/update.sh "$@" > "$OUTFILE" 2>&1 || RC=$?
 }
+
+echo "── 0. Origin de outra linhagem é recusada antes de qualquer efeito"
+git remote set-url origin https://github.com/outra-conta/outro-crm.git
+: > "$GIT_LOG"
+RC=0
+env -u REPO_URL bash hostgator-setup-kit/update.sh --to v0.9.0 > "$OUTFILE" 2>&1 || RC=$?
+check "aborta com o código de recusa (3)" test "$RC" -eq 3
+check "explica qual origin era esperada" grep -q "https://github.com/ericbass11/lua-crm.git" "$OUTFILE"
+check "ensina a corrigir a origin" grep -q "git remote set-url origin" "$OUTFILE"
+check "não chegou a rodar o backup" test ! -f "$BACKUP_MARK"
+check "não chegou a buscar tags" sh -c '! grep -Eq "(^| )fetch( |$)" "$1"' _ "$GIT_LOG"
+git remote set-url origin "file://$PROJ"
 
 echo "── 1. Alvo anterior ao instalado é recusado antes do backup"
 run_update --to v0.9.0
@@ -459,7 +474,8 @@ AGENTE="$WORK/agente"
 clona_raso "$AGENTE"
 cd "$AGENTE" || exit 1
 : > "$DOCKER_LOG"; : > "$CURL_LOG"; rm -f "$BACKUP_MARK"
-bash hostgator-setup-kit/agent.sh > "$WORK/agente.out" 2>&1
+REPO_URL="$(git config --get remote.origin.url)" \
+  bash hostgator-setup-kit/agent.sh > "$WORK/agente.out" 2>&1
 check "o agente chegou a executar o update (o app de mentira pediu)" \
   grep -q '"kind":"run_progress"\|"kind":"run_result"' "$CURL_LOG"
 check "NÃO reiniciou o container" test -z "$(grep -F 'up -d app' "$DOCKER_LOG" || true)"
@@ -485,7 +501,8 @@ cd "$CONTIDA2" || exit 1
 check "fixture: ainda é raso, e a origin CONTINUA alcançável (nada quebrado)" \
   test "$(git rev-parse --is-shallow-repository)" = "true"
 : > "$CURL_LOG"
-FORCE_UNSHALLOW_FAIL=1 bash hostgator-setup-kit/agent.sh > "$WORK/agente-contida2.out" 2>&1
+REPO_URL="$(git config --get remote.origin.url)" FORCE_UNSHALLOW_FAIL=1 \
+  bash hostgator-setup-kit/agent.sh > "$WORK/agente-contida2.out" 2>&1
 check "o heartbeat diz explicitamente que não conseguiu comparar (CONTIDA=2 isolado)" \
   grep -q '"compare_failed":true' "$CURL_LOG"
 check "e não anuncia a tag que não conseguiu confirmar" \
@@ -504,7 +521,8 @@ cd "$SEM_TAG" || exit 1
 check "fixture: nenhuma tag v* conhecida localmente" test -z "$(git tag -l 'v*')"
 git remote set-url origin "$WORK/nao-existe"   # fetch --tags vai falhar (FETCH_OK=0)
 : > "$CURL_LOG"
-bash hostgator-setup-kit/agent.sh > "$WORK/agente-sem-tag.out" 2>&1
+REPO_URL="$(git config --get remote.origin.url)" \
+  bash hostgator-setup-kit/agent.sh > "$WORK/agente-sem-tag.out" 2>&1
 check "sem tag nenhuma conhecida e sem conseguir buscar, o heartbeat diz que não sabe (fallback isolado)" \
   grep -q '"compare_failed":true' "$CURL_LOG"
 check "e não anuncia versão nenhuma" \
@@ -671,7 +689,8 @@ git tag v9.9.9
 git checkout --quiet HEAD~1   # a instalação está no kit ANTIGO
 : > "$FAKE_CRONTAB"
 rm -f "$CASO11/.env.cron-drain"
-bash hostgator-setup-kit/update.sh --to v9.9.9 --skip-backup > "$WORK/saida11.txt" 2>&1
+REPO_URL="$(git config --get remote.origin.url)" \
+  bash hostgator-setup-kit/update.sh --to v9.9.9 --skip-backup > "$WORK/saida11.txt" 2>&1
 check "a linha do cron aponta para o arquivo de cabeçalho (conserto aplicado nesta passada)" \
   grep -q -- "-H @" "$FAKE_CRONTAB"
 check "  e o segredo NÃO está escrito na linha do cron" \

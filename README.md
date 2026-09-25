@@ -16,7 +16,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript)](https://www.typescriptlang.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%2BAuth%2BStorage-3ecf8e?logo=supabase)](https://supabase.com)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-1%20comando-orange)](hostgator-setup-kit/)
-[![CI](https://github.com/melgarafael/DeskcommCRM/actions/workflows/ci.yml/badge.svg)](https://github.com/melgarafael/DeskcommCRM/actions/workflows/ci.yml)
+[![CI](https://github.com/ericbass11/lua-crm/actions/workflows/ci.yml/badge.svg)](https://github.com/ericbass11/lua-crm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [**⚡ Instalar**](#-instalar-na-sua-vps-o-caminho-principal) · [**🔄 Atualizar**](#-atualizar) · [**🧭 Visão**](VISION.md) · [**🏗️ Arquitetura**](ARCHITECTURE.md) · [**🤝 Contribuir**](CONTRIBUTING.md) · [**🗺️ Roadmap**](#%EF%B8%8F-roadmap)
@@ -39,7 +39,7 @@
 > comando certo pro seu caso:
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/comecar.sh | bash
+> curl -fsSL https://raw.githubusercontent.com/ericbass11/lua-crm/main/hostgator-setup-kit/comecar.sh | bash
 > ```
 >
 > *(prefere ler antes de executar? clone o repo e rode `bash hostgator-setup-kit/comecar.sh` —
@@ -72,8 +72,8 @@ travamento: é o terminal escondendo a senha. Digite (ou cole) e dê Enter.
 Já dentro da VPS:
 
 ```bash
-git clone https://github.com/melgarafael/DeskcommCRM.git
-cd DeskcommCRM
+git clone https://github.com/ericbass11/lua-crm.git
+cd lua-crm
 bash hostgator-setup-kit/install.sh
 ```
 
@@ -134,7 +134,7 @@ do agente e contribuir. Para tê-los em **qualquer pasta** — inclusive antes d
 computador —, rode uma vez:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/scripts/instalar-guias.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ericbass11/lua-crm/main/scripts/instalar-guias.sh | bash
 ```
 
 Depois abra uma sessão nova do seu assistente e diga *"quero instalar o CRM na minha VPS"*: pedir o
@@ -146,7 +146,7 @@ Os guias **não** se atualizam sozinhos: rodar o mesmo comando de novo traz a ve
 desfazer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/scripts/instalar-guias.sh | bash -s -- --remover
+curl -fsSL https://raw.githubusercontent.com/ericbass11/lua-crm/main/scripts/instalar-guias.sh | bash -s -- --remover
 ```
 
 Com o repositório já clonado, os guias vêm dentro dele (`.agents/skills/`) e nem isso é preciso. Se
@@ -321,8 +321,8 @@ Detalhes: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 > Esta seção é pra quem vai mexer no código.
 
 ```bash
-git clone https://github.com/melgarafael/DeskcommCRM.git
-cd DeskcommCRM
+git clone https://github.com/ericbass11/lua-crm.git
+cd lua-crm
 
 nvm use                     # Node 22
 npm install -g pnpm && pnpm install
@@ -471,9 +471,9 @@ o `imagens-ok` (constrói as três imagens Docker). Verde na sua máquina não �
 
 ## 🐛 Reportando bugs
 
-Abra uma [issue](https://github.com/melgarafael/DeskcommCRM/issues/new/choose) — o template pede o que precisamos (ambiente, `/api/v1/health`, steps). Rodar `bash hostgator-setup-kit/healthcheck.sh` e colar a saída ajuda muito.
+Abra uma [issue](https://github.com/ericbass11/lua-crm/issues/new/choose) — o template pede o que precisamos (ambiente, `/api/v1/health`, steps). Rodar `bash hostgator-setup-kit/healthcheck.sh` e colar a saída ajuda muito.
 
-Pra **vulnerabilidades de segurança**, **NÃO abra issue pública** — use o [relato privado de vulnerabilidades](https://github.com/melgarafael/DeskcommCRM/security/advisories/new). Detalhes em [`SECURITY.md`](SECURITY.md).
+Pra **vulnerabilidades de segurança**, **NÃO abra issue pública** — use o [relato privado de vulnerabilidades](https://github.com/ericbass11/lua-crm/security/advisories/new). Detalhes em [`SECURITY.md`](SECURITY.md).
 
 ---
 
@@ -576,6 +576,7 @@ Siga o desenvolvimento: [Instagram](https://www.instagram.com/melgarafael) · [Y
 ### Sincronização com o upstream DeskcommCRM
 | Data | Mudança |
 |---|---|
+| 25/09 | **O mecanismo de instalação e atualização passa a pertencer ao fork LUA CRM.** Novos clones usam `ericbass11/lua-crm`, app/worker/scheduler/voice-agent usam `ghcr.io/ericbass11`, as quatro imagens carregam proveniência OCI do fork e o `update.sh` recusa uma `origin` diferente antes de buscar tags. O override `REPO_URL` continua disponível para testes e espelhos deliberados. Uma cerca unitária preserva rota, navegação, purpose, eventos, handlers, WAHA, baseline e migrations do Cliente Oculto nos próximos merges de upstream. |
 | 08/09 | **Atualização para a tag `v1.16.1` (1.291 commits, 1.819 arquivos, +159k/−24k linhas — 12 releases de uma vez).** Parou na release publicada, não na `main` (que já monta a 1.17.0 sem tag). **O que entra, em uso:** Inbox diz **quem manda** em cada conversa e "Assumir" cala o automático de verdade (1.5.0); **Agenda** completa com marcar/remarcar/cancelar pela tela, Google Agenda por OAuth com ida e volta, e o **atendente de IA marcando consulta pela conversa** (1.7–1.11); **espanhol** no sistema inteiro (1.10); **catálogo de produtos** com o preço que a IA responde (1.12); Postgres 15 como piso (1.13); **campos personalizados do contato**, importar leads de planilha, moeda por organização, IA restrita a leads de origem conhecida (1.14); **Meta Ads** dentro do CRM, venda fechada reportada ao anúncio, juntar contatos duplicados, seleção em lote no funil, relatório de **Atividades**, **Tarefas** com prazo, Zona de perigo para zerar dados de teste, Nuvemshop sai do menu (1.15); **modo de teste do WhatsApp** antes do go-live (1.16). Por baixo: **Tailwind 3 → 4** (config em CSS, `tailwind.config.ts` apagado), Web Push com VAPID, 42 migrations (0173–0218). **Preservado nosso:** Cliente Oculto, Google Calendar por Service Account, guardrails de preço, follow-up por inatividade, tags, hash chain de auditoria, "Nova conversa", notificações de handoff, design system Indigo, LUA CRM — `lib/mystery`, `lib/google`, `lib/mcp/tools/calendar.ts`, `lib/ai/runtime/guardrails.ts`, `lib/notify` e `lib/ai/dispatcher/index.ts` não receberam uma linha do upstream. **66 conflitos.** Descoberta que simplificou tudo: o `globals.css` já aliasa os tokens shadcn aos Indigo (`muted-foreground → text-muted`, `primary → accent`, `destructive → error`), então nos ~47 arquivos de "i18n × estilo" o lado do upstream entrou inteiro **sem re-skin** e o visual continua o nosso. Os manuais: os quatro métodos convivem em `lib/waha/client.ts`; `notifications/page.tsx` é a deles (Push real) **+** nosso `HandoffWebhookCard`; `Edit/NewLeadDialog` mantêm nosso `TagPicker`; `StageColumn`/`BulkActionBar` levam a seleção em lote deles na casca Indigo nossa; `orchestrator.ts` ganhou o Step 6 deles (aviso na Central) **e** manteve nosso Step 7 (WhatsApp/webhook); `CRMSidePanel` une `field_defs` deles com `crm_stages` da nossa "Nota da IA". **Decisões de comportamento:** (1) nosso gate do dispatcher deixou de ler `assigned_to_user_id` — a migration 0173 grava `bot_silenced_until='infinity'` em Assumir/transferir e **de propósito não mexe em rodízio**; ler atribuição anularia isso e emudeceria a IA na primeira mensagem de cada cliente numa org em round-robin. Medido: 0 conversas assumidas sem silêncio, sem backfill. O gate lê `silencioVigente()` (trata `infinity`). (2) `custom_fields` do lead volta a `z.unknown()` como no upstream — o editor de campos deles produz isso e nosso schema estrito brigava no typecheck. (3) O editor de `ai_criteria` por etapa (nossa Fase 2) **já estava inalcançável desde 18/08** (`stages` nunca era passado) e a tela de funis foi reescrita pelo upstream — a UI saiu, a coluna, a migration (0905) e o runtime que a lê ficam; re-homing na `StagesSection` deles é pendência. **Sobreposições a decidir (não colidem, convivem):** follow-up por silêncio deles (`runSilenceSweep`, gateado por fluxo publicado com gatilho `silence`) × nosso `followup-dispatcher` (gateado por `followup_settings.enabled`) — os dois nascem desligados; **não ligar ambos**, ou o contato calado recebe dois follow-ups. Agenda deles (`crm_book_appointment`…, `calendar_appointments`, OAuth) × nosso Google Calendar por Service Account (`crm_schedule_meeting`…, `calendar_integrations`) — nomes distintos, mas dois sistemas de agendamento no catálogo; o agente só vê os que o pacote dele habilita. **Regressão evitada:** `flex-shrink-0` (removido no v4) e `rounded` puro (virou 0.25rem) trocados; os 2 tokens que faltavam no `@theme` (`surface-muted`, `warning-border`) declarados; Tailwind 4 vigiado por `tests/unit/tailwind-tokens.test.ts`. Backup: `backup/pre-upstream-sync-v1161-2026-09-07`. |
 | 08/09 | **Triagem do `test:unit` pós-merge: 7557/7584 na primeira rodada, 13 arquivos vermelhos, cada um com dono.** Não se aceita "flake" sem prova: os 13 foram rerodados isolados e separados em três classes. **(a) 4 flakes de carga**, verdes isolados — `sem-marcador-de-conflito`, `telas-sem-dado-de-mentira`, `knobs-da-versao-publicada` (varreduras do repo que estouram 15s com a suíte inteira competindo pela CPU) e `rascunho-superado`. **(b) 8 consertados na causa:** os dois `fetch` da fork no `lib/waha/client.ts` (`checkExists`, `sendFile`) não tinham teto de relógio — com o WAHA fora do ar pendurariam a requisição até o limite do runtime; passaram a `fetchComTeto`. `/app/dashboard` e `/app/mystery` sem `section` no registry (o hub de Análise exige). O `useRealtimeChannel` voltou a ser o do upstream: a autenticação do socket agora mora na callback `accessToken` do client (`lib/supabase/browser.ts`, que continua lendo nossa rota `/api/v1/auth/realtime-token`) — no realtime-js 2.112+ o `setAuth` manual perde para a callback padrão, e o hook que buscava token sozinho passou a assinar como anônimo em silêncio. As 5 tools do Google Calendar saíram do pacote `vender` (que passava de 25, o teto por agente, e nenhuma jornada cabia depois do onboarding) para um pacote próprio `agenda_google`. As listas congeladas de marca refletem o rebrand LUA (11 arquivos sem marca, config.toml, Fase 4 = zero dívida). Quatro textos crus em `CRMSidePanel`/`EditLeadDialog` envolvidos em `t()` com espanhol no dicionário. **(c) 4 allowlists declaradas com motivo:** as telas só nossas (Cliente Oculto, Google Calendar SA, follow-up, tags, handoff, dashboard) em `FORA_DO_PRODUTO` do gate de espanhol e as datas fixas em pt-BR do laudo/PDF, do evento do Google e do prompt em `FORA_DE_INTERFACE` — pt-BR é decisão de produto, e a tradução do módulo é **pendência declarada**, não "traduzir estaria errado". **Vermelho local que NÃO é defeito:** `leads-import-route.test.ts` (12 casos) devolve 422 "Envie o arquivo como multipart/form-data" porque `NextRequest.formData()` **quebra no Node 24 sob jsdom** (`AssertionError` dentro do parser de multipart do undici — medido com sonda direta; rota e libs são byte a byte as do upstream, cujo CI roda Node 22 e passa). Esta máquina roda Node 24.14; o `.nvmrc` pede 22. É o mesmo padrão do `rate-limit.test.ts` que o CLAUDE.md já documenta: vermelho de ambiente, não de código. |
 | 08/09 | **As migrations mudaram de faixa DE NOVO — e desta vez na direção certa.** A renumeração de 19/08 (0161–0175 → 0901–0915) estava errada em 14 dos 15 arquivos: eram **migrations do upstream** que a sincronização de 18/08 havia renumerado (e, em 6 casos, deslocado o timestamp em +1s) para fugir de colisão com as **nossas** de julho, numeradas nas lacunas 0028–0042/0085/0086. O `test:db` da v1.16.1 pegou: `webhooks-secret-encryption.test.ts` procura `_0041_webhook_secret_encryption.sql` pelo nome canônico e não achou. Forma permanente: **nossas 17 exclusivas → 0901–0917** (por timestamp), **as 14 do upstream de volta ao NNNN canônico** (0031–0042, 0085, 0086), as 6 de timestamp deslocado mantêm o timestamp (mudá-lo re-aplicaria em banco existente) com NNNN canônico onde couber. Timestamp intocado em todas: nada re-aplica. MANIFEST atualizado linha a linha; zero NNNN duplicado; `manifest-x-migrations` verde. |

@@ -31,6 +31,33 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# ── 0--. Este clone atualiza a partir do fork LUA CRM? ───────────────────────
+# A release, o changelog e as imagens deste kit pertencem ao mesmo repositório.
+# Buscar tags de outra origin misturaria código e imagens de linhagens distintas.
+# REPO_URL é também o override já usado pelo instalador e pelos testes locais.
+normalizar_origem_update() {
+  local url="${1%/}"
+  url="${url%.git}"
+  case "$url" in
+    git@github.com:*) url="https://github.com/${url#git@github.com:}" ;;
+    ssh://git@github.com/*) url="https://github.com/${url#ssh://git@github.com/}" ;;
+  esac
+  printf '%s' "$url"
+}
+
+ORIGEM_ATUAL="$(git config --get remote.origin.url 2>/dev/null || true)"
+ORIGEM_ESPERADA="${REPO_URL:-https://github.com/ericbass11/lua-crm.git}"
+if [ -z "$ORIGEM_ATUAL" ] || \
+   [ "$(normalizar_origem_update "$ORIGEM_ATUAL")" != "$(normalizar_origem_update "$ORIGEM_ESPERADA")" ]; then
+  refuse "Esta cópia não aponta para o fork oficial do LUA CRM.
+     origin atual: ${ORIGEM_ATUAL:-não configurada}
+     origin esperado: $ORIGEM_ESPERADA
+     Não busquei tags nem alterei a instalação. Para corrigir, rode:
+       git remote set-url origin https://github.com/ericbass11/lua-crm.git
+     Depois execute este update.sh novamente.
+     Em teste ou espelho deliberado, use REPO_URL com a mesma URL configurada em origin."
+fi
+
 # ── 0-. Esta cópia do repo é a dona dos contêineres? ─────────────────────────
 # Antes do cron e antes do git: uma segunda cópia que atualiza por cima recria o
 # parque com o .env DELA. Foi o que deixou o WhatsApp de uma VPS real três dias
