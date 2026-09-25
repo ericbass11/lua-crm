@@ -37994,6 +37994,14 @@ create policy mystery_shopper_messages_manager_write on public.mystery_shopper_m
 -- PostgREST a expunha como RPC a qualquer usuário logado.
 revoke execute on function public.fn_audit_hash_chain() from public, anon, authenticated;
 
+-- ---- verificador da cadeia de auditoria só pelo servidor (migration 0923) ----
+-- A 0908 revogava PUBLIC, mas instalações com default privilege direto para
+-- authenticated ainda expunham a SECURITY DEFINER como RPC. Ela é uma ferramenta
+-- interna de integridade, disponível ao service role e nunca ao JWT do tenant.
+revoke execute on function public.fn_verify_audit_chain(uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_verify_audit_chain(uuid) to service_role;
+
 notify pgrst, 'reload schema';
 -- ---- a regra de automação guarda a CONFIGURAÇÃO do gatilho (migration 0268) ----
 -- O gatilho de data do funil (#989) não nasce de evento: quem o emite é a

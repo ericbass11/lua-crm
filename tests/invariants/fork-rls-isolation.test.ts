@@ -35,8 +35,21 @@ function sql(script: string, opts: { tolerateError?: boolean } = {}): string {
   try {
     return execFileSync(
       "docker",
-      ["exec", "-i", containerName, "psql", "-U", "postgres", "-d", "postgres",
-        "-v", "ON_ERROR_STOP=1", "-tA", "-f", "-"],
+      [
+        "exec",
+        "-i",
+        containerName,
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-tA",
+        "-f",
+        "-",
+      ],
       { input: script, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim();
   } catch (err) {
@@ -73,7 +86,11 @@ function asUser(userId: string, query: string, opts: { tolerateError?: boolean }
 
 function countAs(userId: string, countQuery: string): number {
   const out = asUser(userId, countQuery);
-  const last = out.split("\n").filter((l) => l.trim() !== "").at(-1) ?? "0";
+  const last =
+    out
+      .split("\n")
+      .filter((l) => l.trim() !== "")
+      .at(-1) ?? "0";
   return Number(last);
 }
 
@@ -134,7 +151,9 @@ describe("fork: isolamento entre organizações nas tabelas desta instalação",
   it("seed sanity: as duas organizações realmente têm linhas (superusuário vê ambas)", () => {
     for (const t of TABELAS) {
       const total = Number(
-        sql(`select count(distinct organization_id) from public.${t} where organization_id in ('${ORG_A}','${ORG_B}');`),
+        sql(
+          `select count(distinct organization_id) from public.${t} where organization_id in ('${ORG_A}','${ORG_B}');`,
+        ),
       );
       expect(total, `${t}: o seed não produziu linhas nas duas orgs`).toBe(2);
     }
@@ -142,7 +161,9 @@ describe("fork: isolamento entre organizações nas tabelas desta instalação",
 
   for (const t of TABELAS) {
     it(`agent da org A lê 0 linhas da org B em ${t}`, () => {
-      expect(countAs(AGENT_A, `select count(*) from public.${t} where organization_id = '${ORG_B}';`)).toBe(0);
+      expect(
+        countAs(AGENT_A, `select count(*) from public.${t} where organization_id = '${ORG_B}';`),
+      ).toBe(0);
     });
     it(`agent da org A ainda lê as próprias linhas em ${t} (controle positivo)`, () => {
       expect(
@@ -160,15 +181,23 @@ describe("fork: o gate de papel da migration 0918 (agent lê, não escreve; mana
       { tolerateError: true },
     );
     expect(out, "a policy de escrita deveria barrar o agent").toMatch(/row-level security|ERROR/i);
-    expect(Number(sql(`select count(*) from public.tag_definitions where name = 'tag-por-agent';`))).toBe(0);
+    expect(
+      Number(sql(`select count(*) from public.tag_definitions where name = 'tag-por-agent';`)),
+    ).toBe(0);
   });
 
   it("agent NÃO altera a configuração de follow-up", () => {
-    asUser(AGENT_A, `update public.followup_settings set enabled = true where organization_id = '${ORG_A}';`, {
-      tolerateError: true,
-    });
+    asUser(
+      AGENT_A,
+      `update public.followup_settings set enabled = true where organization_id = '${ORG_A}';`,
+      {
+        tolerateError: true,
+      },
+    );
     // UPDATE barrado por RLS não erra: afeta 0 linhas. A prova é o estado.
-    const enabled = sql(`select enabled from public.followup_settings where organization_id = '${ORG_A}';`);
+    const enabled = sql(
+      `select enabled from public.followup_settings where organization_id = '${ORG_A}';`,
+    );
     expect(enabled).toBe("f");
   });
 
@@ -177,12 +206,19 @@ describe("fork: o gate de papel da migration 0918 (agent lê, não escreve; mana
       MANAGER_A,
       `insert into public.tag_definitions (organization_id, name) values ('${ORG_A}', 'tag-por-manager');`,
     );
-    expect(Number(sql(`select count(*) from public.tag_definitions where name = 'tag-por-manager';`))).toBe(1);
+    expect(
+      Number(sql(`select count(*) from public.tag_definitions where name = 'tag-por-manager';`)),
+    ).toBe(1);
   });
 
   it("CONTROLE POSITIVO: manager altera a configuração de follow-up", () => {
-    asUser(MANAGER_A, `update public.followup_settings set enabled = true where organization_id = '${ORG_A}';`);
-    expect(sql(`select enabled from public.followup_settings where organization_id = '${ORG_A}';`)).toBe("t");
+    asUser(
+      MANAGER_A,
+      `update public.followup_settings set enabled = true where organization_id = '${ORG_A}';`,
+    );
+    expect(
+      sql(`select enabled from public.followup_settings where organization_id = '${ORG_A}';`),
+    ).toBe("t");
   });
 
   it("manager NÃO escreve na OUTRA organização", () => {
@@ -191,7 +227,9 @@ describe("fork: o gate de papel da migration 0918 (agent lê, não escreve; mana
       `insert into public.tag_definitions (organization_id, name) values ('${ORG_B}', 'tag-invasora');`,
       { tolerateError: true },
     );
-    expect(Number(sql(`select count(*) from public.tag_definitions where name = 'tag-invasora';`))).toBe(0);
+    expect(
+      Number(sql(`select count(*) from public.tag_definitions where name = 'tag-invasora';`)),
+    ).toBe(0);
   });
 });
 
@@ -211,5 +249,13 @@ describe("fork: nenhuma dessas tabelas é endereçável pela anon key", () => {
       select has_function_privilege('authenticated', 'public.fn_audit_hash_chain()', 'EXECUTE')::text
           || ',' || has_function_privilege('anon', 'public.fn_audit_hash_chain()', 'EXECUTE')::text;`);
     expect(exec).toBe("false,false");
+  });
+
+  it("fn_verify_audit_chain(uuid) só é executável pelo service_role", () => {
+    const exec = sql(`
+      select has_function_privilege('authenticated', 'public.fn_verify_audit_chain(uuid)', 'EXECUTE')::text
+          || ',' || has_function_privilege('anon', 'public.fn_verify_audit_chain(uuid)', 'EXECUTE')::text
+          || ',' || has_function_privilege('service_role', 'public.fn_verify_audit_chain(uuid)', 'EXECUTE')::text;`);
+    expect(exec).toBe("false,false,true");
   });
 });
