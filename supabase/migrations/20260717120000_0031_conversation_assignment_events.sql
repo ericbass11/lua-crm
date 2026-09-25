@@ -1,4 +1,4 @@
--- 0031_conversation_assignment_events
+-- 0162_conversation_assignment_events
 -- G3-01 (gov-loop): auditoria estruturada de TODA mudança de dono de conversa
 -- (spec 13 §3.1) + função atômica fn_conversation_assign usada pelas rotas de
 -- claim/transfer/release (spec 04 §9: UPDATE condicional; 0 rows → 409).

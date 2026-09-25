@@ -1,4 +1,4 @@
--- 0042_lead_children_visibility_rls — G6-00 (INB-10): fecha o vazamento de LEITURA
+-- 0173_lead_children_visibility_rls — G6-00 (INB-10): fecha o vazamento de LEITURA
 -- da timeline/vínculos de lead. Pré-condição da exposição MCP (G6-03).
 --
 -- PROBLEMA: crm_lead_activities e crm_lead_links seguiam org-flat no SELECT — um

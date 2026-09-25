@@ -1,4 +1,4 @@
--- 0032_conversation_assignee_kind
+-- 0163_conversation_assignee_kind
 -- G3-02 (gov-loop): IA como assignee de 1ª classe (spec 13 §3.2) + forward-fix
 -- INB-06a na fn_conversation_assign (migration 0031).
 --

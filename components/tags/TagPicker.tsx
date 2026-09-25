@@ -43,7 +43,7 @@ export function TagPicker({ value, onChange }: Props) {
     void (async () => {
       try {
         const res = await apiClient.get<{ data: TagDef[] }>("/api/v1/tags");
-        setCatalog(res.data);
+        setCatalog(Array.isArray(res.data) ? res.data : []);
       } catch {
         /* catálogo indisponível — seleção manual continua funcionando */
       }
@@ -109,7 +109,7 @@ export function TagPicker({ value, onChange }: Props) {
                   <button
                     type="button"
                     aria-label={`Remover tag ${t}`}
-                    className="ml-0.5 rounded px-1 text-xs text-muted-foreground hover:text-destructive"
+                    className="ml-0.5 rounded-md px-1 text-xs text-muted-foreground hover:text-destructive"
                     onClick={() => remove(t)}
                   >
                     ×

@@ -18,6 +18,18 @@ interface AuditMcpToolCallInput {
   success: boolean;
   errorMessage?: string;
   resultSummary?: string;
+  /**
+   * Vazio DECLARADO pela tool ("não achei"), quando o `success: false` é isso e
+   * não erro técnico. A tool diz qual vazio foi (`motivo`).
+   *
+   * O painel conta a chamada como falha por `metadata->>'success' = 'false'`
+   * (`fn_agent_tool_usage`, migration 0103) e não precisa saber mais nada para
+   * parar de dizer "nenhuma falha". Estes dois campos são o que separa
+   * "a busca não achou" de "a busca quebrou" no dado gravado; separar os dois na
+   * TELA pede um contador novo naquela função — migration, trabalho do mantenedor.
+   */
+  desfecho?: "sem_resultado";
+  motivo?: string;
 }
 
 const ARGS_REDACT_KEYS = new Set([
@@ -43,7 +55,8 @@ function redactArgs(args: Record<string, unknown>): Record<string, unknown> {
 }
 
 export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<void> {
-  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary } = input;
+  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, desfecho, motivo } =
+    input;
 
   const metadata: Record<string, unknown> = {
     actor_type: ctx.actor.type,
@@ -56,17 +69,26 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
 
   if (resultSummary) metadata.result_summary = resultSummary.slice(0, 280);
   if (errorMessage) metadata.error = errorMessage.slice(0, 500);
+  if (desfecho) metadata.desfecho = desfecho;
+  if (motivo) metadata.motivo = motivo.slice(0, 200);
   if (ctx.actor.type === "ai_agent" && ctx.actor.api_token_id) {
     metadata.actor_api_token_id = ctx.actor.api_token_id;
   }
 
   await audit({
     action: "mcp.tool_called",
-    actorUserId: ctx.actor.type === "user" ? ctx.actor.id : null,
+    // Quem age via MCP é um TOKEN, nunca uma linha de auth.users: para um token
+    // comum, ctx.actor.id é o id do próprio token (lib/mcp/auth.ts), e mandá-lo
+    // como actorUserId estourava a FK api_audit_log_actor_user_id_fkey. O ator
+    // já fica registrado em actorApiTokenId e em metadata.actor_id.
+    actorUserId: null,
     actorApiTokenId: ctx.apiTokenId,
     organizationId: ctx.organizationId,
     resourceType: "mcp_tool",
-    resourceId: toolName,
+    // `resource_id` é uuid no banco; o nome da tool ia aqui como texto e o
+    // insert morria com "invalid input syntax for type uuid: crm_create_lead".
+    // O nome já viaja em metadata.tool_name, que é jsonb.
+    resourceId: null,
     requestId: ctx.requestId,
     metadata,
   });

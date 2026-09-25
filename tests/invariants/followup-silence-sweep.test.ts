@@ -6,7 +6,8 @@ import {
   type SilenceSweepDb,
   type SilencePointer,
 } from "@/lib/followup/silence-sweep";
-import { isPointerEnabledForAutomaticTrigger, type FollowupGateDb } from "@/lib/followup/agent-followup-gate";
+import { isPointerEnabledForAutomaticTrigger, noDeGatilhoDoGrafo, type FollowupGateDb } from "@/lib/followup/agent-followup-gate";
+import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
 
 /**
@@ -17,8 +18,8 @@ import type { FlowGraph } from "@/lib/followup/graph-schema";
  * Congela: (1) pointer silence habilitado no gate + contato silêncio >
  * threshold → exatamente 1 enrollment nascendo no nó trigger; rodar a
  * varredura DE NOVO não duplica (unique-live, `idx_followup_enrollments_one_live`);
- * (2) o MESMO cenário mas SEM nenhum agente publicado habilitando o pointer →
- * 0 enrollments (prova que o gate é de fato chamado, não só importado);
+ * (2) o MESMO cenário mas SEM nenhum agente: grafo só de texto enrolla com
+ * `agent_id` nulo; grafo que pede IA é gate-out;
  * (3) contato silencioso HÁ MENOS que o threshold → não enrolla (boundary);
  * silêncio EXATAMENTE igual ao threshold → enrolla (`<=`, não `<`);
  * (4) `isPointerEnabledForAutomaticTrigger` contra `ai_agent_versions` REAL
@@ -63,6 +64,35 @@ beforeEach(async () => {
 
 // ---- pg-backed SilenceSweepDb (test-only; prod usa createSupabaseSilenceSweepDb) ----
 
+/**
+ * O SEGUNDO IMPLEMENTADOR DE `SilenceSweepDb` — e o primeiro é
+ * `createSupabaseSilenceSweepDb`, em `lib/followup/silence-sweep.ts`.
+ *
+ * A LÓGICA testada aqui é a real: este arquivo importa e chama
+ * `runSilenceSweep`. O que é dublê é a BORDA de acesso a dados — a produção
+ * fala com o PostgREST e o `test:db` sobe só o Postgres, então cada método
+ * abaixo traduz a consulta de lá para SQL. Dois implementadores do mesmo
+ * contrato, e eles têm de concordar.
+ *
+ * ⚠️ Eles JÁ divergiram, e o custo apareceu no PR #420 (@automatikpg-ux): a
+ * produção ganhou `.not("status","in", …)` para não cobrar quem um humano já
+ * encerrou, e esta cópia ficou sem o filtro. Os dois casos que aquele PR
+ * escreveu para provar a intenção reprovaram medindo A CÓPIA, não o original.
+ *
+ * ═══ O que a constante compartilhada garante, e o que NÃO garante ═══
+ *
+ * O filtro abaixo é montado a partir de `CONVERSATION_TERMINAL_STATUSES`, a
+ * mesma que a produção usa — e não de `'closed','archived'` escrito à mão. A
+ * diferença não é cosmética: acrescentar um status terminal passa a mudar os
+ * DOIS lados no mesmo commit, sem ninguém precisar lembrar deste arquivo.
+ *
+ * Isso prende o **valor**. Não prende a **forma**: um `.eq()` novo na produção
+ * que este SQL não tenha continua invisível daqui. Esse eixo é dívida
+ * declarada, com item de plano próprio — a pergunta dele é "como fazer os dois
+ * adaptadores passarem pela mesma bateria de contrato", e não cabe num PR de
+ * contribuidor. Escrever o escopo é o que impede esta cerca de anestesiar quem
+ * vier depois achando que ela cobre tudo.
+ */
 function silenceSweepDb(): SilenceSweepDb {
   return {
     async loadActiveSilencePointers(): Promise<SilencePointer[]> {
@@ -96,8 +126,9 @@ function silenceSweepDb(): SilenceSweepDb {
          from conversations conv
          join contacts c on c.id = conv.contact_id
          where conv.organization_id = $1 and conv.last_inbound_at is not null
+           and conv.status <> all($2::text[])
          group by conv.contact_id, c.tags, c.is_blocked`,
-        [orgId],
+        [orgId, CONVERSATION_TERMINAL_STATUSES],
       );
       const cutoff = new Date(cutoffIso).getTime();
       return rows
@@ -106,13 +137,13 @@ function silenceSweepDb(): SilenceSweepDb {
         .filter((r) => segments.length === 0 || segments.some((s) => r.tags.includes(s)))
         .map((r) => r.contact_id);
     },
-    async loadTriggerNodeId(orgId, versionId) {
+    async loadTriggerNode(orgId, versionId) {
       const { rows } = await pool.query<{ graph: FlowGraph }>(
         `select graph from followup_flow_versions where organization_id = $1 and id = $2`,
         [orgId, versionId],
       );
       if (rows.length === 0) return null;
-      return rows[0]!.graph.nodes.find((n) => n.type === "trigger")?.id ?? null;
+      return noDeGatilhoDoGrafo(rows[0]!.graph);
     },
     async insertEnrollment(input) {
       try {
@@ -206,6 +237,23 @@ async function seedConversation(org: string, contactId: string, agoMinutes: numb
   return rows[0]!.id;
 }
 
+/** Mesmo que `seedConversation`, mas com `status` explícito — pra provar que uma conversa
+ *  CLOSED/ARCHIVED não conta como silêncio (um humano encerrou; o fluxo não está mais ativo). */
+async function seedConversationComStatus(
+  org: string,
+  contactId: string,
+  agoMinutes: number,
+  status: string,
+): Promise<string> {
+  const sessionId = await seedChannelSession(org);
+  const { rows } = await pool.query<{ id: string }>(
+    `insert into conversations (organization_id, contact_id, channel_session_id, status, is_group, last_inbound_at)
+     values ($1, $2, $3, $4, false, now() - interval '${agoMinutes} minutes') returning id`,
+    [org, contactId, sessionId, status],
+  );
+  return rows[0]!.id;
+}
+
 /** Mesmo que `seedConversation`, mas com `last_inbound_at` EXATO (ISO), não relativo a `now()`
  *  do Postgres — necessário pro teste de boundary exato (evita drift entre `now()` do DB e o
  *  `clock()` injetado no sweep, que roda em JS). */
@@ -221,15 +269,18 @@ async function seedConversationAt(org: string, contactId: string, atIso: string)
 
 async function seedSilenceFlow(
   org: string,
-  opts?: { thresholdMinutes?: number; segments?: string[] },
+  opts?: { thresholdMinutes?: number; segments?: string[]; comIa?: boolean },
 ): Promise<{ pointerId: string; versionId: string }> {
-  const graph: FlowGraph = {
+  const graph = {
     nodes: [
       { id: "t1", type: "trigger", label: "Start", position: { x: 0, y: 0 }, config: {} },
+      ...(opts?.comIa
+        ? [{ id: "c1", type: "ai_classify" as const, label: "Class", position: { x: 0, y: 0 }, config: {} }]
+        : []),
       { id: "e1", type: "end", label: "Done", position: { x: 0, y: 0 }, config: { outcome: "converted" } },
     ],
     edges: [{ id: "t1-e1", source: "t1", target: "e1", priority: 0, condition: { type: "always" } }],
-  };
+  } as FlowGraph;
   const { rows: versionRows } = await pool.query<{ id: string }>(
     `insert into followup_flow_versions (organization_id, graph) values ($1, $2) returning id`,
     [org, JSON.stringify(graph)],
@@ -317,14 +368,31 @@ describe("runSilenceSweep — enrolla contato silencioso gateado, sem duplicar",
   });
 });
 
-// ---- 2. gate-out: sem agente publicado habilitando → 0 enrollments -----
+// ---- 2. gate: texto fixo sem agente enrolla; grafo de IA sem agente não -----
 
-describe("runSilenceSweep — gate-out (nenhum agente publicado habilita o pointer)", () => {
-  it("mesmo contato silencioso, SEM agente publicado com followup.enabled → 0 enrollments (prova que o gate é chamado)", async () => {
+describe("runSilenceSweep — gate do agente", () => {
+  it("contato silencioso, SEM agente, grafo só de texto → enrolla com agent_id nulo", async () => {
     const org = nextOrgId();
     await seedOrg(org);
     const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 30 });
-    // nenhum ai_agent_versions publicado nesta org habilitando o pointer
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 90);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.pointers_gated_out).toBe(0);
+    expect(summary.enrolled).toBeGreaterThanOrEqual(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
+    const { rows } = await pool.query<{ agent_id: string | null }>(
+      `select agent_id from followup_enrollments where pointer_id = $1 and contact_id = $2`,
+      [pointerId, contactId],
+    );
+    expect(rows[0]!.agent_id).toBeNull();
+  });
+
+  it("contato silencioso, SEM agente, grafo que pede IA → 0 enrollments", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 30, comIa: true });
     const contactId = await seedContact(org);
     await seedConversation(org, contactId, 90);
 
@@ -333,10 +401,10 @@ describe("runSilenceSweep — gate-out (nenhum agente publicado habilita o point
     expect(await countEnrollments(pointerId, contactId)).toBe(0);
   });
 
-  it("agente existe mas com followup.enabled=false → gate-out também", async () => {
+  it("agente existe mas com followup.enabled=false, grafo de IA → gate-out também", async () => {
     const org = nextOrgId();
     await seedOrg(org);
-    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 30, comIa: true });
     await seedPublishedAgentVersion(org, { enabled: false, pointerIds: [pointerId] });
     const contactId = await seedContact(org);
     await seedConversation(org, contactId, 90);
@@ -402,6 +470,46 @@ describe("runSilenceSweep — redução anti-spam (multi-conversa + never-inboun
     expect(summary.pointers_gated_out).toBe(0); // não foi o gate que bloqueou
     expect(summary.enrolled).toBe(0); // a redução MAX(last_inbound_at) pegou a conversa recente, não a velha
     expect(await countEnrollments(pointerId, contactId)).toBe(0);
+  });
+
+  it("única conversa está CLOSED (humano encerrou) e silenciosa há mais que o threshold → NÃO enrolla", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60 });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedConversationComStatus(org, contactId, 120, "closed");
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(0);
+    expect(await countEnrollments(pointerId, contactId)).toBe(0);
+  });
+
+  it("única conversa está ARCHIVED e silenciosa há mais que o threshold → NÃO enrolla", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60 });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedConversationComStatus(org, contactId, 120, "archived");
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(0);
+    expect(await countEnrollments(pointerId, contactId)).toBe(0);
+  });
+
+  it("conversa CLOSED antiga + conversa OPEN silenciosa (> threshold) do mesmo contato → enrolla pela ABERTA", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60 });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedConversationComStatus(org, contactId, 200, "closed"); // ignorada — não é a que decide
+    await seedConversation(org, contactId, 90); // aberta, silenciosa > threshold
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
   });
 
   it("contato cuja ÚNICA conversa nunca recebeu inbound (last_inbound_at NULL) → NÃO enrolla", async () => {
@@ -503,22 +611,69 @@ describe("runSilenceSweep — pina o agent_id do agente que arma o pointer (Task
 
 // ---- 7. Task 8.6: exclusividade 1-follow-up-vivo-por-lead ORG-WIDE ------
 
+/**
+ * Os status que ocupam a vaga do VIVO — copiados do baseline, nunca digitados
+ * de memória. Três lugares deste arquivo dependem deles, e cada um por um
+ * motivo diferente; o cabeçalho de `setOneLiveIndex` conta a história.
+ */
+const ONE_LIVE_STATUSES = "'active','waiting_reply','paused_handoff','paused_manual'";
+
+/**
+ * Quantos follow-ups VIVOS este contato tem.
+ *
+ * ⚠️ TERCEIRA CATEGORIA, e ela não é nenhuma das outras duas deste arquivo:
+ * aqui não se restaura estado nem se reproduz história — faz-se uma PERGUNTA
+ * sobre o estado atual. Por isso o predicado tem de ser o do produto HOJE, e
+ * `paused_manual` entra: um enrollment pausado por uma pessoa ocupa a vaga do
+ * vivo (é o que o índice garante desde a 0145), então uma contagem que o ignora
+ * responde MENOS do que a realidade.
+ *
+ * Achado por `@QAVivo` na varredura do arquivo, e classificado por ele. Estava
+ * LATENTE — medido: nenhuma asserção de hoje muda com a correção (16 verdes
+ * antes, 16 depois). Consertado mesmo assim porque a armadilha estava armada: o
+ * primeiro caso de pausa manual escrito aqui passaria por SORTE, que é
+ * exatamente o defeito que esta wave já pagou uma vez.
+ */
 async function countLiveForContact(org: string, contactId: string): Promise<number> {
   const { rows } = await pool.query<{ n: string }>(
     `select count(*) as n from followup_enrollments
      where organization_id = $1 and contact_id = $2
-       and status in ('active','waiting_reply','paused_handoff')`,
+       and status in (${ONE_LIVE_STATUSES})`,
     [org, contactId],
   );
   return Number(rows[0]!.n);
 }
 
 const ONE_LIVE = "idx_followup_enrollments_one_live";
+
+/**
+ * ⚠️ O PREDICADO É COPIADO DO BASELINE, NÃO DIGITADO DE MEMÓRIA.
+ *
+ * Este helper dropa e recria um índice do schema no banco COMPARTILHADO pelos
+ * invariantes — e o `finally` que "restaura o estado do baseline" restaurava uma
+ * versão CONGELADA no tempo: `('active','waiting_reply','paused_handoff')`, de
+ * antes de a 0145 acrescentar `paused_manual`. Depois que este arquivo rodava, o
+ * banco ficava com um índice que o baseline não tem mais, e o próximo teste a
+ * depender dele reprovava — determinística e rapidamente (27ms, falha de
+ * asserção, não timeout), o que fez a suíte parecer instável por carga.
+ *
+ * Medido: rodando só `followup-silence-sweep` + `followup-intervencao`, o caso
+ * "pausado ocupa a vaga do contato na ORGANIZAÇÃO" reprova; isolado, passa. É o
+ * `IA360-FLAKY` com assinatura. Os papéis, porque a diferença ensina: `@QAVivo`
+ * CARACTERIZOU o fenômeno (determinístico, 36ms, não timeout) e REFUTOU a
+ * primeira atribuição — a de que o índice da 0145 explicava tudo, que não
+ * sobrevivia ao "isolado passa". Refutar uma causa errada é barato e uma medição
+ * basta; achar a certa custou seguir a pista dele ("o culpado está na
+ * vizinhança") até o par de arquivos.
+ *
+ * A lição que a constante carrega: quem recria objeto de schema num banco
+ * compartilhado assume a dívida de acompanhar TODA migration futura que o toque.
+ */
 async function setOneLiveIndex(columns: string): Promise<void> {
   await pool.query(`drop index if exists ${ONE_LIVE}`);
   await pool.query(
     `create unique index if not exists ${ONE_LIVE} on followup_enrollments (${columns})
-       where status in ('active','waiting_reply','paused_handoff')`,
+       where status in (${ONE_LIVE_STATUSES})`,
   );
 }
 
@@ -615,6 +770,13 @@ describe("dedup 0062 — >1 enrollment vivo pro mesmo (org,contact) vira 1 vivo 
       );
 
       // A DEDUP exata da migration 0062 (window function genérica, sem ids hardcoded).
+      //
+      // ⚠️ ESTE PREDICADO NÃO ACOMPANHA A 0145, E É DE PROPÓSITO. Ele não
+      // restaura estado: REPRODUZ o que a 0062 fazia, e a 0062 não conhecia
+      // `paused_manual`. Acrescentar o status aqui mudaria o que a réplica
+      // replica — o oposto de consertar. O predicado que PRECISA acompanhar as
+      // migrations é o de `setOneLiveIndex`, lá em cima, porque aquele devolve o
+      // banco compartilhado ao estado do baseline.
       await pool.query(
         `with ranked as (
            select id, row_number() over (

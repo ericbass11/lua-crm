@@ -12,6 +12,10 @@ import type { LanguageModel } from "ai";
 import { loadCredential } from "@/lib/ai/credentials";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+const OPENROUTER_BASE_URL =
+  process.env.OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+
 export function buildProviderModel(provider: string, apiKey: string, modelId: string): LanguageModel {
   switch (provider) {
     case "anthropic":
@@ -20,6 +24,13 @@ export function buildProviderModel(provider: string, apiKey: string, modelId: st
       return createOpenAI({ apiKey })(modelId);
     case "google":
       return createGoogleGenerativeAI({ apiKey })(modelId);
+    // O catálogo atual do produto também permite estes dois provedores. O
+    // Cliente Oculto precisa usar a mesma matriz do agente publicado; caso
+    // contrário, uma organização válida no runtime normal falharia só aqui.
+    case "openrouter":
+      return createOpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL }).chat(modelId);
+    case "deepseek":
+      return createOpenAI({ apiKey, baseURL: DEEPSEEK_BASE_URL })(modelId);
     default:
       throw new Error(`unsupported_provider:${provider}`);
   }

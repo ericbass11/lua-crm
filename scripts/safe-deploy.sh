@@ -32,11 +32,32 @@ CURRENT=""
 if [ -n "$APP_CONTAINER" ]; then
   CURRENT=$(docker inspect --format '{{.Image}}' "$APP_CONTAINER" 2>/dev/null || echo "")
 fi
+# A imagem que o contêiner referencia pode NÃO EXISTIR mais: basta alguém ter
+# buildado por fora antes de chamar este script. O build move a tag `:local`
+# para a imagem nova, a antiga fica órfã e o Docker a poda — o contêiner segue
+# rodando de camadas que já não têm nome nem registro. Aconteceu em 2026-08-25,
+# no sync da v1.4.1, e o sintoma era hostil: `docker tag` respondia
+# "No such image: sha256:…" e o `set -e` matava o script no passo 1, sem dizer
+# uma palavra sobre rollback. `docker commit` do contêiner vivo também não
+# salva — ele precisa das camadas-base, que são justamente as que sumiram.
+#
+# Este script JÁ tinha um caminho para "não há o que salvar" (app parado).
+# Agora ele cobre os dois, e em voz alta: perder a rede de segurança tem de ser
+# uma decisão consciente de quem está lendo, não um erro de daemon.
+if [ -n "$CURRENT" ] && ! docker image inspect "$CURRENT" >/dev/null 2>&1; then
+  echo "  ⚠ a imagem do contêiner em execução (${CURRENT:0:26}...) NÃO existe mais."
+  echo "    Provável causa: build feito FORA deste script, que moveu a tag e"
+  echo "    deixou a imagem anterior órfã (o Docker a podou)."
+  echo "    Para ter rede de segurança, builde a versão anterior a partir da"
+  echo "    branch de backup e tagueie como $ROLLBACK_REF antes de seguir."
+  CURRENT=""
+fi
+
 if [ -n "$CURRENT" ]; then
   docker tag "$CURRENT" "$ROLLBACK_REF"
   echo "  rollback ($ROLLBACK_REF) aponta para ${CURRENT:0:26}..."
 else
-  echo "  (app não está rodando — sem snapshot; rollback indisponível)"
+  echo "  ⚠ SEM SNAPSHOT — este deploy NÃO tem rollback automático."
 fi
 
 step "2/5 Build (typecheck estrito + lint = portão de qualidade)"

@@ -13,13 +13,13 @@
  *   5. Load history sliding window
  *   6. generateText with stopWhen=[stepCountIs(maxSteps), budgetGuard]
  *   7. Detect handoff signal → finalizeHandoff('agent_invoked_tool')
- *   8. !dry_run → outbound message via sendMessageHandler (WAHA)
+ *   8. !dry_run → outbound message via sendMessageHandler (canal da sessão)
  *   9. finalizeRun
  *  10. revoke ephemeral token (always)
  *
  * Robustness:
  *   - Try/catch global: any throw → finalizeRun('failed', error_message=...).
- *   - Dry-run path bypasses concurrency unique guard, WAHA dispatch, outbound row.
+ *   - Dry-run path bypasses concurrency unique guard, channel dispatch, outbound row.
  *   - Plaintext API keys are never logged.
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -27,7 +27,17 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, stepCountIs, type LanguageModel, type StopCondition, type ToolSet } from "ai";
 
+// Fonte única do endpoint — a mesma constante que o registry de produção usa.
+// Repetir a URL aqui criaria dois lugares para consertar quando ela mudar.
+import {
+  cabecalhosDeAtribuicaoOpenRouter,
+  DEEPSEEK_ENDPOINT,
+  OPENROUTER_ENDPOINT,
+  REQUESTY_ENDPOINT,
+} from "@/lib/agent-engine/edge/llm/providers";
 import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials";
+import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import type { McpAuthResult } from "@/lib/mcp/auth";
@@ -41,10 +51,18 @@ import { finalizeHandoff } from "./handoff";
 import { loadHistoryWithBudget } from "./history";
 import { mintEphemeralToken, revokeEphemeralToken } from "./mcp_token";
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from "./tools";
+import { modulosLigados } from "@/lib/instalacao/modulos";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { serializeSteps } from "./serialize";
 import { enrichInboundMedia } from "./media";
 import { retrieveKnowledge } from "./rag";
-import { resolveWahaChatId } from "@/lib/waha/send";
+import {
+  CHANNEL_SESSION_REF_COLUMNS,
+  DEFAULT_CHANNEL_PROVIDER,
+  getAdapter,
+  resolveSessionRef,
+  type ChannelSessionRef,
+} from "@/lib/channels";
 
 export interface RunAgentInput {
   runId: string;
@@ -134,7 +152,31 @@ function buildSentinelRegex(keywords: string[]): RegExp | null {
  * "Unauthenticated. Configure AI_GATEWAY_API_KEY or use a provider module.",
  * which is exactly what this does — a direct provider module per `provider`.
  */
-function buildModel(provider: string, apiKey: string, modelId: string): LanguageModel {
+/**
+ * Exportada por causa do invariante: este switch é o SEGUNDO lugar que precisa
+ * conhecer um provedor novo (o primeiro é `createDefaultRegistry`, em
+ * `lib/agent-engine/edge/llm/providers.ts`), e ficou três casos atrás dele.
+ * `tests/unit/provedores-x-registry.test.ts` chama esta função para cada id de
+ * `IDS_DE_PROVEDOR` — sem export, a única guarda possível seria procurar
+ * `case "..."` no texto do arquivo, que passa com um switch que compila e não
+ * executa.
+ */
+/**
+ * A chave de plataforma do provedor — as mesmas variáveis que
+ * `llmEdgeConfigFromEnv` lê no turno de produção. Google não tem: o runtime
+ * real também não tem ramo de fallback para ele, e prometer aqui um caminho que
+ * lá não existe faria o ensaio passar e a mensagem real falhar.
+ */
+export function chaveDePlataforma(provider: string): string | null {
+  const nome = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", openrouter: "OPENROUTER_API_KEY" }[
+    provider
+  ];
+  if (!nome) return null;
+  const v = (process.env[nome] ?? "").trim();
+  return v === "" ? null : v;
+}
+
+export function buildModel(provider: string, apiKey: string, modelId: string): LanguageModel {
   switch (provider) {
     case "anthropic":
       return createAnthropic({ apiKey })(modelId);
@@ -142,6 +184,26 @@ function buildModel(provider: string, apiKey: string, modelId: string): Language
       return createOpenAI({ apiKey })(modelId);
     case "google":
       return createGoogleGenerativeAI({ apiKey })(modelId);
+    // O ensaio precisa alcançar o mesmo provedor que o turno real alcança.
+    // Sem este caso, o dono que instalou pela opção [1] do instalador publica
+    // o agente, clica em "Teste" para conferir antes de confiar, e recebe
+    // `unsupported_provider` — enquanto a mensagem de verdade seria respondida
+    // normalmente pelo worker. Erro no ensaio lê-se como produto quebrado.
+    case "openrouter":
+      return createOpenAI({
+        apiKey,
+        baseURL: OPENROUTER_ENDPOINT,
+        headers: cabecalhosDeAtribuicaoOpenRouter(),
+      }).chat(modelId); // chat/completions: a OpenRouter não serve /responses para todo modelo (#1130)
+    // Mesma fábrica OpenAI-compatível que o registry de produção usa. Sem este
+    // caso, o dono que publicou em DeepSeek receberia `unsupported_provider` no
+    // ensaio enquanto o worker responderia a mensagem real — ensaio mais
+    // rígido que a produção mente sobre o que está quebrado.
+    case "deepseek":
+      return createOpenAI({ apiKey, baseURL: DEEPSEEK_ENDPOINT })(modelId);
+    // Requesty: roteador OpenAI-compatível, pelo mesmo `.chat()` do registry.
+    case "requesty":
+      return createOpenAI({ apiKey, baseURL: REQUESTY_ENDPOINT }).chat(modelId);
     default:
       throw new Error(`unsupported_provider: ${provider}`);
   }
@@ -223,7 +285,15 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     const { data: versionRaw } = await admin
       .from("ai_agent_versions")
       .select(
-        "id, organization_id, agent_id, system_prompt, provider, model, credential_id, tool_ids, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, created_by",
+        // `pipeline_ids` e `knowledge_source_ids` ENTRAM no SELECT.
+        //
+        // A linha 445 lia `version.pipeline_ids` de um objeto que este SELECT
+        // nunca trouxe: o `?? []` do call site absorvia o `undefined` e o escopo
+        // ficava SEMPRE vazio neste runtime — a marcação da tela existia e não
+        // valia aqui. Coluna lida que o SELECT não pede é o defeito que
+        // `agent-version-columns-drift.test.ts` existe para pegar nas cópias
+        // vigiadas; esta não é uma delas.
+        "id, organization_id, agent_id, system_prompt, provider, model, credential_id, tool_ids, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, created_by, pipeline_ids, knowledge_source_ids",
       )
       .eq("id", run.agent_version_id)
       .eq("organization_id", run.organization_id)
@@ -246,16 +316,37 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     const agentGuardrails: Guardrails = guardrailsParsed.success ? guardrailsParsed.data : [];
 
     // 4) Load credential. Plaintext lives only in this scope.
-    if (!version.credential_id) {
-      return await failRun(run, "credential_invalid", "version has no credential", startedAt);
-    }
+    //
+    // Duas origens, na MESMA ordem que `resolveOrgLlmConfig` aplica no turno de
+    // produção: a credencial cadastrada pela tela vence, e na falta dela vale a
+    // chave de plataforma que veio na instalação.
+    //
+    // Sem o segundo caminho, o ensaio recusava com "version has no credential"
+    // justamente na instalação mais comum — a que rodou o `install.sh`, colou a
+    // chave no `.env` e nunca abriu a tela de Credenciais. O agente atendia um
+    // cliente de verdade normalmente, e o botão de testar dizia que não dava.
+    // Ensaio mais rígido que a produção não é cautela: é dizer que está
+    // quebrado o que está funcionando.
     let credentialApiKey: string;
-    try {
-      const credential = await loadCredential(version.credential_id, run.organization_id);
-      credentialApiKey = credential.apiKey;
-    } catch (err) {
-      const reason = err instanceof CredentialUnavailableError ? err.reason : "decrypt_failed";
-      return await failRun(run, `credential_${reason}`, "credential unavailable", startedAt);
+    if (version.credential_id) {
+      try {
+        const credential = await loadCredential(version.credential_id, run.organization_id);
+        credentialApiKey = credential.apiKey;
+      } catch (err) {
+        const reason = err instanceof CredentialUnavailableError ? err.reason : "decrypt_failed";
+        return await failRun(run, `credential_${reason}`, "credential unavailable", startedAt);
+      }
+    } else {
+      const daInstalacao = chaveDePlataforma(version.provider);
+      if (!daInstalacao) {
+        return await failRun(
+          run,
+          "credential_invalid",
+          `sem chave para ${version.provider}: cadastre em IA › Credenciais ou configure a chave desta instalação`,
+          startedAt,
+        );
+      }
+      credentialApiKey = daInstalacao;
     }
 
     // 5) Resolve inbound text + dispatch context.
@@ -310,7 +401,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       const { data: convRaw } = await admin
         .from("conversations")
         .select(
-          "id, group_chat_id, is_group, contacts:contact_id(display_name, phone_number, wa_identity), channel_sessions:channel_session_id(waha_session_name)",
+          `id, group_chat_id, is_group, contacts:contact_id(name, display_name, phone_number, wa_identity, wa_lid), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS})`,
         )
         .eq("id", run.conversation_id)
         .eq("organization_id", run.organization_id)
@@ -320,22 +411,51 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         group_chat_id: string | null;
         is_group: boolean;
         contacts: {
+          name: string | null;
           display_name: string | null;
           phone_number: string | null;
           wa_identity: string | null;
+          wa_lid: string | null;
         } | null;
-        channel_sessions: { waha_session_name: string } | null;
+        channel_sessions: ChannelSessionRef | null;
       } | null;
       if (conv) {
-        contactName = conv.contacts?.display_name ?? null;
+        contactName = nomeDoContato(conv.contacts);
         contactPhone = conv.contacts?.phone_number ?? null;
-        waSessionName = conv.channel_sessions?.waha_session_name ?? null;
-        chatId = resolveWahaChatId({
+        // Mesmo seam do handler de envio: quem sabe de que coluna sai o ref da
+        // sessão, e como o telefone vira endereço, é `lib/channels/`.
+        waSessionName = conv.channel_sessions ? resolveSessionRef(conv.channel_sessions) : null;
+        chatId = getAdapter(conv.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER).resolveRecipient({
           isGroup: conv.is_group,
           groupChatId: conv.group_chat_id,
           phoneNumber: conv.contacts?.phone_number,
           waIdentity: conv.contacts?.wa_identity,
+          waLid: conv.contacts?.wa_lid,
         });
+      }
+
+      // GATE DE ELEGIBILIDADE — este runtime legado (@deprecated, hoje só o
+      // dispatcher aposentado o alcança com envio real) TAMBÉM não pode
+      // responder uma conversa que uma origem elegível não autorizou. Mesma
+      // regra pura do drain/turno. Fail-closed: erro de leitura → falha o run
+      // antes de qualquer custo de LLM.
+      try {
+        const elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
+          organizationId: run.organization_id,
+          conversationId: run.conversation_id,
+          agora: new Date(),
+          ttlMs: ttlDaAutorizacaoMs(process.env),
+        });
+        if (elegib !== null && !elegib.permite) {
+          return await failRun(run, "nao_elegivel_para_ia", `elegibilidade: ${elegib.motivo}`, startedAt);
+        }
+      } catch (err) {
+        return await failRun(
+          run,
+          "nao_elegivel_para_ia",
+          `elegibilidade indeterminada: ${err instanceof Error ? err.message.slice(0, 120) : "erro"}`,
+          startedAt,
+        );
       }
     }
 
@@ -381,11 +501,18 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
 
     const auth: McpAuthResult = {
       organizationId: run.organization_id,
-      role: "agent",
+      role: "ai_operator",
       actor: {
         type: "ai_agent",
+        // `id` é o RUN — é o que correlaciona a chamada de tool com o turno no
+        // audit. `agent_id` é a linha em `ai_agents`, e é a única que pode ir
+        // para `crm_lead_activities.actor_agent_id` (FK). Enquanto só existia
+        // `id`, toda tool de escrita chamada por este runtime perdia a atividade
+        // na FK: o lead mudava e a timeline não registrava. Ver `Actor` em
+        // lib/api/handlers/types.ts.
         id: run.id,
-        role: "agent",
+        agent_id: run.agent_id,
+        role: "ai_operator",
         api_token_id: ephemeral.id,
       },
       apiTokenId: ephemeral.id,
@@ -394,12 +521,12 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         "mcp:write",
         "actor:ai_agent",
         `agent_run:${run.id}`,
-        "role:agent",
+        "role:ai_operator",
       ],
     };
     const ctx: McpContext = {
       organizationId: run.organization_id,
-      role: "agent",
+      role: "ai_operator",
       actor: auth.actor,
       apiTokenId: ephemeral.id,
       requestId: run.id,
@@ -412,6 +539,9 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       auth,
       toolIds: version.tool_ids ?? [],
       handoffToolEnabled: version.handoff_tool_enabled,
+      // `?? []` — o clone sem a coluna 0125 nasce FECHADO.
+      pipelineIds: (version as { pipeline_ids?: string[] }).pipeline_ids ?? [],
+      modulosLigados: await modulosLigados(admin),
       handoffSignal,
     });
 
@@ -714,10 +844,8 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       };
     }
 
-    // 16) Guardrails de SAÍDA (gate de preço sempre ligado + regex_output_block /
-    // rag_must_hit configurados). Fonte verificada = system prompt do tenant +
-    // trechos do RAG + resultados de tools. Preço sem fonte NÃO chega ao cliente:
-    // a resposta é descartada e a conversa escala em silêncio para um humano.
+    // 16) Happy path. Send the reply through the channel when not dry-run.
+    let outboundMessageId: string | null = null;
     const finalText = (result.text ?? "").trim();
     if (!run.is_dry_run && finalText && run.conversation_id) {
       // Corpus de fundamentação = SÓ fontes verificadas: system prompt do tenant
@@ -768,13 +896,13 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       }
     }
 
-    // 17) Happy path. Send WAHA reply when not dry-run.
-    let outboundMessageId: string | null = null;
+    // 17) Happy path. Envia a resposta pelo adapter quando não é dry-run.
     if (!run.is_dry_run && finalText && run.conversation_id) {
       outboundMessageId = await sendFinalResponse({
         supabase: admin,
         organizationId: run.organization_id,
         runId: run.id,
+        agentId: run.agent_id,
         conversationId: run.conversation_id,
         text: finalText,
         requestId: run.id,

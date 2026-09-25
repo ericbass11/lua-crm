@@ -15,23 +15,28 @@ import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
 import { buildInviteEmail } from "@/lib/email/templates/invite";
-import { sendEmail } from "@/lib/email/resend";
+import { sendEmail } from "@/lib/email/roteador";
+import { marcaDaSaida } from "@/lib/branding/saida";
 import { inviteOnboardingSchema } from "@/lib/schemas/onboarding";
 import { requireOnboardingCtx, patchOnboardingState, OnboardingError } from "./_shared";
+
+type PapelHumano = "viewer" | "agent" | "manager" | "admin";
 
 export type SendInvitesResult =
   | {
       ok: true;
       sent: number;
       failed: number;
-      /** Convites cujo email NÃO saiu (ex.: Resend não configurado) — o link
+      /** Convites cujo email NÃO saiu (ex.: nenhum transporte configurado) — o link
        * de aceite é devolvido para o admin enviar manualmente. */
       undelivered?: { email: string; accept_url: string }[];
     }
   | { ok: false; error: "auth_required" | "no_active_org" | "invalid_input"; details?: unknown };
 
 interface InvitePayload {
-  invitations: { email: string; role: "viewer" | "agent" | "manager" | "admin" }[];
+  // Convite é para PESSOA: só papel humano. `ai_operator` não entra aqui de
+  // propósito — é papel de token de agente, ninguém o recebe por e-mail.
+  invitations: { email: string; role: PapelHumano }[];
   skip?: boolean;
 }
 
@@ -52,7 +57,7 @@ export async function sendOnboardingInvites(payload: InvitePayload): Promise<Sen
       organizationId: ctx.orgId,
       metadata: { skipped: true, count: 0 },
     });
-    redirect("/onboarding/done");
+    redirect("/onboarding");
   }
 
   let input;
@@ -68,6 +73,8 @@ export async function sendOnboardingInvites(payload: InvitePayload): Promise<Sen
   // env.* é runtime → correto na imagem genérica self-host (ver browser.ts).
   const baseUrl = env.NEXT_PUBLIC_APP_URL;
   const inviterName = ctx.fullName ?? ctx.email ?? "Um colega";
+  // Fora do laço: a marca é a mesma para o lote inteiro (mesma organização).
+  const marca = await marcaDaSaida(ctx.orgId);
 
   let sent = 0;
   let failed = 0;
@@ -91,12 +98,14 @@ export async function sendOnboardingInvites(payload: InvitePayload): Promise<Sen
       acceptUrl,
       role: inv.role,
       expiresAt,
+      marca,
     });
     const result = await sendEmail({
       to: email,
       subject,
       html,
       text,
+      fromName: marca.nome,
       tags: [
         { name: "kind", value: "team_invite" },
         { name: "src", value: "onboarding" },
@@ -134,12 +143,12 @@ export async function sendOnboardingInvites(payload: InvitePayload): Promise<Sen
     metadata: { count: sent + failed, sent, failed },
   });
 
-  // Email falhou (ex.: VPS sem RESEND_API_KEY): NÃO redireciona em silêncio —
+  // Email falhou (ex.: VPS sem SMTP e sem Resend): NÃO redireciona em silêncio —
   // devolve os links de aceite pro admin enviar manualmente (mesmo contrato do
   // fallback de /app/team/invite). Redirect só no caminho 100% entregue.
   if (failed > 0) {
     return { ok: true, sent, failed, undelivered };
   }
 
-  redirect("/onboarding/done");
+  redirect("/onboarding");
 }

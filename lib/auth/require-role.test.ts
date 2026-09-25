@@ -15,6 +15,9 @@ import { createClient } from "@/lib/supabase/server";
 import type { AuthUser, Role } from "@/lib/auth/types";
 
 vi.mock("@/lib/auth/server", () => ({
+  // Sessão sem dívida de MFA: esta suíte mede rank de papel; o gate de segundo
+  // fator tem suíte própria em tests/unit/require-role-mfa.test.ts.
+  mfaEmDivida: vi.fn(async () => false),
   loadAuthUser: vi.fn(),
   resolveActiveOrg: vi.fn(),
 }));
@@ -31,6 +34,7 @@ function authUserFixture(role: Role | null, platformAdmin = false): AuthUser {
     full_name: null,
     avatar_url: null,
     is_platform_admin: platformAdmin,
+    idioma: "pt-BR" as const,
     organizations: role
       ? [{ organization_id: ORG_ID, organization_name: "Org", role }]
       : [],

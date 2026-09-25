@@ -1,3 +1,4 @@
+import { serviceFromMessage } from "@/lib/atendimento/origem-mensagem";
 /**
  * Handler: ai-handoff-from-sentiment.v1
  *
@@ -9,6 +10,7 @@
  */
 
 import type { EventHandler, HandlerResult } from "@/lib/event-log/dispatcher";
+import { CHAVES_DO_CLIMA } from "@/lib/ai/decisao/metadados-do-clima";
 import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
@@ -25,6 +27,9 @@ export const aiHandoffFromSentimentHandler: EventHandler = {
       (row.payload?.["conversation_id"] as string | undefined) ?? null;
     const sentimentScore =
       (row.payload?.["sentiment_score"] as number | undefined) ?? null;
+    /** Qual motor mediu — a passagem marca "(percebido pelo Jev)" quando foi ele. */
+    const sentimentEngine =
+      (row.payload?.[CHAVES_DO_CLIMA.motor] as string | undefined) ?? null;
 
     if (!messageId && !conversationIdHint) {
       return {
@@ -36,47 +41,12 @@ export const aiHandoffFromSentimentHandler: EventHandler = {
 
     const admin = createAdminClient();
 
-    // Resolve conversation_id (and therefore contact_id) via the message,
-    // unless the payload already carries a verified conversation_id.
-    let conversationId = conversationIdHint;
-    let contactId: string | null = null;
-
-    if (!conversationId && messageId) {
-      const { data: msg, error: msgErr } = await admin
-        .from("messages")
-        .select("id, organization_id, conversation_id")
-        .eq("id", messageId)
-        .eq("organization_id", row.organization_id)
-        .maybeSingle();
-      if (msgErr || !msg) {
-        return {
-          consumer_key: AI_HANDOFF_FROM_SENTIMENT_KEY,
-          status: "skipped",
-          detail: "message_not_found",
-        };
-      }
-      conversationId = (msg as { conversation_id: string }).conversation_id;
+    const boundary = messageId ? await serviceFromMessage(admin, row.organization_id, messageId) : null;
+    if (!boundary || (conversationIdHint && boundary.conversation_id !== conversationIdHint)) {
+      return { consumer_key: AI_HANDOFF_FROM_SENTIMENT_KEY, status: "skipped", detail: "service_boundary_stale" };
     }
-
-    if (!conversationId) {
-      return {
-        consumer_key: AI_HANDOFF_FROM_SENTIMENT_KEY,
-        status: "skipped",
-        detail: "conversation_unresolved",
-      };
-    }
-
-    // Load conversation (for contact_id → leadId resolution).
-    const { data: conv } = await admin
-      .from("conversations")
-      .select("id, organization_id, contact_id")
-      .eq("id", conversationId)
-      .eq("organization_id", row.organization_id)
-      .maybeSingle();
-
-    if (conv) {
-      contactId = (conv as { contact_id: string | null }).contact_id ?? null;
-    }
+    const conversationId = boundary.conversation_id;
+    const contactId = boundary.contact_id;
 
     // Best-effort: resolve the most recent open lead for this contact so the
     // orchestrator can write a timeline activity. If unavailable we still
@@ -95,12 +65,15 @@ export const aiHandoffFromSentimentHandler: EventHandler = {
     }
 
     const result = await triggerHandoff({
+      serviceBoundary: boundary,
       conversationId,
       organizationId: row.organization_id,
       reason: "low_sentiment",
+      origem: "sentimento",
       leadId,
       metadata: {
         sentiment_score: sentimentScore,
+        [CHAVES_DO_CLIMA.motor]: sentimentEngine,
         message_id: messageId,
         source: "ai.sentiment_alert",
       },
