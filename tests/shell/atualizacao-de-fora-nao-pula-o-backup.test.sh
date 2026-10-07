@@ -16,7 +16,7 @@
 # caminho não for o do kit (ou se o arquivo nem for executado). O que o
 # `backup.sh` FAZ tem prova própria em tests/shell/waha-backup-volume.test.sh.
 #
-# A invocação é RELATIVA de propósito (`bash update.sh`, `bash deskcommcrm/...`):
+# A invocação é RELATIVA de propósito (`bash update.sh`, `bash lua-crm/...`):
 # com o caminho absoluto o `dirname "$0"` sobrevive ao `cd` mesmo com o defeito
 # no lugar, e este arquivo ficaria verde medindo a si mesmo — foi o caminho
 # absoluto no comando de quem abriu a issue que escondeu o problema dele.
@@ -129,6 +129,9 @@ ENV
   (
     cd "$proj" || exit 1
     git init --quiet
+    # A guarda de origem exige um remoto declarado. O espelho aponta para esta
+    # própria fixture descartável: fetch não toca a rede nem o repo de trabalho.
+    git remote add origin "file://$proj"
     git add -A
     git commit --quiet -m "v0.9.0"
     git tag v0.9.0
@@ -158,37 +161,38 @@ STUB
   chmod +x "$destino"
 }
 
-# kit DENTRO do projeto: <raiz>/deskcommcrm/hostgator-setup-kit (o jeito que o
+# kit DENTRO do projeto: <raiz>/lua-crm/hostgator-setup-kit (o jeito que o
 # cabeçalho do update.sh ensina, rodado de dentro do projeto).
 montar_instalacao() {
-  local raiz="$1" proj="$1/deskcommcrm"
+  local raiz="$1" proj="$1/lua-crm"
   mkdir -p "$proj"
   cp -RL "$REPO_ROOT/hostgator-setup-kit" "$proj/"
   plantar_backup_duble "$proj/hostgator-setup-kit/backup.sh" "$raiz/marca-backup"
   montar_projeto "$proj"
 }
 
-# Kit NA RAIZ da instalação e projeto em <raiz>/deskcommcrm — o layout do relato
-# da issue, que o próprio enter_project detecta (`elif [ -f deskcommcrm/$COMPOSE
-# ]; then cd deskcommcrm`). Aqui o operador roda `bash update.sh` de dentro da
+# Kit NA RAIZ da instalação e projeto em <raiz>/lua-crm — o layout do relato
+# da issue, que o próprio enter_project detecta (`elif [ -f lua-crm/$COMPOSE
+# ]; then cd lua-crm`). Aqui o operador roda `bash update.sh` de dentro da
 # raiz, então `$0` é só `update.sh` e o `dirname "$0"` vira "." — o que, DEPOIS
 # do cd, significa "procure o backup.sh no PROJETO", que é o erro relatado.
 montar_kit_na_raiz() {
-  local raiz="$1" proj="$1/deskcommcrm"
+  local raiz="$1" proj="$1/lua-crm"
   mkdir -p "$proj"
   cp -RL "$REPO_ROOT/hostgator-setup-kit/." "$raiz/"
   plantar_backup_duble "$raiz/backup.sh" "$raiz/marca-backup"
   montar_projeto "$proj"
 }
 
-# rodar_de <cwd> <caminho do update.sh> <saída> → status em RC
+# rodar_de <cwd> <caminho do update.sh> <saída> <projeto> → status em RC
 # O `< /dev/null` não é decoração: sem terminal no stdin, o caminho de backup que
 # falhou chama `die` em vez de abrir o `read -p` de quem digita "sim" — é assim
 # que a suíte roda no CI e no agente, e evita travar esperando resposta.
 rodar_de() {
-  local cwd="$1" caminho="$2" saida="$3"
+  local cwd="$1" caminho="$2" saida="$3" proj="$4"
   RC=0
-  ( cd "$cwd" && bash "$caminho" --to v0.9.0 --force ) > "$saida" 2>&1 < /dev/null || RC=$?
+  ( cd "$cwd" && REPO_URL="file://$proj" bash "$caminho" --to v0.9.0 --force ) > "$saida" 2>&1 < /dev/null || RC=$?
+  [ "$RC" -eq 0 ] || cat "$saida"
 }
 
 echo '── 1. Kit na raiz, `bash update.sh` dali: o layout e a invocação do relato'
@@ -197,7 +201,7 @@ echo '── 1. Kit na raiz, `bash update.sh` dali: o layout e a invocação do 
 # procurado no diretório do PROJETO — onde o backup.sh do kit nunca está.
 R1="$WORK/caso1"; mkdir -p "$R1"; montar_kit_na_raiz "$R1"
 OUT1="$WORK/saida1.txt"
-rodar_de "$R1" update.sh "$OUT1"; RC1="$RC"
+rodar_de "$R1" update.sh "$OUT1" "$R1/lua-crm"; RC1="$RC"
 check "o backup.sh do kit foi EXECUTADO (a marca é dele)" test -f "$R1/marca-backup"
 check "e procurado NO KIT, não no diretório do projeto" \
   grep -q "^zero=$R1/backup\.sh$" "$R1/marca-backup"
@@ -207,15 +211,15 @@ check "a saída não tem o \"No such file or directory\" do relato" \
 check "e nem o aviso de que a atualização seguiu sem backup" \
   nao_contem "backup preventivo falhou" "$OUT1"
 
-echo '── 2. Do diretório de cima, `bash deskcommcrm/hostgator-setup-kit/update.sh`'
+echo '── 2. Do diretório de cima, `bash lua-crm/hostgator-setup-kit/update.sh`'
 # A forma do cabeçalho do update.sh, executada do diretório de cima: depois do cd
 # do enter_project o caminho relativo passa a apontar para dentro dele mesmo.
 R2="$WORK/caso2"; mkdir -p "$R2"; montar_instalacao "$R2"
 OUT2="$WORK/saida2.txt"
-rodar_de "$R2" deskcommcrm/hostgator-setup-kit/update.sh "$OUT2"; RC2="$RC"
+rodar_de "$R2" lua-crm/hostgator-setup-kit/update.sh "$OUT2" "$R2/lua-crm"; RC2="$RC"
 check "o backup.sh do kit foi EXECUTADO (a marca é dele)" test -f "$R2/marca-backup"
 check "e procurado NO KIT, não no diretório do projeto" \
-  grep -q "^zero=$R2/deskcommcrm/hostgator-setup-kit/backup\.sh$" "$R2/marca-backup"
+  grep -q "^zero=$R2/lua-crm/hostgator-setup-kit/backup\.sh$" "$R2/marca-backup"
 check "o kit anunciou o backup feito" grep -q "✓ backup feito" "$OUT2"
 check "a saída não tem o \"No such file or directory\" do relato" \
   nao_contem "No such file or directory" "$OUT2"
@@ -230,10 +234,10 @@ echo '── 3. Do projeto, `bash hostgator-setup-kit/update.sh`: o jeito que se
 # no lugar ela traria só `hostgator-setup-kit/backup.sh`.
 R3="$WORK/caso3"; mkdir -p "$R3"; montar_instalacao "$R3"
 OUT3="$WORK/saida3.txt"
-rodar_de "$R3/deskcommcrm" hostgator-setup-kit/update.sh "$OUT3"; RC3="$RC"
+rodar_de "$R3/lua-crm" hostgator-setup-kit/update.sh "$OUT3" "$R3/lua-crm"; RC3="$RC"
 check "o backup.sh do kit foi EXECUTADO (a marca é dele)" test -f "$R3/marca-backup"
 check "e procurado NO KIT" \
-  grep -q "^zero=$R3/deskcommcrm/hostgator-setup-kit/backup\.sh$" "$R3/marca-backup"
+  grep -q "^zero=$R3/lua-crm/hostgator-setup-kit/backup\.sh$" "$R3/marca-backup"
 check "o kit anunciou o backup feito" grep -q "✓ backup feito" "$OUT3"
 
 printf '\nstatus: caso1=%s caso2=%s caso3=%s\n' "$RC1" "$RC2" "$RC3"
