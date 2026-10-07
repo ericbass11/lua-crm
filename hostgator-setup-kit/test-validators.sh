@@ -2090,6 +2090,31 @@ echo "packaging: a instalação resolve a última versão publicada"
   rm -rf "$repo_falso" "$trabalho" "$vazio"
 ) || fail=1
 
+echo "packaging: a lista grande de tags não perde a versão por SIGPIPE"
+(
+  grande="$(mktemp -d)"
+  trap 'rm -rf "$grande"' EXIT
+  mkdir "$grande/bin"
+  cat > "$grande/bin/git" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $1 == ls-remote ]] || exit 1
+# Mais que o buffer do pipe: head -1 encerra antes de o produtor terminar,
+# fazendo pipefail descartar uma referência correta já capturada.
+awk 'BEGIN {
+  print "hash\trefs/tags/v1.10.0"
+  for (i=0; i<20000; i++) print "hash\trefs/tags/v1.9.0"
+}'
+STUB
+  chmod +x "$grande/bin/git"
+  achou="$(PATH="$grande/bin:$PATH" ultima_versao_publicada /espelho-descartavel)"
+  if [ "$achou" != "1.10.0" ]; then
+    printf '  ✗ lista maior que o pipe perdeu a primeira versão: "%s"\n' "$achou"
+    exit 1
+  fi
+  printf '  ✓ a primeira versão continua 1.10.0 com 20.001 referências e pipefail\n'
+) || fail=1
+
 echo "packaging: a instalação GRAVA a versão resolvida (não só sabe qual é)"
 # A prova acima mostra que a função escolhe certo; esta mostra que o install.sh
 # a USA. São coisas diferentes, e a diferença não é acadêmica: sabotei o install

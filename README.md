@@ -213,6 +213,32 @@ Passo a passo em linguagem simples: [`docs/ATUALIZANDO.md`](docs/ATUALIZANDO.md)
 
 ### Outros comandos do kit
 
+Para uma publicação administrada com imagens de CI por digest, use o modo opcional
+do caminho sancionado de deploy:
+
+```bash
+bash scripts/safe-deploy.sh --production-images /opt/lua-crm/config/release.json \
+  --compose-file docker-compose.prod.yml \
+  --compose-file docker-compose.single-server.yml \
+  --compose-file /opt/lua-crm/config/compose.crm-vps.yml \
+  --env-file /opt/lua-crm/config/runtime.env --phase staging
+```
+
+O manifesto contém `revision` (SHA completo), `APP_IMAGE`, `WORKER_IMAGE` e
+`SCHEDULER_IMAGE` por `@sha256`, além de `ci.revision`, `ci.status: "success"` e
+`ci.checks` com `ci`, `e2e`, `perf` e `docker`; cada check registra `revision`,
+`status: "success"` e `url` do run no GitHub. O operador verifica essas evidências
+no GitHub antes de transferir o manifesto. O arquivo de ambiente deve ter caminho
+absoluto, permissão 600 e não pode ser link simbólico. Os overlays devem manter
+serviços privados, imagens exatas e consumidores no perfil `cutover`.
+
+Staging publica somente o app, mantendo worker/scheduler/WAHA desligados; seu gate
+cobre DB/Redis/rotas. Após congelar a origem e restaurar o backup final, use
+`--phase cutover --cutover-confirmed` para os três runtimes e o gate com WAHA.
+Infraestrutura, TLS, Auth/Storage/Realtime e sessão WhatsApp exclusiva são gates
+operacionais separados. Falhas restauram imagens e estados anteriores sem apagar
+volumes; o modo de build local sem esses argumentos continua disponível.
+
 | Script | Função |
 |---|---|
 | `install.sh` | Instala tudo (idempotente — pode rodar de novo) |
