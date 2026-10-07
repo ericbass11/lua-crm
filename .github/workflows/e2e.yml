@@ -1558,7 +1558,10 @@ jobs:
           SENTRY_DSN: "off"
 
       - name: Instalar o browser
-        run: pnpm exec playwright install --with-deps chromium
+        timeout-minutes: 5
+        run: |
+          python3 tests/shell/e2e-browser-apt.test.py
+          bash scripts/install-e2e-browser.sh
 
       # `.env.local` é CÓPIA do `.env.e2e`, não uma terceira redação dele.
       #
