@@ -37,6 +37,12 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Conexão experimental": { es: "Conexión experimental" },
+  "Entenda os limites, riscos e a reconexão do WhatsApp por dispositivo vinculado.": { es: "Conoce los límites, riesgos y la reconexión de WhatsApp mediante dispositivo vinculado." },
+  "Atuar como cliente oculto": { es: "Actuar como cliente oculto" },
+  "Conversa com a empresa avaliada, interpreta o atendimento e prepara os insumos do laudo comercial.": { es: "Conversa con la empresa evaluada, interpreta la atención y prepara los insumos del informe comercial." },
+  "A auditoria não consegue continuar a conversa nem produzir a análise do atendimento avaliado.": { es: "La auditoría no puede continuar la conversación ni elaborar el análisis de la atención evaluada." },
+  "Usa o modelo do agente publicado da organização para manter a mesma credencial e o mesmo padrão de linguagem do Lua CRM. Para trocar o modelo, publique uma nova versão do agente.": { es: "Utiliza el modelo del agente publicado de la organización para mantener la misma credencial y el mismo estilo de lenguaje de Lua CRM. Para cambiar el modelo, publica una nueva versión del agente." },
   "Conexão por dispositivo vinculado": { es: "Conexión mediante dispositivo vinculado" },
   "O que esta conexão faz, quais riscos existem e como agir quando ela desconectar.": { es: "Qué hace esta conexión, qué riesgos existen y cómo actuar cuando se desconecte." },
   "O que você precisa saber": { es: "Lo que necesitas saber" },

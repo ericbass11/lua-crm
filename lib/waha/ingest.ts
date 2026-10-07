@@ -1054,13 +1054,13 @@ async function handleOutboundFromUserPhone(
   //   mexer no automa. -> ESTRITO   (na dúvida NÃO age; calar/ligar a IA por
   //                                  engano é pior que não agir)
   // Quem reaproveitar esta condição para pular o INSERT reabre o #108.
+  // C-076: o interruptor é do agente que atende ESTA conversa
+  // (`ai_agents.config.aceita_comandos_celular`, ligado na tela). FAIL-CLOSED:
+  // falha de leitura ⇒ desligado ⇒ o comportamento de antes do recurso.
   const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p);
   let comandoAplicado: typeof comando = null;
   if (!ehEco) {
     let revogar = true;
-    // C-076: o interruptor é do agente que atende ESTA conversa
-    // (`ai_agents.config.aceita_comandos_celular`, ligado na tela). FAIL-CLOSED:
-    // falha de leitura ⇒ desligado ⇒ o comportamento de antes do recurso.
     const aceita = await agenteAceitaComandoDeCelular(
       admin,
       session.organization_id,

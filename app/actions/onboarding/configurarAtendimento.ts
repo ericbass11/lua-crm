@@ -98,7 +98,7 @@ export async function responderConfigurador(formData: FormData): Promise<Configu
     throw error;
   }
 
-  redirect("/onboarding/configurar-atendimento");
+  redirect("/onboarding");
 }
 
 export async function revisarConfigurador(formData: FormData): Promise<ConfiguradorResult> {
@@ -124,7 +124,7 @@ export async function revisarConfigurador(formData: FormData): Promise<Configura
     return { ok: false, error: "invalid_input" };
   }
 
-  redirect("/onboarding/configurar-atendimento");
+  redirect("/onboarding");
 }
 
 export async function aprovarConfigurador(): Promise<ConfiguradorResult> {
