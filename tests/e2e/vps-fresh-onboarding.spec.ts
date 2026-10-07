@@ -5,8 +5,9 @@
  *   - banco zerado do baseline.sql (Supabase local pg17)
  *   - primeiro usuário criado via scripts/bootstrap-owner.ts (como o install.sh)
  *   - WAHA ativo, Redis local, RESEND_API_KEY VAZIO (realidade da VPS fresca)
- *   - SEM chave de IA na instalação (o install.sh deixa pular com Enter; o
- *     .env.e2e não traz nenhuma) — J1.7 e J1.24 afirmam o agente em rascunho
+ *   - SEM chave de IA na instalação; o provedor controlado do CI ensaia o
+ *     rascunho. Uma credencial sintética é acrescentada somente ao testar
+ *     ativação, sem conectar número real ou chamar um provedor externo.
  *   - app em produção (next build + next start) na E2E_PORT
  *
  * Casos: J1.1–J1.13 do docs/testing/user-journey-map.md. Tudo pelo frontend;
@@ -14,11 +15,13 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
-import { PROVEDOR_POR_ID } from "@/lib/ai/pontos/provedores";
+import { PERGUNTAS_CONFIGURADOR } from "@/lib/onboarding/configurador";
+import { RISCO_WHATSAPP_VERSAO } from "@/lib/onboarding/risco-whatsapp";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
@@ -26,6 +29,42 @@ const OWNER_EMAIL = "dono@qa.local";
 const OWNER_PASSWORD = "QaVps!2026#Dono";
 const OWNER_STATE_PATH = path.join(process.cwd(), ".e2e-owner.json");
 const EVIDENCE_DIR = path.join(process.cwd(), ".superpowers/evidence/vps-qa");
+
+function assertEphemeralRuntime(): void {
+  for (const name of ["WAHA_API_BASE_URL", "WAHA_INTERNAL_BASE_URL"] as const) {
+    const value = process.env[name];
+    if (value && !["localhost", "127.0.0.1", "[::1]"].includes(new URL(value).hostname)) {
+      throw new Error(
+        `${name} deve apontar para o transporte local efêmero antes de qualquer escrita.`,
+      );
+    }
+  }
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!);
+  if (!["localhost", "127.0.0.1"].includes(url.hostname))
+    throw new Error("Esta jornada destrutiva exige Supabase local efêmero.");
+  if (process.env.INTERNAL_AGENT_RUN_STUB !== "true")
+    throw new Error("Esta jornada exige o provedor controlado, sem chamadas externas.");
+  const project = /^project_id\s*=\s*"([^"]+)"/m.exec(
+    fs.readFileSync("supabase/config.toml", "utf8"),
+  )?.[1];
+  if (!project) throw new Error("Projeto Supabase de teste não identificado.");
+  const ci = process.env.GITHUB_ACTIONS === "true";
+  const container = ci ? `supabase_db_${project}` : process.env.E2E_EPHEMERAL_DB_CONTAINER;
+  if (!container)
+    throw new Error(
+      "Use o CI efêmero ou indique E2E_EPHEMERAL_DB_CONTAINER com label deskcomm.purpose=e2e.",
+    );
+  const labels = JSON.parse(
+    execFileSync("docker", ["inspect", "--format", "{{json .Config.Labels}}", container], {
+      encoding: "utf8",
+    }),
+  ) as Record<string, string>;
+  if (
+    labels["com.supabase.cli.project"] !== project ||
+    (!ci && labels["deskcomm.purpose"] !== "e2e")
+  )
+    throw new Error("Container não identificado como banco efêmero desta jornada.");
+}
 
 const svc = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -104,9 +143,16 @@ test.describe.configure({ mode: "serial", timeout: 120_000 });
 
 test.describe("J1 — onboarding do dono numa instalação fresca", () => {
   test.beforeAll(async () => {
+    assertEphemeralRuntime();
     // Reset ao estado recém-bootstrapado (re-runs idempotentes): wizard zerado,
     // sem agente, sem canal, sem fatores MFA do dono.
     const org = await orgRow();
+    const { data: oldChannels, error: oldChannelsError } = await svc
+      .from("channel_sessions")
+      .select("waha_session_name")
+      .eq("organization_id", org.id);
+    if (oldChannelsError) throw oldChannelsError;
+    const ownedSessions = new Set((oldChannels ?? []).map((channel) => channel.waha_session_name));
     await svc
       .from("organizations")
       .update({ onboarding_state: {}, onboarded_at: null })
@@ -134,7 +180,7 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
       }).catch(() => null);
       const sessions = res?.ok ? ((await res.json()) as Array<{ name: string }>) : [];
       for (const s of sessions) {
-        if (!s.name.startsWith("org_")) continue;
+        if (!ownedSessions.has(s.name)) continue;
         await fetch(`${wahaBase}/api/sessions/${s.name}`, {
           method: "DELETE",
           headers: { "X-Api-Key": wahaKey },
@@ -167,7 +213,9 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await page.waitForURL(/\/onboarding/, { timeout: 15_000 });
   });
 
-  test("J1.3 + J1.4 welcome: termos obrigatórios; salva nome/timezone e avança", async ({ page }) => {
+  test("J1.3 + J1.4 welcome: termos obrigatórios; salva nome/timezone e avança", async ({
+    page,
+  }) => {
     await login(page);
     await page.waitForURL(/\/onboarding\/welcome/);
 
@@ -180,13 +228,29 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await page.locator('input[type="checkbox"]').check();
     await expect(continuar).toBeEnabled();
     await continuar.click();
-    await page.waitForURL(/\/onboarding\/connect-whatsapp/, { timeout: 20_000 });
-    await snap(page, "j1.4-connect-whatsapp");
+    await page.waitForURL(/\/onboarding\/risco-whatsapp/, { timeout: 20_000 });
+    await snap(page, "j1.4-risco-whatsapp");
 
     const org = await orgRow();
     expect(org.display_name).toBe("Loja QA VPS");
     expect(org.timezone).toBe("America/Sao_Paulo");
     expect((org.onboarding_state as { welcome?: unknown })?.welcome).toBeTruthy();
+  });
+
+  test("ciência do risco é obrigatória e registra a versão aceita", async ({ page }) => {
+    await login(page);
+    await page.waitForURL(/\/onboarding\/risco-whatsapp/);
+    const accept = page.getByRole("button", { name: "Aceitar e conectar meu número" });
+    await expect(accept).toBeDisabled();
+    await expect(page.getByText(/conexão experimental durante o beta/i)).toBeVisible();
+    await page.locator('input[name="accepted"]').check();
+    await accept.click();
+    await page.waitForURL(/\/onboarding\/connect-whatsapp/);
+    const state = (await orgRow()).onboarding_state as {
+      risco_whatsapp?: { accepted_at?: string; version?: string };
+    };
+    expect(state.risco_whatsapp?.accepted_at).toBeTruthy();
+    expect(state.risco_whatsapp?.version).toBe(RISCO_WHATSAPP_VERSAO);
   });
 
   test("J1.5 WAHA ativo → QR code aparece de verdade", async ({ page }) => {
@@ -215,114 +279,127 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await snap(page, "j1.5-qr-visivel");
   });
 
-  test("J1.11 + J1.6 abandona e volta → retoma no step pendente; pular WhatsApp avança", async ({ page }) => {
+  test("J1.11 + J1.6 abandona e volta → retoma no step pendente; pular WhatsApp avança", async ({
+    page,
+  }) => {
     // sessão nova (simula fechar o browser): retoma exatamente no connect-whatsapp
     await login(page);
     await page.waitForURL(/\/onboarding\/connect-whatsapp/, { timeout: 20_000 });
 
     // Com Nuvemshop desabilitado (VPS fresca), pular o WhatsApp deve cair
-    // DIRETO no setup de IA — nunca num step oculto (bug corrigido: as actions
+    // DIRETO no configurador — nunca num step oculto (bug corrigido: as actions
     // redirecionavam hardcoded pro connect-nuvemshop).
     await page.getByRole("button", { name: /pular por enquanto/i }).click();
-    await page.waitForURL(/\/onboarding\/setup-ai/, { timeout: 20_000 });
-    await snap(page, "j1.6-setup-ai");
+    await page.waitForURL(/\/onboarding\/configurar-atendimento/, { timeout: 20_000 });
+    await snap(page, "j1.6-configurar-atendimento");
   });
 
-  test("J1.7 setup IA sem chave: cria o agente como rascunho, diz o que falta e deixa seguir", async ({ page }) => {
-    // ⚠️ ESTE CASO MUDOU DE DESFECHO, e a razão é o ambiente, não o produto.
-    // Ele afirmava "cria, PUBLICA e vai para /onboarding/testar" — o que só é
-    // verdade numa instalação que já tem chave de IA. O `install.sh` deixa pular
-    // a chave com Enter, e o `.env.e2e` (o ambiente desta suíte, local e CI) não
-    // traz nenhuma. Medido no run 35150134046 (parte 4 do PR #983, a primeira
-    // vez que esta spec rodou no CI): o clique em "Criar e continuar" devolve
-    // `publish_blocked_by: "chave"`, a tela mostra o aviso de rascunho com
-    // "Continuar sem publicar", e o `waitForURL(/testar/)` estourou 20s parado
-    // nesse aviso. O J1.24 logo abaixo já afirmava "rascunho" na tela de testar
-    // — os dois casos descreviam instalações diferentes.
+  test("configurador coleta fatos, exige revisão e preserva limites no rascunho", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.waitForURL(/\/onboarding\/configurar-atendimento/);
+    const answers: Record<string, string> = {
+      nome_do_negocio: "Loja QA VPS",
+      descricao_do_negocio: "Instalação e manutenção de ar-condicionado residencial",
+      regiao_atendida: "São Paulo",
+      horario_de_atendimento: "Segunda a sexta, das 8h às 18h",
+      servicos: "Instalação; manutenção",
+      qualificacao: "Nome; bairro; tipo de equipamento",
+      passagem_para_humano: "Risco elétrico; pedido de uma pessoa",
+      resumo_para_humano: "Nome; serviço solicitado; bairro",
+      temas_proibidos: "Não inventar preços; não fechar diagnóstico técnico",
+      tom_de_voz: "Objetivo e cordial",
+      perguntas_frequentes: "Atende aos sábados? => Não, somente segunda a sexta.",
+    };
+    for (const question of PERGUNTAS_CONFIGURADOR) {
+      const input = page.getByLabel(question.texto, { exact: true });
+      await expect(input).toBeVisible();
+      await input.fill(answers[question.id]!);
+      await page.getByRole("button", { name: "Responder e continuar", exact: true }).click();
+      await expect(input).not.toBeVisible();
+    }
+    await expect(page.getByRole("heading", { name: "Pronto para sua revisão" })).toBeVisible();
+    await expect(page).toHaveURL(/\/onboarding\/configurar-atendimento/);
+    await page.getByRole("button", { name: "Aprovar configuração" }).click();
+    await page.waitForURL(/\/onboarding\/setup-ai/);
+    const state = (await orgRow()).onboarding_state as {
+      configurador_atendimento?: {
+        session: {
+          status: string;
+          spec: { business: { name: string }; forbidden_topics: string[] };
+        };
+      };
+    };
+    expect(state.configurador_atendimento?.session.status).toBe("revisado");
+    expect(state.configurador_atendimento?.session.spec.business.name).toBe("Loja QA VPS");
+    expect(state.configurador_atendimento?.session.spec.forbidden_topics).toContain(
+      "Não inventar preços",
+    );
+  });
+
+  test("J1.7 treinamento sem chave salva uma versão inerte com os fatos aprovados", async ({
+    page,
+  }) => {
     await login(page);
     await page.waitForURL(/\/onboarding\/setup-ai/);
-
     await page.locator("#name").fill("Tomik QA");
     await page.getByRole("button", { name: /criar e continuar/i }).click();
-
-    // `eq(organization_id)` pela MESMA razão de `orgRow()` acima: sem ele, este
-    // `select` lê de TODAS as organizações do banco, e as asserções deixam de
-    // medir a instalação que o wizard acabou de configurar.
-    const orgDoDono = await orgRow();
-    const { data: org } = await svc
-      .from("organizations")
-      .select("settings")
-      .eq("id", orgDoDono.id)
-      .maybeSingle();
-    const escolhido =
-      (org?.settings as { llm?: { provider?: string } } | null)?.llm?.provider ?? "anthropic";
-
-    // O aviso nomeia a empresa de IA que a INSTALAÇÃO escolheu. É o que sobra,
-    // sem chave, da guarda da regressão do provedor: o passo publicava
-    // "anthropic" literal para quem tinha escolhido outra, e o `provider` deste
-    // aviso sai da mesma leitura de `settings.llm.provider` que a versão usaria.
-    // Comparar com uma string fixa não provaria nada — passaria justamente na
-    // instalação Anthropic, a única em que o defeito não aparecia.
-    const aviso = page.getByRole("alert").filter({ hasText: /rascunho/i });
-    await expect(aviso).toBeVisible({ timeout: 20_000 });
-    await expect(aviso).toContainText(PROVEDOR_POR_ID.get(escolhido)?.rotulo ?? escolhido);
-    await snap(page, "j1.7-sem-chave-rascunho");
-
-    // Sem esta saída o passo é um beco: o diagnóstico está certo e nenhum botão.
-    await aviso.getByRole("button", { name: /continuar sem publicar/i }).click();
-    // Depois de treinar vem "Onde ele organiza" (J1.26, `/onboarding/funil`),
-    // e só então "Ver ele atender". Medido no run 35401941259 (parte 4): o
-    // clique avançou para `/onboarding/funil` e este `waitForURL` esperava
-    // `/testar`, o passo seguinte. O produto seguiu; a spec é que pulava um passo.
     await page.waitForURL(/\/onboarding\/funil/, { timeout: 20_000 });
-    await snap(page, "j1.7-funil");
-
-    const { data: agents } = await svc
+    const org = await orgRow();
+    const { data: agents, error: agentsError } = await svc
       .from("ai_agents")
-      .select("id, name, is_active, is_default, published_version_id")
-      .eq("organization_id", orgDoDono.id);
-    expect(agents?.length).toBe(1);
+      .select("id,name,is_active,is_default,published_version_id")
+      .eq("organization_id", org.id);
+    expect(agentsError).toBeNull();
+    expect(agents).toHaveLength(1);
     expect(agents?.[0]).toMatchObject({
       name: "Tomik QA",
-      is_active: true,
       is_default: true,
       published_version_id: null,
     });
-
-    // A VERSÃO, e não só o agente: sem chave utilizável nenhuma é gravada. Uma
-    // versão "publicada" aqui seria o agente que morre em toda mensagem pedindo
-    // uma chave que a instalação nunca teve.
-    const { data: versoes } = await svc
+    const { data: versions, error: versionsError } = await svc
       .from("ai_agent_versions")
-      .select("id")
-      .eq("agent_id", agents?.[0]?.id ?? "");
-    expect(versoes?.length).toBe(0);
-
-    // O passo aconteceu mesmo sem publicar — é o que faz o wizard seguir em
-    // vez de reabrir "Treine seu funcionário".
-    const depois = await orgRow();
-    expect(
-      (depois.onboarding_state as { ai?: { agent_id?: string } } | null)?.ai?.agent_id,
-    ).toBe(agents?.[0]?.id);
+      .select("id,status,credential_id,system_prompt,provisioning_origin,followup")
+      .eq("organization_id", org.id)
+      .eq("agent_id", agents![0]!.id);
+    expect(versionsError).toBeNull();
+    expect(versions).toHaveLength(1);
+    expect(versions?.[0]).toMatchObject({
+      status: "draft",
+      credential_id: null,
+      provisioning_origin: "onboarding",
+    });
+    expect(versions?.[0]?.system_prompt).toContain("Não inventar preços");
+    expect(versions?.[0]?.system_prompt).toContain("São Paulo");
+    expect((versions?.[0]?.followup as { enabled?: boolean })?.enabled).toBe(false);
+    expect((org.onboarding_state as { teste?: { respondeu?: boolean } }).teste?.respondeu).toBe(
+      false,
+    );
+    await snap(page, "j1.7-rascunho-inerte");
   });
 
-  test("J1.26 onde ele organiza: sem funcionário no ar, oferece um quadro pronto e deixa seguir", async ({ page }) => {
+  test("J1.26 onde ele organiza: sem funcionário no ar, oferece um quadro pronto e deixa seguir", async ({
+    page,
+  }) => {
     // Numa instalação sem chave de IA o agente ficou rascunho (J1.7), então a
     // sugestão de quadro, que sai do MESMO modelo que vai atender, não tem a
     // quem pedir. O passo não pode virar beco: diz o porquê, começa de um
     // modelo pronto e deixa seguir.
     await login(page);
     await page.waitForURL(/\/onboarding\/funil/, { timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: /onde ele organiza seus clientes/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /onde ele organiza seus clientes/i }),
+    ).toBeVisible();
     await expect(page.getByText(/ainda não está no ar/i)).toBeVisible();
     await expect(page.getByText(/isso não trava nada/i)).toBeVisible();
 
     // O que a tela mostra é o que tem de ser gravado: lido da própria tela, não
     // de uma lista fixa, para o caso valer com qualquer modelo pronto.
     const nomeDoQuadro = await page.getByLabel("Nome do quadro").inputValue();
-    const colunas = await page.getByLabel(/^Nome da coluna \d+$/).evaluateAll((els) =>
-      els.map((e) => (e as HTMLInputElement).value),
-    );
+    const colunas = await page
+      .getByLabel(/^Nome da coluna \d+$/)
+      .evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
     expect(nomeDoQuadro.trim()).not.toBe("");
     expect(colunas.length).toBeGreaterThan(0);
     await snap(page, "j1.26-funil-sem-ia");
@@ -346,41 +423,149 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
       .eq("organization_id", org.id)
       .eq("pipeline_id", funil?.pipeline_id ?? "");
     for (const coluna of colunas) {
-      expect(etapas?.map((e) => e.name), `a coluna "${coluna}" da tela foi gravada`).toContain(coluna.trim());
+      expect(
+        etapas?.map((e) => e.name),
+        `a coluna "${coluna}" da tela foi gravada`,
+      ).toContain(coluna.trim());
     }
   });
 
-  test("J1.24 ver ele atender: o wizard não termina sem mostrar o funcionário", async ({ page }) => {
-    // O passo que faltava. O onboarding entregava a pessoa num inbox vazio
-    // ("Sem conversas por aqui") logo depois de ela montar um funcionário que
-    // nunca tinha visto fazer nada — e um erro de chave ou de saldo só
-    // apareceria quando um cliente de verdade escrevesse.
+  test("J1.24 ensaio exige recibo real antes da ativação explícita do dono", async ({ page }) => {
     await login(page);
     await page.waitForURL(/\/onboarding\/testar/, { timeout: 20_000 });
     await expect(page.getByRole("heading", { name: /veja ele atender/i })).toBeVisible();
-
-    // O agente desta jornada ficou rascunho — sem versão, porque a instalação
-    // não tem chave de IA (ver J1.7; o canal existe desde o QR de J1.5) — e
-    // rascunho não responde. A tela tem de dizer isso em vez de oferecer um
-    // ensaio que nunca funcionaria.
-    //
-    // A asserção mora no aviso (`role="status"`), e não em "a palavra aparece
-    // em algum lugar da página": no run 35407985023 o `getByText(/rascunho/i)`
-    // casou DOIS nós — o `<strong>` da frase e o parágrafo que explica —, os
-    // dois certos, e o strict mode reprovou a sonda, não o produto. Prender o
-    // aviso e exigir as DUAS frases é mais estreito do que era antes: diz o
-    // ESTADO (não foi para o ar) e a CONSEQUÊNCIA (não há o que ensaiar).
-    const aviso = page.getByRole("status").filter({ hasText: /rascunho/i });
-    await expect(aviso).toBeVisible();
-    await expect(aviso).toContainText(/ainda não foi para o ar/i);
-    await expect(aviso).toContainText(/não responde mensagem/i);
-    await snap(page, "j1.24-testar-rascunho");
-
-    await page.getByRole("button", { name: /^continuar$/i }).click();
-    await page.waitForURL(/\/onboarding\/invite-team/, { timeout: 20_000 });
-
+    await expect(page.getByRole("status")).toContainText("ensaio do rascunho");
     const org = await orgRow();
-    expect((org.onboarding_state as { teste?: unknown })?.teste).toBeTruthy();
+    const countMessages = async () => {
+      const { count, error } = await svc
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", org.id);
+      expect(error).toBeNull();
+      expect(typeof count).toBe("number");
+      return count;
+    };
+    const before = await countMessages();
+    await page.getByRole("button", { name: /^continuar$/i }).click();
+    await expect(page.getByText("Faça um ensaio com resposta antes de continuar.")).toBeVisible();
+    await expect(page).toHaveURL(/\/onboarding\/testar/);
+
+    const reply = page.waitForResponse(
+      (res) =>
+        /\/versions\/[^/]+\/test$/.test(new URL(res.url()).pathname) &&
+        res.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Mandar mensagem", exact: true }).click();
+    const response = await reply;
+    expect(response.ok()).toBe(true);
+    const { data: result } = await response.json();
+    expect(result.stub).toBe(true);
+    expect(result.status).toBe("ok");
+    expect(result.final_text.trim()).not.toBe("");
+    expect(result.run_id).toMatch(/^[0-9a-f-]{36}$/i);
+    await expect(page.getByText(result.final_text, { exact: true })).toBeVisible();
+    const { data: run, error: runError } = await svc
+      .from("ai_agent_runs")
+      .select("id,agent_id,agent_version_id,status,is_dry_run,completed_at")
+      .eq("organization_id", org.id)
+      .eq("id", result.run_id)
+      .single();
+    expect(runError).toBeNull();
+    expect(run).toMatchObject({ status: "completed", is_dry_run: true });
+    expect(run?.completed_at).toBeTruthy();
+    expect(await countMessages()).toBe(before);
+    await page.getByRole("button", { name: /^continuar$/i }).click();
+    await page.waitForURL(/\/onboarding\/ativar/, { timeout: 20_000 });
+    const state = (await orgRow()).onboarding_state as {
+      teste?: { respondeu: boolean; run_id: string; version_id: string };
+      ativacao?: unknown;
+    };
+    expect(state.teste).toMatchObject({
+      respondeu: true,
+      run_id: run!.id,
+      version_id: run!.agent_version_id,
+    });
+    expect(state.ativacao).toBeUndefined();
+    const activation = page.getByRole("button", { name: "Ativar agente agora", exact: true });
+    await expect(activation).toBeEnabled();
+    // Real publication validation still rejects the installation without a key.
+    await activation.click();
+    await expect(page.getByRole("alert")).toContainText("Não foi possível ativar");
+    expect(
+      (
+        await svc
+          .from("ai_agents")
+          .select("published_version_id")
+          .eq("organization_id", org.id)
+          .eq("id", run!.agent_id)
+          .single()
+      ).data?.published_version_id,
+    ).toBeNull();
+
+    // Controlled transport/provider fixture, only in the guarded ephemeral runtime.
+    // No paired number, no external provider key, no worker or outbound delivery.
+    const { data: version, error: versionError } = await svc
+      .from("ai_agent_versions")
+      .select("provider,channel_session_id")
+      .eq("organization_id", org.id)
+      .eq("id", run!.agent_version_id)
+      .single();
+    expect(versionError).toBeNull();
+    const { data: credential, error: credentialError } = await svc
+      .from("ai_provider_credentials")
+      .insert({
+        organization_id: org.id,
+        provider: version!.provider,
+        label: "Sandbox de ativação QA",
+        api_key_encrypted: "\\x00",
+        api_key_iv: "\\x00",
+        api_key_tag: "\\x00",
+        api_key_last4: "test",
+        is_active: true,
+        validated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    expect(credentialError).toBeNull();
+    expect(
+      (
+        await svc
+          .from("ai_agent_versions")
+          .update({ credential_id: credential!.id })
+          .eq("organization_id", org.id)
+          .eq("id", run!.agent_version_id)
+      ).error,
+    ).toBeNull();
+    expect(
+      (
+        await svc
+          .from("channel_sessions")
+          .update({
+            status: "WORKING",
+            metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [] },
+          })
+          .eq("organization_id", org.id)
+          .eq("id", version!.channel_session_id)
+      ).error,
+    ).toBeNull();
+    await activation.click();
+    await page.waitForURL(/\/onboarding\/invite-team/, { timeout: 20_000 });
+    expect(
+      (
+        await svc
+          .from("ai_agents")
+          .select("published_version_id")
+          .eq("organization_id", org.id)
+          .eq("id", run!.agent_id)
+          .single()
+      ).data?.published_version_id,
+    ).toBe(run!.agent_version_id);
+    expect(
+      ((await orgRow()).onboarding_state as { ativacao?: { version_id: string } }).ativacao
+        ?.version_id,
+    ).toBe(run!.agent_version_id);
+    expect(await countMessages()).toBe(before);
+    await snap(page, "j1.24-ativacao-com-recibo");
   });
 
   test("J1.8 convite SEM Resend: a UI não pode mentir que enviou email", async ({ page }) => {
@@ -409,7 +594,10 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     // "copie o link" não diz de quem é o link.
     await expect(page.getByText("atendente@qa.local").first()).toBeVisible();
     const acceptUrl = (
-      await page.locator("code", { hasText: /team\/accept-invite/ }).first().innerText()
+      await page
+        .locator("code", { hasText: /team\/accept-invite/ })
+        .first()
+        .innerText()
     ).trim();
     expect(acceptUrl).toMatch(/\/team\/accept-invite\/.+/);
     fs.writeFileSync(
@@ -435,7 +623,9 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     expect(org.onboarded_at).not.toBeNull();
   });
 
-  test("J1.10 verificação em duas etapas: ativa pela tela e VÊ os códigos de recuperação", async ({ page }) => {
+  test("J1.10 verificação em duas etapas: ativa pela tela e VÊ os códigos de recuperação", async ({
+    page,
+  }) => {
     await login(page);
     await page.waitForURL(/\/app\//, { timeout: 30_000 });
 
@@ -463,9 +653,9 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await snap(page, "j1.10-mfa-ativar");
 
     await page.getByRole("button", { name: /iniciar configuração/i }).click();
-    await expect(
-      page.locator('img[alt="QR code para configurar autenticador"]'),
-    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('img[alt="QR code para configurar autenticador"]')).toBeVisible({
+      timeout: 20_000,
+    });
 
     // secret manual (o que um leigo digitaria no app autenticador)
     await page.getByText(/não consegue escanear/i).click();
@@ -473,7 +663,11 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     expect(secret.length).toBeGreaterThan(15);
     fs.writeFileSync(
       OWNER_STATE_PATH,
-      JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD, totp_secret: secret }, null, 2),
+      JSON.stringify(
+        { email: OWNER_EMAIL, password: OWNER_PASSWORD, totp_secret: secret },
+        null,
+        2,
+      ),
     );
 
     // digita o código com retry na virada da janela TOTP

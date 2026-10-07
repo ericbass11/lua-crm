@@ -60,6 +60,7 @@ interface Filter {
 const EMBED_TABLE: Record<string, string> = {
   contact_id: "contacts",
   channel_session_id: "channel_sessions",
+  organization_id: "organizations",
 };
 
 /**
@@ -376,6 +377,45 @@ describe("ensureConversation (Task 11)", () => {
 });
 
 describe("send_whatsapp_message — execute (Task 11)", () => {
+  it("perfil managed inbound recusa automação outbound sem inserir mensagem", async () => {
+    vi.setSystemTime(new Date("2026-07-17T10:00:00"));
+    const previousSettings = rows(
+      `select settings from public.organizations where id = '${GOV_ORG}'`,
+    )[0]!.settings;
+    const before = rows(
+      `select id from public.messages where organization_id = '${GOV_ORG}'`,
+    ).length;
+    try {
+      sql(
+        `update public.organizations set settings = coalesce(settings, '{}'::jsonb) || '{"operation_profile":"managed_mvp_inbound"}'::jsonb where id = '${GOV_ORG}';`,
+      );
+      const result = await getAction("send_whatsapp_message")!.execute(
+        baseCtx({
+          context: {
+            contact: {
+              id: CONTACT_ID,
+              is_blocked: false,
+              phone_number: "+5511999990001",
+              name: "Ana",
+            },
+          },
+        }),
+        { channel_session_id: SESSION_ID, template: "Oi {{contact.name}}" },
+      );
+      expect(result.status).toBe("failed");
+      expect(result.error).toBe(
+        "Este plano permite somente respostas a mensagens recebidas e continuidade humana.",
+      );
+      expect(
+        rows(`select id from public.messages where organization_id = '${GOV_ORG}'`),
+      ).toHaveLength(before);
+    } finally {
+      sql(
+        `update public.organizations set settings = ${sqlLiteral(previousSettings)} where id = '${GOV_ORG}';`,
+      );
+    }
+  });
+
   it("2. janela aberta (10h): envia, message row com body renderizado do template", async () => {
     vi.setSystemTime(new Date("2026-07-17T10:00:00"));
     const executor = getAction("send_whatsapp_message")!;
