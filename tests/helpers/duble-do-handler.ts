@@ -12,6 +12,7 @@ export interface CapturasDoDubleDoHandler {
 
 export interface OpcoesDoDubleDoHandler {
   conversation: LinhaDoDuble;
+  inboundMessage?: LinhaDoDuble | null;
   channelMetadata?: LinhaDoDuble;
   templateRow?: LinhaDoDuble | null;
   rpcData?: unknown | (() => unknown);
@@ -129,6 +130,17 @@ export function criarDubleDoHandler(opcoes: OpcoesDoDubleDoHandler): {
 
       if (tabela === "messages") {
         return {
+          select: (colunas = "") => {
+            capturas.selects.messages!.push(colunas);
+            const cadeia = {
+              eq: (coluna: string, valor: unknown) => {
+                capturas.filtros.messages!.push({ coluna, valor });
+                return cadeia;
+              },
+              maybeSingle: async () => ({ data: opcoes.inboundMessage ?? null, error: null }),
+            };
+            return cadeia;
+          },
           insert: (row: LinhaDoDuble) => {
             capturas.inserts.messages!.push(row);
             mensagem = {

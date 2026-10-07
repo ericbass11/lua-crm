@@ -56,6 +56,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
         serviceBoundary: boundary,
         proactiveContext: { organizationId: ctx.organizationId, contactId: contact.id },
         actor: { type: "webhook_source", id: ctx.ruleId },
+        outboundIntent: { kind: "system_outbound" },
         requestId: `rule:${ctx.ruleId}`,
       },
       { conversation_id: conversationId, type: "text", body } as Parameters<typeof sendMessageHandler>[2],

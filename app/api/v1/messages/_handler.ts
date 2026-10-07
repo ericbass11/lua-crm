@@ -36,6 +36,7 @@ import {
 } from "@/lib/channels";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
+import { decidirEnvioDoPerfil } from "@/lib/channels/politica-inbound-only";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import {
   buildVcard,
@@ -375,7 +376,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""}), organizations:organization_id(settings)`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -445,8 +446,50 @@ export async function sendMessageHandler(
       is_blocked: boolean;
     } | null;
     channel_sessions: (ChannelSessionRef & { status: string; archived_at?: string | null }) | null;
+    organizations: { settings: unknown } | null;
   };
   const c = conv as unknown as Joined;
+
+  const politica = decidirEnvioDoPerfil({
+    settings: c.organizations?.settings,
+    actorType: ctx.actor.type,
+    intent: ctx.outboundIntent,
+    isGroup: c.is_group,
+    hasInbound: typeof c.last_inbound_at === "string",
+  });
+  if (!politica.permitido) {
+    throw new ApiError(
+      403,
+      "managed_mvp_inbound_only",
+      { motivo: politica.motivo },
+      ctx.requestId,
+      politica.motivo === "grupos_nao_permitidos"
+        ? "Este plano não atende conversas em grupo."
+        : "Este plano permite somente respostas a mensagens recebidas e continuidade humana.",
+    );
+  }
+  if (politica.perfil === "managed_mvp_inbound" && politica.exigeComprovacaoDoInbound) {
+    const { data: inbound, error: inboundErr } = await supabase
+      .from("messages")
+      .select("id")
+      .eq("id", politica.exigeComprovacaoDoInbound)
+      .eq("organization_id", ctx.organization_id)
+      .eq("conversation_id", c.id)
+      .eq("direction", "inbound")
+      .maybeSingle();
+    if (inboundErr) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, inboundErr.message);
+    }
+    if (!inbound) {
+      throw new ApiError(
+        403,
+        "managed_mvp_inbound_only",
+        { motivo: "inbound_nao_comprovado" },
+        ctx.requestId,
+        "A resposta automática não está vinculada a uma mensagem recebida desta conversa.",
+      );
+    }
+  }
 
   if (c.contacts?.is_blocked) {
     throw new ApiError(

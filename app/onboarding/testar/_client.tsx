@@ -13,16 +13,17 @@ interface Props {
   nome: string | null;
   agenteId: string | null;
   versaoId: string | null;
+  emRascunho: boolean;
 }
 
 /** O que o ensaio devolveu — ou por que ele não aconteceu. */
 type Desfecho =
-  | { tipo: "resposta"; texto: string }
+  | { tipo: "resposta"; texto: string; runId: string }
   | { tipo: "erro"; mensagem: string };
 
 const EXEMPLO = "Oi! Vocês atendem hoje? Queria saber o preço.";
 
-export function TestarClient({ nome, agenteId, versaoId }: Props) {
+export function TestarClient({ nome, agenteId, versaoId, emRascunho }: Props) {
   const t = useT();
   const [mensagem, setMensagem] = useState(EXEMPLO);
   const [desfecho, setDesfecho] = useState<Desfecho | null>(null);
@@ -31,11 +32,11 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
 
   const funcionario = nome ?? t("seu funcionário");
 
-  // Três estados possíveis, e nenhum deles pode virar uma tela vazia: sem
-  // agente (a pessoa pulou o treinamento), agente em rascunho (não tem versão
-  // publicada, então não há o que executar), e o caso normal.
+  // O sandbox aceita a versão em rascunho de propósito: testar vem ANTES de
+  // publicar. Sem agente ou sem qualquer versão, a tela continua explicando o
+  // que falta em vez de ficar vazia.
   const semAgente = !agenteId;
-  const rascunho = Boolean(agenteId) && !versaoId;
+  const semVersao = Boolean(agenteId) && !versaoId;
 
   async function ensaiar() {
     if (!agenteId || !versaoId) return;
@@ -48,7 +49,13 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
         body: JSON.stringify({ sample_message: mensagem }),
       });
       const json = (await res.json()) as {
-        data?: { final_text?: string; status?: string; error_code?: string; error_message?: string };
+        data?: {
+          final_text?: string;
+          run_id?: string;
+          status?: string;
+          error_code?: string;
+          error_message?: string;
+        };
         error?: { message?: string };
       };
       if (!res.ok) {
@@ -66,18 +73,22 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
       // era outra: a versão não tinha credencial. Mentir sobre a causa manda a
       // pessoa procurar no lugar errado.
       const d = json.data;
-      if (d?.status && d.status !== "completed") {
+      if (d?.status && !["completed", "ok"].includes(d.status)) {
         setDesfecho({
           tipo: "erro",
-          mensagem: d.error_message ?? d.error_code ?? `${t("o ensaio terminou como")} "${d.status}"`,
+          mensagem:
+            d.error_message ?? d.error_code ?? `${t("o ensaio terminou como")} "${d.status}"`,
         });
         return;
       }
       const texto = d?.final_text?.trim();
       setDesfecho(
-        texto
-          ? { tipo: "resposta", texto }
-          : { tipo: "erro", mensagem: t("Ele executou, mas não devolveu texto nenhum.") },
+        texto && d?.run_id
+          ? { tipo: "resposta", texto, runId: d.run_id }
+          : {
+              tipo: "erro",
+              mensagem: t("Ele executou, mas não devolveu um recibo verificável."),
+            },
       );
     } catch (err) {
       setDesfecho({ tipo: "erro", mensagem: err instanceof Error ? err.message : String(err) });
@@ -99,21 +110,24 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
         </div>
       )}
 
-      {rascunho && (
+      {semVersao && (
         <div className="rounded-lg border bg-background p-6" role="status">
           <p className="text-sm font-medium">
-            {funcionario} {t("está como")} <strong>{t("rascunho")}</strong> — {t("ainda não foi para o ar.")}
+            {funcionario} {t("ainda não tem uma versão pronta para ensaio.")}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t(
-              "Rascunho não responde mensagem, então não há o que ensaiar. O passo anterior explicou o que falta; você pode resolver depois em IA › Agentes.",
-            )}
+            {t("Volte ao treinamento para criar o rascunho antes de continuar.")}
           </p>
         </div>
       )}
 
-      {!semAgente && !rascunho && (
+      {!semAgente && !semVersao && (
         <div className="space-y-4 rounded-lg border bg-background p-6">
+          {emRascunho && (
+            <p className="text-sm text-muted-foreground" role="status">
+              {t("Este é um ensaio do rascunho. Ele ainda não atende clientes no WhatsApp.")}
+            </p>
+          )}
           <div className="space-y-2">
             <Label htmlFor="mensagem">{t("Escreva como se fosse um cliente")}</Label>
             <Textarea
@@ -137,10 +151,10 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
 
           {desfecho?.tipo === "resposta" && (
             <div className="space-y-2 rounded-md border bg-muted/40 p-4">
-              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+              <p className="text-xs tracking-wider text-muted-foreground uppercase">
                 {funcionario} {t("respondeu")}
               </p>
-              <p className="whitespace-pre-wrap text-sm">{desfecho.texto}</p>
+              <p className="text-sm whitespace-pre-wrap">{desfecho.texto}</p>
               <p className="text-xs text-muted-foreground">
                 {t("Esta conversa não foi enviada a ninguém e não aparece no seu inbox.")}
               </p>
@@ -193,7 +207,15 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
               // A action redireciona no servidor (o `redirect` do Next lança),
               // então só chega aqui quem falhou antes disso.
               try {
-                await marcarTesteFeito(desfecho?.tipo === "resposta");
+                if (desfecho?.tipo !== "resposta" || !agenteId || !versaoId) {
+                  toast.error(t("Faça um ensaio com resposta antes de continuar."));
+                  return;
+                }
+                await marcarTesteFeito({
+                  runId: desfecho.runId,
+                  agentId: agenteId,
+                  versionId: versaoId,
+                });
               } catch (err) {
                 if (err instanceof Error && err.message.startsWith("NEXT_REDIRECT")) throw err;
                 toast.error(t("Não consegui salvar este passo."));

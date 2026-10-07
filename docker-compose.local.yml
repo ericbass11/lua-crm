@@ -94,7 +94,7 @@ services:
       # dashboard num template público", linha 156) e não publicando porta
       # nenhuma para o WAHA; aqui ele fica de pé para quem desenvolve, mas só
       # atende de dentro da própria máquina (de fora, `ssh -L 3030:localhost:3030`).
-      - "127.0.0.1:3030:3000"
+      - "127.0.0.1:${WAHA_PORT:-3030}:3000"
     environment:
       # O WAHA recebe o hash com o prefixo para hashear a chave plaintext
       # enviada pelo app em X-Api-Key.

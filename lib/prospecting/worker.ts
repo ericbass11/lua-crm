@@ -243,6 +243,7 @@ export async function sendNextCandidate(
       {
         organization_id: c.organization_id,
         actor: { type: "ai_agent", id: p.id, agent_id: cfg.agent_id, role: "ai_operator" },
+        outboundIntent: { kind: "campaign" },
         requestId: `prospecting:${p.id}`,
         serviceBoundary: boundary,
         internalMessageId: p.message_id,

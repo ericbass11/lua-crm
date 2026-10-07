@@ -33,6 +33,7 @@ export const ApiErrorCodes = {
   forbidden: "forbidden",
   forbidden_role: "forbidden_role",
   forbidden_tenant: "forbidden_tenant",
+  managed_mvp_inbound_only: "managed_mvp_inbound_only",
   lgpd_anonymization_irreversible: "lgpd_anonymization_irreversible",
 
   // 404

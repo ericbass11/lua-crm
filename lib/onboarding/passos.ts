@@ -57,6 +57,13 @@ export const PASSOS: readonly PassoDoOnboarding[] = [
     pulado: () => false,
   },
   {
+    segmento: "risco-whatsapp",
+    rotulo: "Como ele se conecta",
+    existe: () => true,
+    cumprido: (s) => marcado(s.risco_whatsapp),
+    pulado: () => false,
+  },
+  {
     segmento: "connect-whatsapp",
     // O telefone é a primeira peça concreta do funcionário, e é o passo que
     // pede o celular na mão — o instalador já avisa para deixá-lo aberto.
@@ -71,6 +78,13 @@ export const PASSOS: readonly PassoDoOnboarding[] = [
     existe: (ctx) => ctx.lojaLigada,
     cumprido: (s) => marcado(s.nuvemshop),
     pulado: (s) => foiPulado(s.nuvemshop),
+  },
+  {
+    segmento: "configurar-atendimento",
+    rotulo: "Como ele atende",
+    existe: () => true,
+    cumprido: (s) => s.configurador_atendimento?.session.status === "revisado",
+    pulado: () => false,
   },
   {
     segmento: "setup-ai",
@@ -99,6 +113,13 @@ export const PASSOS: readonly PassoDoOnboarding[] = [
     existe: () => true,
     cumprido: (s) => marcado(s.teste),
     pulado: (s) => foiPulado(s.teste),
+  },
+  {
+    segmento: "ativar",
+    rotulo: "Colocar no ar",
+    existe: () => true,
+    cumprido: (s) => marcado(s.ativacao),
+    pulado: () => false,
   },
   {
     segmento: "invite-team",
@@ -137,10 +158,7 @@ export interface ItemDoResumo {
  * um passo que não existe nesta instalação não vira linha, muito menos linha
  * marcada como pulada.
  */
-export function resumoDoOnboarding(
-  state: OnboardingState,
-  ctx: ContextoDoPasso,
-): ItemDoResumo[] {
+export function resumoDoOnboarding(state: OnboardingState, ctx: ContextoDoPasso): ItemDoResumo[] {
   return passosVisiveis(ctx).map((p) => ({
     segmento: p.segmento,
     rotulo: p.rotulo,

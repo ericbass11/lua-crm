@@ -402,6 +402,7 @@ async function handle(req: NextRequest): Promise<Response> {
         {
           organization_id: org,
           actor: { type: "webhook_source", id: linha.id },
+          outboundIntent: { kind: "system_outbound" },
           requestId: `agenda-reminder:${linha.id}`,
         },
         { conversation_id: conversaId, type: "text", body: corpo } as Parameters<

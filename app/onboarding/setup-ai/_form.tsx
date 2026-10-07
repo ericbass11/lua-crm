@@ -50,13 +50,22 @@ interface Props {
   capacidades: string[];
   /** O que ele nunca faz — as conferências antes de cada mensagem sair. */
   conferencias: string[];
+  initialName?: string;
+  initialTone?: PromptTemplate;
+  initialRules?: string;
 }
 
-export function SetupAiForm({ capacidades, conferencias }: Props) {
+export function SetupAiForm({
+  capacidades,
+  conferencias,
+  initialName = "Atendente IA",
+  initialTone = "ecommerce_friendly",
+  initialRules = "",
+}: Props) {
   const t = useT();
-  const [name, setName] = useState("Atendente IA");
-  const [jeito, setJeito] = useState<PromptTemplate>("ecommerce_friendly");
-  const [regras, setRegras] = useState("");
+  const [name, setName] = useState(initialName);
+  const [jeito, setJeito] = useState<PromptTemplate>(initialTone);
+  const [regras, setRegras] = useState(initialRules);
   const [naoPublicado, setNaoPublicado] = useState<string | null>(null);
   const [causa, setCausa] = useState<"canal" | "modelo" | "chave" | null>(null);
   const [provedor, setProvedor] = useState<string | null>(null);
@@ -243,7 +252,9 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
           ) : (
             <p className="text-sm">
               {t("Não achei chave")} {provedorLegivel(provedor, t)}{" "}
-              {t("nem cadastrada aqui, nem vinda da instalação. Cole a chave no campo acima («o cérebro dele») e crie o atendente de novo — ou cadastre em")}{" "}
+              {t(
+                "nem cadastrada aqui, nem vinda da instalação. Cole a chave no campo acima («o cérebro dele») e crie o atendente de novo — ou cadastre em",
+              )}{" "}
               <strong>{t("IA › Credenciais")}</strong>.
             </p>
           )}
@@ -295,8 +306,8 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
             </p>
           ) : (
             <p className="text-sm">
-              {t("Esta instalação ainda não tem a lista de modelos")} {provedorLegivel(provedor, t)}.{" "}
-              {t("Ela é baixada automaticamente uma vez por dia; depois disso, publique em")}{" "}
+              {t("Esta instalação ainda não tem a lista de modelos")} {provedorLegivel(provedor, t)}
+              . {t("Ela é baixada automaticamente uma vez por dia; depois disso, publique em")}{" "}
               <strong>{t("IA › Agentes")}</strong>.
             </p>
           )}
@@ -330,7 +341,9 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
             {t("Erro do banco de dados:")} <code className="break-all">{naoPublicado}</code>
           </p>
           <p className="text-sm">
-            {t("Tente de novo no botão abaixo (clicar de novo não cria um segundo agente) ou siga agora e publique depois em")}{" "}
+            {t(
+              "Tente de novo no botão abaixo (clicar de novo não cria um segundo agente) ou siga agora e publique depois em",
+            )}{" "}
             <strong>{t("IA › Agentes")}</strong>.
           </p>
           <div className="flex sm:justify-end">

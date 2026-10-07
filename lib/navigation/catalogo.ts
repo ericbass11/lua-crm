@@ -592,6 +592,14 @@ export const NAV_CATALOG = [
     healthDot: true,
   },
   {
+    href: "/app/connections/api-nao-oficial",
+    label: "Conexão experimental",
+    description: "Entenda os limites, riscos e a reconexão do WhatsApp por dispositivo vinculado.",
+    icon: "Warning",
+    group: "canais",
+    minRole: "admin",
+  },
+  {
     // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
     href: "/app/integrations/nuvemshop",
     label: "Nuvemshop",

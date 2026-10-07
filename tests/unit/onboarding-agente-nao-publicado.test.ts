@@ -62,7 +62,10 @@ vi.mock("@/lib/auth/server", () => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => clienteFalso() }));
 
-import { createDefaultAgent, type CreateAgentResult } from "@/app/actions/onboarding/createDefaultAgent";
+import {
+  createDefaultAgent,
+  type CreateAgentResult,
+} from "@/app/actions/onboarding/createDefaultAgent";
 
 /**
  * Construtor de consulta no formato do PostgREST: encadeável, thenable, e com
@@ -134,8 +137,7 @@ function clienteFalso() {
   };
   return {
     from: abrir,
-    rpc: (nome: string, args: Record<string, unknown>) =>
-      Promise.resolve(responderRpc(nome, args)),
+    rpc: (nome: string, args: Record<string, unknown>) => Promise.resolve(responderRpc(nome, args)),
   } as never;
 }
 
@@ -151,6 +153,7 @@ interface Estado {
 }
 
 interface Mundo {
+  onboardingState?: Record<string, unknown>;
   /**
    * A credencial VALIDADA da organização para o provedor escolhido. `null` =
    * não tem nenhuma, e aí a versão nasce com `credential_id: null`, que
@@ -212,7 +215,7 @@ interface Mundo {
 }
 
 const CANAL = {
-  id: "canal-1",
+  id: "55555555-5555-4555-8555-555555555555",
   display_name: "Vendas",
   status: "WORKING",
   phone_number: "5511999999999",
@@ -226,7 +229,7 @@ function montarBanco(mundo: Mundo = {}): Estado {
     agentes: mundo.agentes ?? [],
     versoes: mundo.versoes ?? [],
     eventos: [],
-    onboardingState: {},
+    onboardingState: mundo.onboardingState ?? {},
   };
   const canais = mundo.canais ?? { data: [CANAL], error: null };
 
@@ -243,10 +246,7 @@ function montarBanco(mundo: Mundo = {}): Estado {
         v.organization_id === args.p_org_id,
     );
     if (!versao) return { data: null, error: { message: "version_not_found" } };
-    if (
-      args.p_expected_provenance &&
-      versao.provisioning_origin !== args.p_expected_provenance
-    ) {
+    if (args.p_expected_provenance && versao.provisioning_origin !== args.p_expected_provenance) {
       return { data: null, error: { message: "existing_version_requires_review" } };
     }
     const agente = estado.agentes.find(
@@ -257,12 +257,14 @@ function montarBanco(mundo: Mundo = {}): Estado {
     versao.status = "published";
     agente.published_version_id = versao.id;
     return {
-      data: [{
-        agent_id: agente.id,
-        version_id: versao.id,
-        previous_version_id: anterior,
-        published_at: "2026-09-06T12:00:00.000Z",
-      }],
+      data: [
+        {
+          agent_id: agente.id,
+          version_id: versao.id,
+          previous_version_id: anterior,
+          published_at: "2026-09-06T12:00:00.000Z",
+        },
+      ],
       error: null,
     };
   };
@@ -307,25 +309,35 @@ function montarBanco(mundo: Mundo = {}): Estado {
 
     if (c.table === "ai_agents") {
       if (c.op === "insert") {
-        const linha = { id: `agente-${estado.agentes.length + 1}`, published_version_id: null, ...c.payload };
+        const linha = {
+          id: `agente-${estado.agentes.length + 1}`,
+          published_version_id: null,
+          ...c.payload,
+        };
         estado.agentes.push(linha);
         return { data: { id: linha.id, published_version_id: null }, error: null };
       }
       // `is_default` no filtro = a busca pelo agente padrão da org (reaproveitar).
       const alvo =
         c.filtros.is_default === true
-          ? estado.agentes.find((a) => a.is_default === true && a.organization_id === c.filtros.organization_id)
+          ? estado.agentes.find(
+              (a) => a.is_default === true && a.organization_id === c.filtros.organization_id,
+            )
           : estado.agentes.find((a) => a.id === c.filtros.id);
       if (!alvo) return { data: null, error: null };
       if (c.op === "update") Object.assign(alvo, c.payload);
-      return { data: { id: alvo.id, published_version_id: alvo.published_version_id ?? null }, error: null };
+      return {
+        data: { id: alvo.id, published_version_id: alvo.published_version_id ?? null },
+        error: null,
+      };
     }
 
     if (c.table === "ai_agent_versions") {
       if (c.op === "insert") {
         if (mundo.erroVersao) return { data: null, error: mundo.erroVersao };
         const colide = estado.versoes.some(
-          (v) => v.agent_id === c.payload?.agent_id && v.version_number === c.payload?.version_number,
+          (v) =>
+            v.agent_id === c.payload?.agent_id && v.version_number === c.payload?.version_number,
         );
         // `ai_agent_versions_unique_number UNIQUE (agent_id, version_number)`.
         if (colide) {
@@ -333,7 +345,8 @@ function montarBanco(mundo: Mundo = {}): Estado {
             data: null,
             error: {
               code: "23505",
-              message: 'duplicate key value violates unique constraint "ai_agent_versions_unique_number"',
+              message:
+                'duplicate key value violates unique constraint "ai_agent_versions_unique_number"',
             },
           };
         }
@@ -369,7 +382,10 @@ function montarBanco(mundo: Mundo = {}): Estado {
         if (mundo.erroSettings) return { data: null, error: mundo.erroSettings };
         return { data: { settings: mundo.settings ?? null }, error: null };
       }
-      return { data: { onboarding_state: estado.onboardingState, onboarded_at: null }, error: null };
+      return {
+        data: { onboarding_state: estado.onboardingState, onboarded_at: null },
+        error: null,
+      };
     }
 
     if (c.table === "org_memory_versions") {
@@ -392,8 +408,6 @@ function montarBanco(mundo: Mundo = {}): Estado {
       return { data: null, error: null };
     }
 
-
-
     if (c.table === "ai_provider_credentials") {
       // Filtro a filtro, como o PostgREST faria — e não "a mesma credencial para
       // qualquer provedor pedido", que é justamente o dublê complacente que
@@ -408,7 +422,13 @@ function montarBanco(mundo: Mundo = {}): Estado {
       const linhas = (
         mundo.credenciais ??
         (mundo.credencial
-          ? [{ id: mundo.credencial.id, provider: QUALQUER_PROVEDOR, validated_at: "2026-09-10T00:00:00.000Z" }]
+          ? [
+              {
+                id: mundo.credencial.id,
+                provider: QUALQUER_PROVEDOR,
+                validated_at: "2026-09-10T00:00:00.000Z",
+              },
+            ]
           : [])
       ).map((l) => ({
         id: l.id,
@@ -439,7 +459,10 @@ function montarBanco(mundo: Mundo = {}): Estado {
     }
 
     if (c.table === "crm_pipelines") {
-      const funil = mundo.funilPadrao === undefined ? { id: "funil-1" } : mundo.funilPadrao;
+      const funil =
+        mundo.funilPadrao === undefined
+          ? { id: "66666666-6666-4666-8666-666666666666" }
+          : mundo.funilPadrao;
       return { data: funil, error: null };
     }
 
@@ -454,18 +477,26 @@ function montarBanco(mundo: Mundo = {}): Estado {
   return estado;
 }
 
-function formulario(nome = "Atendente IA", regras?: string): FormData {
+function formulario(
+  nome = "Atendente IA",
+  regras?: string,
+  promptTemplate = "ecommerce_friendly",
+): FormData {
   const fd = new FormData();
   fd.set("name", nome);
-  fd.set("prompt_template", "ecommerce_friendly");
+  fd.set("prompt_template", promptTemplate);
   if (regras !== undefined) fd.set("regras_da_casa", regras);
   return fd;
 }
 
 /** A action redireciona LANÇANDO; quem chama precisa distinguir isso de defeito. */
-async function clicar(nome?: string, regras?: string): Promise<CreateAgentResult | "redirecionou"> {
+async function clicar(
+  nome?: string,
+  regras?: string,
+  promptTemplate?: string,
+): Promise<CreateAgentResult | "redirecionou"> {
   try {
-    return await createDefaultAgent(formulario(nome, regras));
+    return await createDefaultAgent(formulario(nome, regras, promptTemplate));
   } catch (err) {
     if (err instanceof Error && err.message.startsWith("NEXT_REDIRECT")) return "redirecionou";
     throw err;
@@ -542,8 +573,11 @@ describe("onboarding: publicação impossível não pode terminar em silêncio",
     // continuava verde porque media a intenção antiga.
     expect(redirects).toEqual(["/onboarding"]);
     expect(estado.versoes).toHaveLength(1);
-    expect(estado.versoes[0]).toMatchObject({ channel_session_id: "canal-1", status: "published" });
-    expect(estado.agentes[0]?.published_version_id).toBe("versao-1");
+    expect(estado.versoes[0]).toMatchObject({
+      channel_session_id: "55555555-5555-4555-8555-555555555555",
+      status: "draft",
+    });
+    expect(estado.agentes[0]?.published_version_id ?? null).toBeNull();
   });
 
   it("sem canal nenhum é rascunho CONHECIDO: segue o wizard e não alarma", async () => {
@@ -554,46 +588,56 @@ describe("onboarding: publicação impossível não pode terminar em silêncio",
     // Quem pulou o WhatsApp não tem número — tratar isso como erro seria mentir
     // sobre um caminho normal. É o `failed` do teste anterior que é diferente.
     expect(res).toBe("redirecionou");
-    expect(estado.versoes).toHaveLength(0);
+    expect(estado.versoes).toHaveLength(1);
+    expect(estado.versoes[0]).toMatchObject({ channel_session_id: null, status: "draft" });
     expect(estado.eventos[0]?.payload).toMatchObject({ published: false });
   });
 
   it("versão do próprio onboarding já gravada: concluir o retry sem duplicar", async () => {
-    const estado = montarBanco({
-      agentes: [{ id: "agente-1", organization_id: ORG, is_default: true, published_version_id: null }],
-      versoes: [{
-        id: "versao-1",
-        organization_id: ORG,
-        agent_id: "agente-1",
-        version_number: 1,
-        provisioning_origin: "onboarding",
-        status: "draft",
-        provider: "anthropic",
-        credential_id: null,
-      }],
-    });
+    const estado = montarBanco();
+
+    expect(await clicar()).toBe("redirecionou");
 
     const res = await clicar();
 
     expect(res).toBe("redirecionou");
     expect(estado.versoes).toHaveLength(1);
-    expect(estado.versoes[0]?.status).toBe("published");
-    expect(estado.agentes[0]?.published_version_id).toBe("versao-1");
+    expect(estado.versoes[0]?.status).toBe("draft");
+    expect(estado.agentes[0]?.published_version_id ?? null).toBeNull();
+  });
+
+  it("não reaproveita rascunho do onboarding quando as instruções mudaram", async () => {
+    const estado = montarBanco();
+    expect(await clicar("Atendente IA")).toBe("redirecionou");
+
+    const res = await clicar("Sofia do Suporte", undefined, "support_minimal");
+
+    expect(res).toMatchObject({
+      ok: true,
+      agent_id: "agente-1",
+      publish_error: "existing_version_requires_review",
+    });
+    expect(estado.versoes).toHaveLength(1);
+    expect(estado.agentes[0]?.published_version_id ?? null).toBeNull();
   });
 
   it("rascunho criado por uma pessoa não é publicado pelo retry do onboarding", async () => {
     const estado = montarBanco({
-      agentes: [{ id: "agente-1", organization_id: ORG, is_default: true, published_version_id: null }],
-      versoes: [{
-        id: "versao-1",
-        organization_id: ORG,
-        agent_id: "agente-1",
-        version_number: 1,
-        provisioning_origin: null,
-        status: "draft",
-        provider: "anthropic",
-        credential_id: null,
-      }],
+      agentes: [
+        { id: "agente-1", organization_id: ORG, is_default: true, published_version_id: null },
+      ],
+      versoes: [
+        {
+          id: "versao-1",
+          organization_id: ORG,
+          agent_id: "agente-1",
+          version_number: 1,
+          provisioning_origin: null,
+          status: "draft",
+          provider: "anthropic",
+          credential_id: null,
+        },
+      ],
     });
 
     const res = await clicar();
@@ -608,7 +652,9 @@ describe("onboarding: publicação impossível não pode terminar em silêncio",
   });
 
   it("falha ao gravar a versão também chega à tela (era um return mudo)", async () => {
-    montarBanco({ erroVersao: { code: "42501", message: "permission denied for table ai_agent_versions" } });
+    montarBanco({
+      erroVersao: { code: "42501", message: "permission denied for table ai_agent_versions" },
+    });
 
     const res = (await clicar()) as CreateAgentResult;
 
@@ -645,7 +691,7 @@ describe("onboarding: o agente nasce no provedor que a instalação escolheu", (
     expect(estado.versoes[0]).toMatchObject({
       provider: "openrouter",
       model: "z-ai/glm-4.7",
-      status: "published",
+      status: "draft",
     });
   });
 
@@ -713,7 +759,7 @@ describe("onboarding: o agente nasce no provedor que a instalação escolheu", (
 
     const versao = estado.versoes[0] as { tool_ids?: string[]; pipeline_ids?: string[] };
     expect(versao.tool_ids?.length ?? 0).toBeGreaterThan(0);
-    expect(versao.pipeline_ids).toEqual(["funil-1"]);
+    expect(versao.pipeline_ids).toEqual(["66666666-6666-4666-8666-666666666666"]);
   });
 
   it("as capacidades gravadas são as do padrão — não uma lista paralela", async () => {
@@ -828,6 +874,50 @@ describe("onboarding: o que o funcionário sabe sobre o negócio", () => {
     expect(prompt).toContain("QA"); // o nome da organização do teste
     expect(prompt).not.toMatch(/loja online|e-commerce/i);
   });
+
+  it("spec revisada alimenta prompt e memória sem completar fatos ausentes", async () => {
+    const estado = montarBanco({
+      onboardingState: {
+        configurador_atendimento: {
+          session: {
+            status: "revisado",
+            pergunta_atual: null,
+            respostas: {},
+            spec: {
+              schema_version: 1,
+              niche: "climatizacao_residencial_pequeno_comercio",
+              business: {
+                name: "Clima Boa",
+                service_area: "Campinas e Valinhos",
+                opening_hours: "segunda a sábado, das 8h às 18h",
+              },
+              services: ["instalação", "limpeza"],
+              qualification: ["quantidade de aparelhos", "BTUs se souber"],
+              handoff: {
+                triggers: ["pedido de desconto"],
+                summary_fields: ["serviço", "bairro"],
+              },
+              forbidden_topics: ["diagnosticar defeito", "inventar preço"],
+              tone: "objetivo e cordial",
+              faq: [],
+            },
+          },
+        },
+      },
+    });
+
+    await clicar();
+
+    const prompt = String(estado.versoes[0]?.system_prompt ?? "");
+    expect(prompt).toContain("Serviços oferecidos: instalação; limpeza");
+    expect(prompt).toContain("Região atendida: Campinas e Valinhos");
+    expect(prompt).toContain("Passe para uma pessoa quando: pedido de desconto");
+    expect(prompt).toContain(
+      "Nunca afirme, oriente ou prometa: diagnosticar defeito; inventar preço",
+    );
+    expect(prompt).not.toMatch(/preço: R\$|visita confirmada/i);
+    expect(estado.memoria[0]?.content).toContain("Horário informado: segunda a sábado");
+  });
 });
 
 describe("onboarding: qual chave o funcionário usa", () => {
@@ -845,25 +935,23 @@ describe("onboarding: qual chave o funcionário usa", () => {
     // Quem colou a chave no wizard tem credencial e pode NÃO ter chave no
     // ambiente: apontar para a instalação publicaria um agente que morre em
     // toda mensagem.
-    const estado = montarBanco({ credencial: { id: "cred-9" }, chaveDaInstalacao: false });
+    const estado = montarBanco({
+      credencial: { id: "77777777-7777-4777-8777-777777777777" },
+      chaveDaInstalacao: false,
+    });
     await clicar();
     expect(estado.versoes).toHaveLength(1);
-    expect(estado.versoes[0]!.credential_id).toBe("cred-9");
+    expect(estado.versoes[0]!.credential_id).toBe("77777777-7777-4777-8777-777777777777");
   });
 
-  it("sem NENHUMA das duas, não publica — e a tela recebe a causa certa", async () => {
-    // Falha fechada na ação, aberta na informação. Publicar aqui entregaria um
-    // funcionário "no ar" que erra em toda mensagem, e o dono só descobriria com
-    // o primeiro cliente de verdade.
+  it("sem NENHUMA das duas, salva rascunho e deixa a ativação falhar fechada", async () => {
     const estado = montarBanco({ credencial: null, chaveDaInstalacao: false });
     const r = await clicar();
-    expect(r).not.toBe("redirecionou");
-    const res = r as Exclude<CreateAgentResult, { ok: false }>;
-    expect(res.publish_blocked_by).toBe("chave");
-    expect(res.provider).toBe("anthropic");
-    // O agente EXISTE (o passo aconteceu); o que não existe é a versão.
+    expect(r).toBe("redirecionou");
     expect(estado.agentes).toHaveLength(1);
-    expect(estado.versoes).toHaveLength(0);
+    expect(estado.versoes).toHaveLength(1);
+    expect(estado.versoes[0]).toMatchObject({ credential_id: null, status: "draft" });
+    expect(estado.agentes[0]?.published_version_id ?? null).toBeNull();
   });
 
   it("#1007: chave colada em OUTRO provedor NÃO publica — vale o provedor DA ORGANIZAÇÃO", async () => {
@@ -880,25 +968,26 @@ describe("onboarding: qual chave o funcionário usa", () => {
     const estado = montarBanco({
       chaveDaInstalacao: false,
       credenciais: [
-        { id: "cred-openai", provider: "openai", validated_at: "2026-09-15T10:00:00.000Z" },
+        {
+          id: "88888888-8888-4888-8888-888888888888",
+          provider: "openai",
+          validated_at: "2026-09-15T10:00:00.000Z",
+        },
       ],
       modelosPorProvedor: { anthropic: "claude-sonnet-9", openai: "gpt-5-mini" },
     });
 
     const r = await clicar();
 
-    expect(r).not.toBe("redirecionou");
-    const res = r as Exclude<CreateAgentResult, { ok: false }>;
-    expect(res.publish_blocked_by).toBe("chave");
-    // O provedor nomeado na resposta é o DA ORGANIZAÇÃO, nunca o da chave colada.
-    expect(res.provider).toBe("anthropic");
-    // E a credencial de openai nem como pendência aparece: não é do provedor
-    // que a empresa escolheu.
-    expect(res.chave_em_verificacao).toBeUndefined();
-    // Rascunho: o agente EXISTE (o passo aconteceu); a versão, não.
-    expect(estado.versoes).toHaveLength(0);
+    expect(r).toBe("redirecionou");
+    expect(estado.versoes).toHaveLength(1);
+    expect(estado.versoes[0]).toMatchObject({
+      provider: "anthropic",
+      credential_id: null,
+      status: "draft",
+    });
     expect(estado.agentes[0]?.published_version_id ?? null).toBeNull();
-    expect(redirects).toEqual([]);
+    expect(redirects).toEqual(["/onboarding"]);
   });
 
   it("#1007 (controle): com chave da INSTALAÇÃO o provedor dela segue vencendo", async () => {
@@ -908,7 +997,11 @@ describe("onboarding: qual chave o funcionário usa", () => {
     const estado = montarBanco({
       chaveDaInstalacao: true,
       credenciais: [
-        { id: "cred-openai", provider: "openai", validated_at: "2026-09-15T10:00:00.000Z" },
+        {
+          id: "88888888-8888-4888-8888-888888888888",
+          provider: "openai",
+          validated_at: "2026-09-15T10:00:00.000Z",
+        },
       ],
       modelosPorProvedor: { anthropic: "claude-sonnet-9", openai: "gpt-5-mini" },
     });
@@ -931,35 +1024,38 @@ describe("onboarding: qual chave o funcionário usa", () => {
     // qualquer provedor", o campo reaparece como "openai" e este caso reprova.
     const outroProvedor = montarBanco({
       chaveDaInstalacao: false,
-      credenciais: [{ id: "cred-openai", provider: "openai", validated_at: null }],
+      credenciais: [
+        { id: "88888888-8888-4888-8888-888888888888", provider: "openai", validated_at: null },
+      ],
       modelosPorProvedor: { anthropic: "claude-sonnet-9" },
     });
 
     const r1 = await clicar();
 
-    expect(r1).not.toBe("redirecionou");
-    const res1 = r1 as Exclude<CreateAgentResult, { ok: false }>;
-    expect(res1.publish_blocked_by).toBe("chave");
-    expect(res1.provider).toBe("anthropic");
-    expect(res1.chave_em_verificacao).toBeUndefined();
-    expect(outroProvedor.versoes).toHaveLength(0);
+    expect(r1).toBe("redirecionou");
+    expect(outroProvedor.versoes).toHaveLength(1);
+    expect(outroProvedor.versoes[0]).toMatchObject({
+      provider: "anthropic",
+      credential_id: null,
+      status: "draft",
+    });
 
     // A outra metade: a pendência NO provedor da empresa (o que acontece de
     // verdade no passo da chave, que grava `settings.llm` e cria a credencial
     // sem `validated_at`) continua nomeada — senão a tela perde o aviso certo.
     const provedorDaEmpresa = montarBanco({
       chaveDaInstalacao: false,
-      credenciais: [{ id: "cred-anthropic", provider: "anthropic", validated_at: null }],
+      credenciais: [
+        { id: "99999999-9999-4999-8999-999999999999", provider: "anthropic", validated_at: null },
+      ],
       modelosPorProvedor: { anthropic: "claude-sonnet-9" },
     });
 
     const r2 = await clicar();
 
-    expect(r2).not.toBe("redirecionou");
-    const res2 = r2 as Exclude<CreateAgentResult, { ok: false }>;
-    expect(res2.publish_blocked_by).toBe("chave");
-    expect(res2.chave_em_verificacao).toBe("anthropic");
-    expect(provedorDaEmpresa.versoes).toHaveLength(0);
+    expect(r2).toBe("redirecionou");
+    expect(provedorDaEmpresa.versoes).toHaveLength(1);
+    expect(provedorDaEmpresa.versoes[0]).toMatchObject({ credential_id: null, status: "draft" });
   });
 
   it("o funcionário nasce no formato ATUAL do produto, não no legado", async () => {

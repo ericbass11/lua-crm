@@ -451,6 +451,7 @@ export async function testarAcao(
       serviceBoundary: boundary,
       proactiveContext: { organizationId: c.organization_id, contactId: linha.id },
       actor: { type: "webhook_source", id: `campaign-test:${c.id}` },
+      outboundIntent: { kind: "campaign" },
       requestId: `campaign-test:${c.id}:${randomUUID()}`,
     } as Parameters<typeof sendMessageHandler>[1],
     {

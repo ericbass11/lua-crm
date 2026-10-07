@@ -93,6 +93,7 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
       {
         organization_id: ctx.organizationId,
         actor: ctx.actor,
+        outboundIntent: { kind: "ad_hoc" },
         requestId: ctx.requestId,
       },
       parsed,

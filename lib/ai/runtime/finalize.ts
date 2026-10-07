@@ -124,6 +124,8 @@ export interface SendFinalResponseInput {
    */
   agentId: string;
   conversationId: string;
+  /** Mensagem inbound que autorizou esta resposta; ausente em saída proativa. */
+  inboundMessageId?: string | null;
   text: string;
   requestId: string;
   /** Nº do passo quando a mensagem é um follow-up automático (marca o ciclo). */
@@ -152,6 +154,11 @@ export async function sendFinalResponse(
         organization_id: input.organizationId,
         actor,
         requestId: input.requestId,
+        outboundIntent: input.inboundMessageId
+          ? { kind: "inbound_reply", inboundMessageId: input.inboundMessageId }
+          : input.followupStep
+            ? { kind: "followup" }
+            : { kind: "system_outbound" },
       },
       {
         conversation_id: input.conversationId,

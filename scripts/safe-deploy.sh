@@ -16,6 +16,15 @@ cd "$(dirname "$0")/.."
 
 COMPOSE="-f docker-compose.prod.yml -f docker-compose.local.yml"
 BUILD="-f docker-compose.prod.yml -f docker-compose.build.yml"
+APP_PORT="${APP_PORT:-$(awk -F= '$1 == "APP_PORT" { sub(/^[^=]*=/, ""); gsub(/[" \r]/, ""); print; exit }' .env 2>/dev/null)}"
+APP_PORT="${APP_PORT:-3000}"
+REUSE_RUNNING_IMAGE=0
+if [ "${1:-}" = "--reuse-running-image" ]; then
+  REUSE_RUNNING_IMAGE=1
+elif [ "$#" -gt 0 ]; then
+  echo "Uso: $0 [--reuse-running-image]" >&2
+  exit 2
+fi
 step() { printf '\n\033[1m▶ %s\033[0m\n' "$*"; }
 
 step "1/5 Snapshot de rollback"
@@ -61,15 +70,25 @@ else
 fi
 
 step "2/5 Build (typecheck estrito + lint = portão de qualidade)"
-docker compose $BUILD build app
+if [ "$REUSE_RUNNING_IMAGE" = 1 ]; then
+  [ -n "$CURRENT" ] || { echo "  ✖ sem imagem válida do app em execução para reutilizar" >&2; exit 1; }
+  docker tag "$CURRENT" "$APP_IMAGE_REF"
+  echo "  usando imagem já saudável; nenhuma alteração de código será publicada"
+else
+  docker compose $BUILD build app
+fi
 
 step "3/5 Deploy"
-docker compose $COMPOSE up -d app
+if [ "$REUSE_RUNNING_IMAGE" = 1 ]; then
+  docker compose $COMPOSE up -d --no-build --no-deps app
+else
+  docker compose $COMPOSE up -d --no-build app
+fi
 
 step "4/5 Health gate"
 ok=0
 for i in $(seq 1 30); do
-  H=$(curl -s --max-time 5 http://localhost:3000/api/v1/health || true)
+  H=$(curl -s --max-time 5 "http://localhost:${APP_PORT}/api/v1/health" || true)
   if echo "$H" | grep -q '"status":"healthy"'; then ok=1; break; fi
   sleep 3
 done
@@ -78,7 +97,7 @@ done
 # Sanity de rotas críticas: cada uma deve devolver o código esperado.
 if [ "$ok" = 1 ]; then
   while read -r path want; do
-    got=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://localhost:3000${path}" || echo 000)
+    got=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://localhost:${APP_PORT}${path}" || echo 000)
     if [ "$got" = "$want" ]; then
       echo "  ✓ ${path} -> ${got}"
     else
@@ -108,7 +127,11 @@ fi
 step "5/5 ✖ VERIFICAÇÃO FALHOU — rollback automático"
 if docker image inspect "$ROLLBACK_REF" >/dev/null 2>&1; then
   docker tag "$ROLLBACK_REF" "$APP_IMAGE_REF"
-  docker compose $COMPOSE up -d app
+  if [ "$REUSE_RUNNING_IMAGE" = 1 ]; then
+    docker compose $COMPOSE up -d --no-build --no-deps app
+  else
+    docker compose $COMPOSE up -d --no-build app
+  fi
   echo "  Rollback aplicado ($ROLLBACK_REF -> $APP_IMAGE_REF; imagem anterior no ar)."
   echo "  Investigue a causa antes de tentar de novo."
   echo "  Se a mudança for arriscada por natureza, PARE e envie para avaliação humana."

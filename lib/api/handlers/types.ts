@@ -5,6 +5,7 @@ import type { MeetingDeliveryContext, MeetingBookingContext } from "@/lib/agenda
 import type { ProactiveContext } from "@/lib/agenda/efeito";
 import type { ServiceOrigin } from "@/lib/atendimento/origem";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
+import type { IntencaoDeEnvio } from "@/lib/channels/politica-inbound-only";
 /**
  * Shared types for `app/api/v1/<resource>/_handler.ts` core functions.
  *
@@ -83,6 +84,8 @@ export interface HandlerCtx {
   serviceBoundary?: ServiceBoundary | null;
   /** Origem de evento derivado; não é campo de input público. */
   serviceOrigin?: ServiceOrigin;
+  /** Intenção interna de saída; nunca vem do body/metadata da API pública. */
+  outboundIntent?: IntencaoDeEnvio;
   organization_id: string;
   actor: Actor;
   requestId: string;

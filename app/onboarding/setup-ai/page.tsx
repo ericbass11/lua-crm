@@ -9,6 +9,8 @@ import { capacidadesPadraoDoOnboarding } from "@/lib/ai/agents/capacidades-padra
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
 import { CONFERENCIAS_DE_SAIDA } from "@/lib/ai/guardrails/lista-de-conferencia";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { loadOnboardingState } from "@/app/actions/onboarding/_shared";
+import type { PromptTemplate } from "@/lib/schemas/onboarding";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,26 @@ export default async function SetupAiPage() {
 
   const supabase = await createClient();
   const retrato = await lerRetratoDaInstalacao({ supabase, orgId: activeOrg.orgId });
+  const { state } = await loadOnboardingState(activeOrg.orgId);
+  const spec =
+    state.configurador_atendimento?.session.status === "revisado"
+      ? state.configurador_atendimento.session.spec
+      : null;
+
+  const tom = spec?.tone?.toLowerCase() ?? "";
+  const initialTone: PromptTemplate = /curt|pr[aá]tic|minimal/.test(tom)
+    ? "support_minimal"
+    : /objetiv|profission|cordial/.test(tom)
+      ? "ecommerce_professional"
+      : "ecommerce_friendly";
+  const initialRules = spec
+    ? [
+        `Atenda somente em: ${spec.business.service_area}.`,
+        `Horário informado: ${spec.business.opening_hours}.`,
+        `Nunca afirme, oriente ou prometa: ${spec.forbidden_topics.join("; ")}.`,
+        `Passe para uma pessoa quando: ${spec.handoff.triggers.join("; ")}.`,
+      ].join("\n")
+    : "";
 
   const porNome = new Map(TOOL_CATALOG.map((c) => [c.name, c]));
   const capacidades = capacidadesPadraoDoOnboarding()
@@ -46,9 +68,14 @@ export default async function SetupAiPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h2 className="text-2xl font-semibold tracking-tight">{traduzir("Treine seu funcionário", idioma)}</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">
+          {traduzir("Treine seu funcionário", idioma)}
+        </h2>
         <p className="text-sm text-muted-foreground">
-          {traduzir("Quem ele é, como fala e o que pode prometer. Dá para mudar tudo depois.", idioma)}
+          {traduzir(
+            "Quem ele é, como fala e o que pode prometer. Dá para mudar tudo depois.",
+            idioma,
+          )}
         </p>
       </header>
       {/*
@@ -65,7 +92,15 @@ export default async function SetupAiPage() {
         }}
       />
 
-      <SetupAiForm capacidades={capacidades} conferencias={conferencias} />
+      <SetupAiForm
+        capacidades={capacidades}
+        conferencias={conferencias}
+        initialName={
+          spec?.business.name ? `Atendente ${spec.business.name}`.slice(0, 80) : undefined
+        }
+        initialTone={initialTone}
+        initialRules={initialRules}
+      />
     </div>
   );
 }

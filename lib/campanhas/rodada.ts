@@ -425,6 +425,7 @@ async function rodarUmaCampanha(
         serviceBoundary: boundary,
         proactiveContext: { organizationId: campanha.organization_id, contactId: alvo.contact_id },
         actor: { type: "webhook_source", id: `campaign:${campanha.id}` },
+        outboundIntent: { kind: "campaign" },
         requestId: `campaign:${campanha.id}:${alvo.id}`,
         internalMessageId: messageId,
       } as Parameters<typeof sendMessageHandler>[1],

@@ -7,11 +7,15 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { publishFirstVersion } from "@/lib/ai/agents/first-publication";
+import { mcpAgentDraftRecords } from "@/lib/ai/agents/create-draft";
+import { capacidadesPadraoDoOnboarding } from "@/lib/ai/agents/capacidades-padrao";
+import { escolherModeloDoProvedor } from "@/lib/ai/agents/escolher-modelo";
 import { audit } from "@/lib/audit";
+import { listSelectableChannels } from "@/lib/channels/selectable";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aiAgentDefaultSchema, type PromptTemplate } from "@/lib/schemas/onboarding";
 import { publicarMemoriaDaOrg } from "@/lib/ai/memoria-da-org";
+import { agentSpecSchemaV1, type AgentSpecV1 } from "@/lib/onboarding/configurador";
 import {
   requireOnboardingCtx,
   patchOnboardingState,
@@ -46,10 +50,174 @@ const PROMPT_BODIES: Record<PromptTemplate, (onde: string) => string> = {
     `Você atende os clientes de ${n}. Responda em frases curtas, peça apenas o que for necessário e chame uma pessoa do time assim que a dúvida sair do seu alcance.`,
 };
 
+function linhasDaSpec(spec: AgentSpecV1): string[] {
+  return [
+    spec.business.description ? `Descrição aprovada: ${spec.business.description}` : null,
+    spec.business.service_area ? `Região atendida: ${spec.business.service_area}` : null,
+    spec.business.opening_hours ? `Horário informado: ${spec.business.opening_hours}` : null,
+    spec.services.length ? `Serviços oferecidos: ${spec.services.join("; ")}` : null,
+    spec.qualification.length
+      ? `Informações que deve coletar: ${spec.qualification.join("; ")}`
+      : null,
+    spec.handoff.triggers.length
+      ? `Passe para uma pessoa quando: ${spec.handoff.triggers.join("; ")}`
+      : null,
+    spec.handoff.summary_fields.length
+      ? `Ao passar para uma pessoa, resuma: ${spec.handoff.summary_fields.join("; ")}`
+      : null,
+    spec.forbidden_topics.length
+      ? `Nunca afirme, oriente ou prometa: ${spec.forbidden_topics.join("; ")}`
+      : null,
+    spec.tone ? `Tom de voz aprovado: ${spec.tone}` : null,
+    ...spec.faq.map((item) => `FAQ aprovada — ${item.question}: ${item.answer}`),
+  ].filter((linha): linha is string => Boolean(linha));
+}
+
+function promptComSpec(base: string, spec: AgentSpecV1 | null): string {
+  if (!spec) return base;
+  const fatos = linhasDaSpec(spec);
+  return fatos.length
+    ? `${base}\n\nCONFIGURAÇÃO APROVADA PELO DONO\n${fatos.map((fato) => `- ${fato}`).join("\n")}\nNão invente preço, prazo, serviço, região, horário ou diagnóstico além destes dados.`
+    : base;
+}
+
 /** O agente padrão desta organização, do jeito que este passo precisa vê-lo. */
 interface AgenteDoOnboarding {
   id: string;
   published_version_id: string | null;
+}
+
+type DraftOutcome =
+  | { drafted: true; versionId: string }
+  | { drafted: false; reason: "no_model"; provider: string }
+  | { drafted: false; reason: "failed"; message: string };
+
+function provedorDaInstalacao(settings: unknown): string {
+  const llm = (settings as { llm?: unknown } | null)?.llm;
+  const provider = (llm as { provider?: unknown } | null | undefined)?.provider;
+  return typeof provider === "string" && provider.trim() !== "" ? provider : "anthropic";
+}
+
+/** Cria (ou reaproveita) a versão inerte que o dono vai ensaiar antes de ativar. */
+async function createFirstDraftVersion(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  agent: AgenteDoOnboarding,
+  agentName: string,
+  systemPrompt: string,
+  userId: string,
+): Promise<DraftOutcome> {
+  const { data: existing, error: existingError } = await admin
+    .from("ai_agent_versions")
+    .select("id,status,provisioning_origin,version_number,system_prompt")
+    .eq("organization_id", orgId)
+    .eq("agent_id", agent.id)
+    .order("version_number", { ascending: false });
+  if (existingError) return { drafted: false, reason: "failed", message: existingError.message };
+
+  const onboardingDraft = existing?.find(
+    (version) => version.status === "draft" && version.provisioning_origin === "onboarding",
+  );
+  if (onboardingDraft?.id) {
+    return onboardingDraft.system_prompt === systemPrompt
+      ? { drafted: true, versionId: onboardingDraft.id as string }
+      : {
+          drafted: false,
+          reason: "failed",
+          message: "existing_version_requires_review",
+        };
+  }
+
+  // Um rascunho humano nunca é tomado pelo onboarding. O dono precisa revisá-lo
+  // no editor, em vez de o wizard criar ou publicar por cima dele.
+  if (existing && existing.length > 0) {
+    return { drafted: false, reason: "failed", message: "existing_version_requires_review" };
+  }
+
+  let canais;
+  try {
+    canais = await listSelectableChannels(admin, orgId);
+  } catch (err) {
+    return {
+      drafted: false,
+      reason: "failed",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const { data: org, error: orgError } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", orgId)
+    .maybeSingle();
+  if (orgError) return { drafted: false, reason: "failed", message: orgError.message };
+  const provider = provedorDaInstalacao(org?.settings);
+
+  const { data: credential } = await admin
+    .from("ai_provider_credentials")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("provider", provider)
+    .eq("is_active", true)
+    .not("validated_at", "is", null)
+    .limit(1)
+    .maybeSingle();
+
+  const { data: models, error: modelsError } = await admin
+    .from("ai_models")
+    .select(
+      "model_id, is_default_for_provider, supports_tools, input_price_per_million_cents, output_price_per_million_cents",
+    )
+    .eq("provider", provider)
+    .is("deprecated_at", null);
+  if (modelsError) return { drafted: false, reason: "failed", message: modelsError.message };
+  const model = escolherModeloDoProvedor(
+    (models ?? []) as Parameters<typeof escolherModeloDoProvedor>[0],
+  );
+  if (!model.escolhido) return { drafted: false, reason: "no_model", provider };
+
+  const { data: pipeline, error: pipelineError } = await admin
+    .from("crm_pipelines")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("is_default", true)
+    .eq("is_archived", false)
+    .maybeSingle();
+  if (pipelineError) return { drafted: false, reason: "failed", message: pipelineError.message };
+
+  const records = mcpAgentDraftRecords(
+    { orgId, userId },
+    {
+      name: agentName,
+      version: {
+        system_prompt: systemPrompt,
+        provider,
+        model: model.modelId,
+        credential_id: (credential?.id as string | undefined) ?? null,
+        tool_ids: capacidadesPadraoDoOnboarding(),
+        pipeline_ids: pipeline?.id ? [pipeline.id as string] : [],
+        knowledge_source_ids: [],
+        channel_session_id: canais[0]?.id ?? null,
+        // O MVP é estritamente inbound: nenhum retorno proativo nasce ligado.
+        followup: { enabled: false, flow_pointer_ids: [], send_window: null },
+      },
+    },
+    { agentId: agent.id },
+  );
+
+  const { data: inserted, error: insertError } = await admin
+    .from("ai_agent_versions")
+    .insert({ ...records.version, organization_id: orgId, provisioning_origin: "onboarding" })
+    .select("id")
+    .single();
+  if (insertError || !inserted?.id) {
+    return {
+      drafted: false,
+      reason: "failed",
+      message: insertError?.message ?? "version_insert_failed",
+    };
+  }
+  return { drafted: true, versionId: inserted.id as string };
 }
 
 /**
@@ -83,6 +251,8 @@ export type CreateAgentResult =
   | {
       ok: true;
       agent_id: string;
+      /** Versão rascunho que será ensaiada e só então ativada pelo dono. */
+      version_id?: string;
       publish_error?: string;
       publish_blocked_by?: "canal" | "modelo" | "chave";
       /**
@@ -135,14 +305,27 @@ export async function createDefaultAgent(formData: FormData): Promise<CreateAgen
   // passo: o funcionário nasce sem essa frase, que é degradação honesta — o
   // contrário seria travar a contratação por causa de um adjetivo.
   let oQueFaz: string | undefined;
+  let specRevisada: AgentSpecV1 | null = null;
   try {
     const { state } = await loadOnboardingState(ctx.orgId);
     oQueFaz = state.welcome?.o_que_faz;
+    const configurador = (
+      state as typeof state & {
+        configurador_atendimento?: { session?: { status?: unknown; spec?: unknown } };
+      }
+    ).configurador_atendimento?.session;
+    if (configurador?.status === "revisado") {
+      const parsedSpec = agentSpecSchemaV1.safeParse(configurador.spec);
+      if (parsedSpec.success) specRevisada = parsedSpec.data;
+    }
   } catch {
     oQueFaz = undefined;
   }
 
-  const systemPrompt = PROMPT_BODIES[input.prompt_template](ondeTrabalha(ctx.orgName, oQueFaz));
+  const systemPrompt = promptComSpec(
+    PROMPT_BODIES[input.prompt_template](ondeTrabalha(ctx.orgName, oQueFaz)),
+    specRevisada,
+  );
 
   // O agente padrão do onboarding é UM por organização, e o banco já garante
   // isso: `ai_agents_one_default_per_org` é índice único parcial em
@@ -212,12 +395,23 @@ export async function createDefaultAgent(formData: FormData): Promise<CreateAgen
   // Falha aqui NÃO derruba o passo: o agente já existe e o treinamento
   // principal aconteceu. Some do caminho crítico e vira aviso.
   let regrasNaoSalvas: string | null = null;
-  if (input.regras_da_casa) {
-    const pub = await publicarMemoriaDaOrg(admin, ctx.orgId, ctx.userId, input.regras_da_casa);
+  const memoriaDaSpec = specRevisada ? linhasDaSpec(specRevisada).join("\n") : "";
+  const conteudoDaMemoria = [memoriaDaSpec, input.regras_da_casa]
+    .filter((parte): parte is string => Boolean(parte?.trim()))
+    .join("\n\n");
+  if (conteudoDaMemoria) {
+    const pub = await publicarMemoriaDaOrg(admin, ctx.orgId, ctx.userId, conteudoDaMemoria);
     if (!pub.ok) regrasNaoSalvas = pub.mensagem;
   }
 
-  const publicacao = await publishFirstVersion(admin, ctx.orgId, agent, systemPrompt, ctx.userId);
+  const draft = await createFirstDraftVersion(
+    admin,
+    ctx.orgId,
+    agent,
+    input.name,
+    systemPrompt,
+    ctx.userId,
+  );
 
   // Estado, audit e evento saem em QUALQUER desfecho da publicação: o agente
   // existe, e o passo do onboarding é "configurar IA", não "publicar". Deixar
@@ -226,6 +420,8 @@ export async function createDefaultAgent(formData: FormData): Promise<CreateAgen
   try {
     await patchOnboardingState(ctx.orgId, {
       ai: { agent_id: agent.id, prompt_template: input.prompt_template },
+      // Qualquer recriação/atualização do rascunho invalida o recibo anterior.
+      teste: { respondeu: false },
     });
   } catch (err) {
     if (err instanceof OnboardingError)
@@ -242,8 +438,9 @@ export async function createDefaultAgent(formData: FormData): Promise<CreateAgen
     metadata: {
       prompt_template: input.prompt_template,
       name: input.name,
-      published: publicacao.published,
-      ...(publicacao.published ? {} : { publish_blocked_by: publicacao.reason }),
+      published: false,
+      draft_created: draft.drafted,
+      ...(draft.drafted ? { version_id: draft.versionId } : { draft_blocked_by: draft.reason }),
     },
   });
 
@@ -253,51 +450,30 @@ export async function createDefaultAgent(formData: FormData): Promise<CreateAgen
     event_type: "ai_agent.created",
     // NOT NULL sem default — ver `tests/unit/evento-de-publicacao-tem-dono.test.ts`.
     entity_kind: "ai_agent",
-    payload: { agent_id: agent.id, source: "onboarding", published: publicacao.published },
+    payload: {
+      agent_id: agent.id,
+      source: "onboarding",
+      published: false,
+      ...(draft.drafted ? { version_id: draft.versionId } : {}),
+    },
   });
 
-  // Não deu para SABER se há canal: não publica (falha fechado na ação) e não
-  // avança (falha aberto na informação) — a tela explica e oferece seguir. Um
-  // redirect aqui deixaria como única pista um badge "Rascunho" numa tela que a
-  // pessoa ainda não viu.
-  if (!publicacao.published && publicacao.reason === "failed") {
+  if (!draft.drafted && draft.reason === "failed") {
     return {
       ok: true,
       agent_id: agent.id,
-      publish_error: publicacao.message,
-      publish_blocked_by: "canal",
+      publish_error: draft.message,
       ...(regrasNaoSalvas ? { regras_nao_salvas: regrasNaoSalvas } : {}),
     };
   }
 
-  // Mesma postura, outra causa: o provedor escolhido na instalação ainda não
-  // tem modelo no catálogo desta instalação (o da OpenRouter só chega no cron
-  // diário). Avançar calado deixaria a pessoa achar que o funcionário está no
-  // ar — e ele não responde uma única mensagem.
-  // Sem chave utilizável: o agente fica rascunho e a tela explica. Avançar
-  // calado deixaria a pessoa achar que o funcionário está no ar.
-  if (!publicacao.published && publicacao.reason === "sem_chave") {
-    return {
-      ok: true,
-      agent_id: agent.id,
-      publish_blocked_by: "chave",
-      provider: publicacao.provider,
-      // A chave colada existe, mas o provedor ainda não confirmou. A tela usa
-      // isto para não pedir de novo uma chave que a pessoa já colou.
-      ...(publicacao.chaveEmVerificacao
-        ? { chave_em_verificacao: publicacao.chaveEmVerificacao }
-        : {}),
-      ...(regrasNaoSalvas ? { regras_nao_salvas: regrasNaoSalvas } : {}),
-    };
-  }
-
-  if (!publicacao.published && publicacao.reason === "no_model") {
+  if (!draft.drafted && draft.reason === "no_model") {
     return {
       ok: true,
       agent_id: agent.id,
       publish_blocked_by: "modelo",
-      provider: publicacao.provider,
-      motivo_do_modelo: publicacao.motivo,
+      provider: draft.provider,
+      motivo_do_modelo: "catalogo_vazio",
       ...(regrasNaoSalvas ? { regras_nao_salvas: regrasNaoSalvas } : {}),
     };
   }
@@ -306,7 +482,12 @@ export async function createDefaultAgent(formData: FormData): Promise<CreateAgen
   // aconteceu; o que a pessoa escreveu, não. Redirecionar calado apagaria da
   // tela o único lugar onde esse texto existia.
   if (regrasNaoSalvas) {
-    return { ok: true, agent_id: agent.id, regras_nao_salvas: regrasNaoSalvas };
+    return {
+      ok: true,
+      agent_id: agent.id,
+      ...(draft.drafted ? { version_id: draft.versionId } : {}),
+      regras_nao_salvas: regrasNaoSalvas,
+    };
   }
 
   redirect("/onboarding");

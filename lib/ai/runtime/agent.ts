@@ -904,6 +904,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         runId: run.id,
         agentId: run.agent_id,
         conversationId: run.conversation_id,
+        inboundMessageId: run.inbound_message_id,
         text: finalText,
         requestId: run.id,
         followupStep: run.is_followup ? (run.followup_step ?? null) : null,

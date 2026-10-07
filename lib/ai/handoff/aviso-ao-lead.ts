@@ -117,6 +117,7 @@ export async function avisarLeadDoCrm(
         organization_id: input.organizationId,
         serviceBoundary: input.serviceBoundary,
         actor: { type: "ai_agent", id: ATOR_DO_AVISO, role: "manager" },
+        outboundIntent: { kind: "human_handoff" },
         requestId: `handoff-aviso-${input.conversationId}`,
       },
       {

@@ -3,6 +3,7 @@
  * the persistent `organizations.onboarding_state jsonb` blob.
  */
 import { z } from "zod";
+import { sessaoConfiguradorSchema } from "@/lib/onboarding/configurador";
 
 export const welcomeSchema = z.object({
   display_name: z.string().min(2).max(120),
@@ -68,6 +69,20 @@ export const onboardingStateSchema = z.object({
       o_que_faz: z.string().optional(),
     })
     .optional(),
+  risco_whatsapp: z
+    .object({
+      accepted_at: z.string(),
+      version: z.string(),
+    })
+    .optional(),
+  configurador_atendimento: z
+    .object({
+      session: sessaoConfiguradorSchema,
+      updated_at: z.string().datetime(),
+      approved_at: z.string().datetime().optional(),
+    })
+    .strict()
+    .optional(),
   whatsapp: z
     .object({
       session_id: z.string().optional(),
@@ -98,7 +113,18 @@ export const onboardingStateSchema = z.object({
   teste: z
     .object({
       respondeu: z.boolean().optional(),
+      run_id: z.string().uuid().optional(),
+      agent_id: z.string().uuid().optional(),
+      version_id: z.string().uuid().optional(),
+      tested_at: z.string().datetime().optional(),
       skipped: z.boolean().optional(),
+    })
+    .optional(),
+  ativacao: z
+    .object({
+      agent_id: z.string().uuid(),
+      version_id: z.string().uuid(),
+      activated_at: z.string().datetime(),
     })
     .optional(),
   /**

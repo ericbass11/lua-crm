@@ -31,6 +31,7 @@ export type { SendOutcome, SendLedgerStatus } from './send-ledger';
 
 import { ApiError } from '@/lib/api/types';
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
+import type { IntencaoDeEnvio } from '@/lib/channels/politica-inbound-only';
 import type { Message } from '@/lib/types/messaging';
 
 import type { Queryable } from '../../queue/queue';
@@ -101,6 +102,19 @@ export function corpoDoEnvio(
 /** Fallback do ator ai_agent quando não há agente publicado (cfg.agentActorId). */
 export const AGENT_ACTOR_ID = 'agent-engine';
 
+/** Traduz a origem durável do job para a intenção fechada que o sink governa. */
+export function intencaoDoJob(job: {
+  kind: string;
+  payload: Record<string, unknown>;
+} | undefined): IntencaoDeEnvio {
+  if (job?.kind === 'inbound_turn' && typeof job.payload.inbound_message_id === 'string') {
+    return { kind: 'inbound_reply', inboundMessageId: job.payload.inbound_message_id };
+  }
+  if (job?.kind === 'followup_turn') return { kind: 'followup' };
+  if (job?.kind === 'case_reply_turn') return { kind: 'human_handoff' };
+  return { kind: 'system_outbound' };
+}
+
 /**
  * Envia UMA mensagem do turno pelo handler do app. Intenção exactly-once,
  * entrega at-least-once: throws (transporte) deixam o ledger em 'requested' —
@@ -169,6 +183,7 @@ export async function sendTurnMessage(
           organization_id: input.tenantId,
           actor: { type: 'ai_agent', id: cfg.agentActorId ?? AGENT_ACTOR_ID, role: 'manager' },
           requestId: idempotencyKey,
+          outboundIntent: intencaoDoJob(sourceJobs[0]),
           serviceBoundary: parseServiceBoundary(sourceJobs[0]?.payload.service_boundary),
           proactiveContext,
           meetingDelivery,
