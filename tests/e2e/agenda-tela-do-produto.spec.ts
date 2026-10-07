@@ -218,7 +218,10 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     const filtro = page.getByTestId("filtro-de-pessoas");
     await expect(filtro).toBeVisible({ timeout: ESPERA });
 
-    const cartoes = () => page.getByTestId("grade-da-agenda").getByRole("button", { name: /\d{2}:\d{2} às \d{2}:\d{2}/ });
+    const cartoes = () =>
+      page
+        .getByTestId("grade-da-agenda")
+        .getByRole("button", { name: /\d{2}:\d{2} às \d{2}:\d{2}/ });
     const todos = await cartoes().count();
 
     const primeira = filtro.getByRole("button").first();
@@ -235,7 +238,7 @@ test.describe("a Agenda como o dono do produto a usa", () => {
 
     await page.getByTestId("botao-todos").click();
     await expect
-      .poll(() => cartoes().count(), { message: "\"Todos\" não desfez o isolamento" })
+      .poll(() => cartoes().count(), { message: '"Todos" não desfez o isolamento' })
       .toBe(todos);
   });
 
@@ -245,11 +248,17 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/app/agenda");
     await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: ESPERA });
-    await page.screenshot({ path: "evidence/calendario/tela-do-produto-claro.png", fullPage: true });
+    await page.screenshot({
+      path: "evidence/calendario/tela-do-produto-claro.png",
+      fullPage: true,
+    });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByTestId("tela-agenda")).toBeVisible();
-    await page.screenshot({ path: "evidence/calendario/tela-do-produto-celular.png", fullPage: true });
+    await page.screenshot({
+      path: "evidence/calendario/tela-do-produto-celular.png",
+      fullPage: true,
+    });
 
     const estouro = await page.evaluate(
       // ⚠️ `body.scrollWidth`, NÃO `documentElement`. `app/globals.css` põe
@@ -286,5 +295,88 @@ test.describe("a Agenda como o dono do produto a usa", () => {
       estouro,
       `a tela do produto estourou a largura no celular. Quem passa da borda:\n${culpados.join("\n") || "  (nenhum elemento individual — veja margem/transform)"}`,
     ).toBeLessThanOrEqual(0);
+  });
+
+  test("histórico e grade recebem o ponteiro no desktop e celular, vazios e com compromisso", async () => {
+    const originalViewport = page.viewportSize();
+    let populated = false;
+    const fixtureId = "00000000-0000-4000-8000-000000000123";
+    const pattern = /\/api\/v1\/agenda\/agendamentos\?/;
+    await page.route(pattern, async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      const start = new Date(new URL(route.request().url()).searchParams.get("de")!);
+      start.setTime(start.getTime() + 34 * 3600000);
+      await route.fulfill({
+        json: {
+          data: populated
+            ? [
+                {
+                  id: fixtureId,
+                  titulo: "Compromisso de geometria QA",
+                  iniciaEm: start.toISOString(),
+                  terminaEm: new Date(start.getTime() + 1800000).toISOString(),
+                  fuso: "America/Sao_Paulo",
+                  situacao: "confirmed",
+                  donoId: null,
+                  contatoId: null,
+                  contatoNome: null,
+                },
+              ]
+            : [],
+        },
+      });
+    });
+    try {
+      for (const viewport of [
+        { width: 1280, height: 720 },
+        { width: 390, height: 844 },
+      ]) {
+        await page.setViewportSize(viewport);
+        for (populated of [false, true]) {
+          const read = page.waitForResponse(
+            (r) => pattern.test(r.url()) && r.request().method() === "GET",
+          );
+          await page.goto("/app/agenda");
+          await read;
+          const history = page.getByTestId("historico-da-agenda");
+          const grid = page.getByTestId("grade-da-agenda");
+          if (populated) await expect(grid.getByTestId(`agendamento-${fixtureId}`)).toBeVisible();
+          else await expect(page.getByTestId("historico-vazio")).toBeVisible();
+          expect((await history.boundingBox())!.height).toBeGreaterThan(30);
+          expect((await grid.boundingBox())!.height).toBeGreaterThan(200);
+          for (const tab of ["proximos", "aguardando", "passados", "cancelados"]) {
+            const button = page.getByTestId(`aba-${tab}`);
+            await button.scrollIntoViewIfNeeded();
+            await button.click({ trial: true });
+            expect(
+              await button.evaluate((el) => {
+                const r = el.getBoundingClientRect();
+                return el.contains(
+                  document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2),
+                );
+              }),
+            ).toBe(true);
+          }
+          await grid.scrollIntoViewIfNeeded();
+          expect(
+            await grid.evaluate((el) => {
+              const r = el.getBoundingClientRect();
+              return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+            }),
+          ).toBe(true);
+          const screenshot = await page.screenshot({
+            path: `evidence/calendario/geometria-${viewport.width}-${populated ? "com-dado" : "vazio"}.png`,
+            fullPage: true,
+          });
+          await test.info().attach(`geometria-${viewport.width}-${populated ? "com-dado" : "vazio"}`, {
+            body: screenshot,
+            contentType: "image/png",
+          });
+        }
+      }
+    } finally {
+      await page.unroute(pattern);
+      if (originalViewport) await page.setViewportSize(originalViewport);
+    }
   });
 });

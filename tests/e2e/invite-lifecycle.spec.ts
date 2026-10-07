@@ -197,9 +197,12 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     // Sem membership ainda: o login não cai em /app. Esperamos a SESSÃO (cookie)
     // se firmar antes de ir ao accept_url — senão a página cai no estado não-logado.
     await expect
-      .poll(async () => (await inviteeCtx.cookies()).some((c) => c.name.startsWith("sb-deskcomm-auth")), {
-        timeout: 40_000, // 1º login no dev (webpack) compila signInWithPassword — pode levar ~16s
-      })
+      .poll(
+        async () => (await inviteeCtx.cookies()).some((c) => c.name.startsWith("sb-lua-crm-auth")),
+        {
+          timeout: 40_000, // 1º login no dev (webpack) compila signInWithPassword — pode levar ~16s
+        },
+      )
       .toBe(true);
     // Vamos direto ao accept_url (fluxo real do link do email).
     await page.goto(tokenPath(acceptUrl));
@@ -499,8 +502,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await ip.getByRole("button", { name: "Entrar", exact: true }).click();
     await expect
       .poll(
-        async () =>
-          (await inviteeCtx.cookies()).some((c) => c.name.startsWith("sb-deskcomm-auth")),
+        async () => (await inviteeCtx.cookies()).some((c) => c.name.startsWith("sb-lua-crm-auth")),
         { timeout: 40_000 },
       )
       .toBe(true);

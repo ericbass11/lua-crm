@@ -15,10 +15,10 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
 
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
+import { assertEphemeralRuntime } from "./helpers/ephemeral-runtime";
 
 import { PERGUNTAS_CONFIGURADOR } from "@/lib/onboarding/configurador";
 import { RISCO_WHATSAPP_VERSAO } from "@/lib/onboarding/risco-whatsapp";
@@ -30,41 +30,6 @@ const OWNER_PASSWORD = "QaVps!2026#Dono";
 const OWNER_STATE_PATH = path.join(process.cwd(), ".e2e-owner.json");
 const EVIDENCE_DIR = path.join(process.cwd(), ".superpowers/evidence/vps-qa");
 
-function assertEphemeralRuntime(): void {
-  for (const name of ["WAHA_API_BASE_URL", "WAHA_INTERNAL_BASE_URL"] as const) {
-    const value = process.env[name];
-    if (value && !["localhost", "127.0.0.1", "[::1]"].includes(new URL(value).hostname)) {
-      throw new Error(
-        `${name} deve apontar para o transporte local efêmero antes de qualquer escrita.`,
-      );
-    }
-  }
-  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!);
-  if (!["localhost", "127.0.0.1"].includes(url.hostname))
-    throw new Error("Esta jornada destrutiva exige Supabase local efêmero.");
-  if (process.env.INTERNAL_AGENT_RUN_STUB !== "true")
-    throw new Error("Esta jornada exige o provedor controlado, sem chamadas externas.");
-  const project = /^project_id\s*=\s*"([^"]+)"/m.exec(
-    fs.readFileSync("supabase/config.toml", "utf8"),
-  )?.[1];
-  if (!project) throw new Error("Projeto Supabase de teste não identificado.");
-  const ci = process.env.GITHUB_ACTIONS === "true";
-  const container = ci ? `supabase_db_${project}` : process.env.E2E_EPHEMERAL_DB_CONTAINER;
-  if (!container)
-    throw new Error(
-      "Use o CI efêmero ou indique E2E_EPHEMERAL_DB_CONTAINER com label deskcomm.purpose=e2e.",
-    );
-  const labels = JSON.parse(
-    execFileSync("docker", ["inspect", "--format", "{{json .Config.Labels}}", container], {
-      encoding: "utf8",
-    }),
-  ) as Record<string, string>;
-  if (
-    labels["com.supabase.cli.project"] !== project ||
-    (!ci && labels["deskcomm.purpose"] !== "e2e")
-  )
-    throw new Error("Container não identificado como banco efêmero desta jornada.");
-}
 
 const svc = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -142,8 +107,11 @@ async function login(page: Page, password = OWNER_PASSWORD): Promise<void> {
 test.describe.configure({ mode: "serial", timeout: 120_000 });
 
 test.describe("J1 — onboarding do dono numa instalação fresca", () => {
-  test.beforeAll(async () => {
-    assertEphemeralRuntime();
+  test.beforeAll(async ({}, info) => {
+    await assertEphemeralRuntime(
+      String(info.project.use.baseURL ?? `http://localhost:${process.env.E2E_PORT ?? "3001"}`),
+      true,
+    );
     // Reset ao estado recém-bootstrapado (re-runs idempotentes): wizard zerado,
     // sem agente, sem canal, sem fatores MFA do dono.
     const org = await orgRow();

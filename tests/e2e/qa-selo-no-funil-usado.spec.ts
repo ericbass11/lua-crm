@@ -15,11 +15,12 @@
  *
  * Não é gate: é observação, e o resultado é uma captura para olhar.
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
+import { assertEphemeralRuntime } from "./helpers/ephemeral-runtime";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -31,14 +32,11 @@ interface Creds {
 }
 const creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
 
-/** Escreve no banco pelo container — é simulação de ESTADO, não de comportamento. */
-function sql(query: string): string {
-  return execFileSync(
-    "docker",
-    ["exec", "-i", "supabase_db_deskcomm-crm", "psql", "-U", "postgres", "-d", "postgres", "-t", "-c", query],
-    { encoding: "utf8" },
-  );
-}
+const svc = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } },
+);
 
 async function login(page: Page): Promise<void> {
   await page.goto(`${APP_URL}/login`);
@@ -53,64 +51,106 @@ test.describe("QA — o selo de autoria com o funil já vivido", () => {
     test.setTimeout(180_000);
     fs.mkdirSync(SAIDA, { recursive: true });
 
-    // Um mês de uso normal: o dono mexeu nas etapas em momentos diferentes.
-    sql(`
-      update crm_stages s set last_change_actor_kind='user',
-             last_change_at = now() - (random()*30 || ' days')::interval
-        from crm_pipelines p, organizations o
-       where s.pipeline_id=p.id and p.organization_id=o.id and o.slug='e2e-test-org'
-         and s.is_archived=false;
-    `);
-    // E o assistente mexeu em UMA, agora há pouco. É esta que precisa saltar.
-    sql(`
-      update crm_stages s set last_change_actor_kind='ai', last_change_at = now()
-        from crm_pipelines p, organizations o
-       where s.pipeline_id=p.id and p.organization_id=o.id and o.slug='e2e-test-org'
-         and s.is_archived=false
-         and s.id = (select s2.id from crm_stages s2 join crm_pipelines p2 on p2.id=s2.pipeline_id
-                      join organizations o2 on o2.id=p2.organization_id
-                     where o2.slug='e2e-test-org' and s2.is_archived=false
-                     order by s2.position desc limit 1);
-    `);
+    await assertEphemeralRuntime(APP_URL);
+    const { data: org, error: orgError } = await svc
+      .from("organizations")
+      .select("id")
+      .eq("slug", "e2e-test-org")
+      .single();
+    expect(orgError).toBeNull();
+    const { data: pipeline, error: pipelineError } = await svc
+      .from("crm_pipelines")
+      .select("id")
+      .eq("organization_id", org!.id)
+      .eq("is_default", true)
+      .single();
+    expect(pipelineError).toBeNull();
+    const { data: previous, error: previousError } = await svc
+      .from("crm_stages")
+      .select("id,last_change_actor_kind,last_change_at")
+      .eq("organization_id", org!.id)
+      .eq("pipeline_id", pipeline!.id)
+      .eq("is_archived", false)
+      .order("position");
+    expect(previousError).toBeNull();
+    expect(previous!.length).toBeGreaterThan(1);
+    try {
+      const { data: changed, error: changedError } = await svc
+        .from("crm_stages")
+        .update({
+          last_change_actor_kind: "user",
+          last_change_at: new Date(Date.now() - 86400000).toISOString(),
+        })
+        .eq("organization_id", org!.id)
+        .in(
+          "id",
+          previous!.map((s) => s.id),
+        )
+        .select("id");
+      expect(changedError).toBeNull();
+      expect(changed).toHaveLength(previous!.length);
+      const { data: ai, error: aiError } = await svc
+        .from("crm_stages")
+        .update({ last_change_actor_kind: "ai", last_change_at: new Date().toISOString() })
+        .eq("organization_id", org!.id)
+        .eq("id", previous!.at(-1)!.id)
+        .select("id");
+      expect(aiError).toBeNull();
+      expect(ai).toHaveLength(1);
+      await login(page);
+      await page.goto(`${APP_URL}/app/settings/tenant/pipelines`);
+      await page.waitForLoadState("networkidle");
 
-    await login(page);
-    await page.goto(`${APP_URL}/app/settings/tenant/pipelines`);
-    await page.waitForLoadState("networkidle");
+      const doAgente = page.locator('[data-autoria="ai"]');
+      const doHumano = page.locator('[data-autoria="user"]');
+      const nAgente = await doAgente.count();
+      const nHumano = await doHumano.count();
 
-    const doAgente = page.locator('[data-autoria="ai"]');
-    const doHumano = page.locator('[data-autoria="user"]');
-    const nAgente = await doAgente.count();
-    const nHumano = await doHumano.count();
+      console.info(`[QA] selos na tela → assistente: ${nAgente} · você/time: ${nHumano}`);
+      console.info(
+        `[QA] proporção do sinal que importa: ${nAgente}/${nAgente + nHumano} = ` +
+          `${Math.round((nAgente / Math.max(1, nAgente + nHumano)) * 100)}%`,
+      );
 
-    console.info(`[QA] selos na tela → assistente: ${nAgente} · você/time: ${nHumano}`);
-    console.info(
-      `[QA] proporção do sinal que importa: ${nAgente}/${nAgente + nHumano} = ` +
-        `${Math.round((nAgente / Math.max(1, nAgente + nHumano)) * 100)}%`,
-    );
+      // Medida por ferramenta, não a olho: quanto da altura da lista é selo?
+      const alturas = await page.evaluate(() => {
+        const selos = [...document.querySelectorAll("[data-autoria]")];
+        const linhas = [...document.querySelectorAll('[data-testid^="etapa-"]')];
+        const soma = (els: Element[]) =>
+          els.reduce((t, e) => t + (e as HTMLElement).getBoundingClientRect().height, 0);
+        return { selos: soma(selos), linhas: soma(linhas) };
+      });
+      const pct = Math.round((alturas.selos / Math.max(1, alturas.linhas)) * 100);
+      console.info(
+        `[QA] altura ocupada por selo: ${Math.round(alturas.selos)}px de ${Math.round(alturas.linhas)}px da lista (${pct}%)`,
+      );
 
-    // Medida por ferramenta, não a olho: quanto da altura da lista é selo?
-    const alturas = await page.evaluate(() => {
-      const selos = [...document.querySelectorAll("[data-autoria]")];
-      const linhas = [...document.querySelectorAll('[data-testid^="etapa-"]')];
-      const soma = (els: Element[]) =>
-        els.reduce((t, e) => t + (e as HTMLElement).getBoundingClientRect().height, 0);
-      return { selos: soma(selos), linhas: soma(linhas) };
-    });
-    const pct = Math.round((alturas.selos / Math.max(1, alturas.linhas)) * 100);
-    console.info(
-      `[QA] altura ocupada por selo: ${Math.round(alturas.selos)}px de ${Math.round(alturas.linhas)}px da lista (${pct}%)`,
-    );
+      await page.screenshot({
+        path: path.join(SAIDA, "qa-selo-no-funil-usado.png"),
+        fullPage: true,
+      });
+      console.info("[QA] captura salva: qa-selo-no-funil-usado.png");
 
-    await page.screenshot({
-      path: path.join(SAIDA, "qa-selo-no-funil-usado.png"),
-      fullPage: true,
-    });
-    console.info("[QA] captura salva: qa-selo-no-funil-usado.png");
-
-    // Guarda de vacuidade: sem selo nenhum, os números acima não medem nada.
-    expect(nAgente, "o estado simulado precisa produzir o selo do assistente").toBeGreaterThan(0);
-    // Depois da correção: pessoa não gera selo. Se isto voltar a ser > 0, o ruído
-    // que a medição de 13% expôs está de volta.
-    expect(nHumano, "mudança feita por pessoa não deve gerar selo").toBe(0);
+      // Guarda de vacuidade: sem selo nenhum, os números acima não medem nada.
+      expect(nAgente, "o estado simulado precisa produzir o selo do assistente").toBeGreaterThan(0);
+      // Depois da correção: pessoa não gera selo. Se isto voltar a ser > 0, o ruído
+      // que a medição de 13% expôs está de volta.
+      expect(nHumano, "mudança feita por pessoa não deve gerar selo").toBe(0);
+    } finally {
+      for (const stage of previous!) {
+        const { data: restored, error } = await svc
+          .from("crm_stages")
+          .update({
+            last_change_actor_kind: stage.last_change_actor_kind,
+            last_change_at: stage.last_change_at,
+          })
+          .eq("organization_id", org!.id)
+          .eq("id", stage.id)
+          .select("id,last_change_actor_kind,last_change_at")
+          .single();
+        expect(error).toBeNull();
+        expect(restored).toEqual(stage);
+      }
+    }
   });
 });

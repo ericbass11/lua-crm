@@ -406,7 +406,7 @@ export function AgendaClient({
       data-testid="tela-agenda"
       data-fonte={agendamentosIniciais.length > 0 ? "api" : "api-sem-dado"}
       data-fuso={fusoDeApresentacao ?? "organizacao"}
-      className="flex h-full flex-col gap-4 p-6"
+      className="flex min-h-full flex-col gap-4 p-6"
     >
       {/*
         Em Suspense porque `useSearchParams` obriga: sem a fronteira, o Next
@@ -1012,7 +1012,7 @@ export function AgendaClient({
         agendamentos={agendamentosAcionaveis}
         pessoas={pessoas}
         agora={new Date()}
-        className="max-h-[320px]"
+        className="max-h-[320px] shrink-0"
         // ⚠️ ESTAS DUAS PROPS FALTAVAM, e a ausência tinha cara de permissão.
         // `HistoricoDaAgenda` usa `disabled={!onRemarcar}`; sem elas os botões
         // nasciam cinzas em toda linha, de toda organização — e o `title` dizia
@@ -1115,7 +1115,7 @@ export function AgendaClient({
            não `replace`, porque é o que o Histórico faz com `<Link>` e é o que faz
            o botão voltar do celular fechar o detalhe. */
         onAbrirAgendamento={(id) => router.push(`/app/agenda?compromisso=${id}`)}
-        className="min-h-0 flex-1"
+        className="h-[60vh] min-h-[360px] shrink-0"
       />
     </div>
   );

@@ -18,6 +18,10 @@ import { randomUUID } from "node:crypto";
 
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
+import { assertEphemeralRuntime } from "./helpers/ephemeral-runtime";
+
+import { PERGUNTAS_CONFIGURADOR } from "@/lib/onboarding/configurador";
+import { RISCO_WHATSAPP_VERSAO } from "@/lib/onboarding/risco-whatsapp";
 
 const svc = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,12 +34,17 @@ const email = `wizard-${randomUUID().slice(0, 8)}@qa.local`;
 
 let userId = "";
 let orgId = "";
+let appUrl = "";
 
 /**
  * O estado que o `install.sh` deixa: dono criado, organização com o nome
  * placeholder, provedor de IA escolhido no terminal, e `onboarded_at` nulo.
  */
-test.beforeAll(async () => {
+test.beforeAll(async ({}, info) => {
+  appUrl = String(info.project.use.baseURL ?? `http://localhost:${process.env.E2E_PORT ?? "3001"}`);
+  await assertEphemeralRuntime(appUrl, true);
+  if (process.env.INTERNAL_AGENT_RUN_STUB !== "true")
+    throw new Error("Wizard requires controlled provider, without external calls.");
   const { data: criado, error: errUser } = await svc.auth.admin.createUser({
     email,
     password: SENHA,
@@ -59,26 +68,61 @@ test.beforeAll(async () => {
   if (errOrg || !org) throw errOrg ?? new Error("sem org");
   orgId = org.id as string;
 
-  await svc.from("user_organizations").insert({
+  const { error: membershipError } = await svc.from("user_organizations").insert({
     organization_id: orgId,
     user_id: userId,
     role: "admin",
     accepted_at: new Date().toISOString(),
   });
+  if (membershipError) throw membershipError;
 });
 
 test.afterAll(async () => {
+  if (!orgId && !userId) return;
+  await assertEphemeralRuntime(appUrl, true);
+  const failures: string[] = [];
+  const attempt = async (name: string, action: () => PromiseLike<void>) => {
+    try {
+      await action();
+    } catch {
+      failures.push(name);
+    }
+  };
   if (orgId) {
-    await svc.from("ai_agent_runs").delete().eq("organization_id", orgId);
-    await svc.from("ai_agent_versions").delete().eq("organization_id", orgId);
-    await svc.from("ai_agents").delete().eq("organization_id", orgId);
-    await svc.from("org_memory_pointers").delete().eq("organization_id", orgId);
-    await svc.from("org_memory_versions").delete().eq("organization_id", orgId);
-    await svc.from("crm_stages").delete().eq("organization_id", orgId);
-    await svc.from("crm_pipelines").delete().eq("organization_id", orgId);
-    await svc.from("user_organizations").delete().eq("organization_id", orgId);
+    await attempt("organization deletion", async () => {
+      const { error } = await svc.from("organizations").delete().eq("id", orgId);
+      if (error) failures.push("organization deletion");
+    });
+    for (const table of [
+      "organizations",
+      "ai_agents",
+      "ai_agent_versions",
+      "ai_agent_runs",
+      "ai_provider_credentials",
+      "channel_sessions",
+      "user_organizations",
+    ]) {
+      await attempt("cleanup proof: " + table, async () => {
+        const { count, error: proofError } = await svc
+          .from(table)
+          .select("id", { count: "exact", head: true })
+          .eq(table === "organizations" ? "id" : "organization_id", orgId);
+        if (proofError || count !== 0) failures.push("cleanup proof: " + table);
+      });
+    }
   }
-  if (userId) await svc.auth.admin.deleteUser(userId);
+  if (userId) {
+    await attempt("owner deletion", async () => {
+      const { error } = await svc.auth.admin.deleteUser(userId);
+      if (error && error.status !== 404) failures.push("owner deletion");
+    });
+    await attempt("owner absence proof", async () => {
+      const { data, error: proofError } = await svc.auth.admin.getUserById(userId);
+      if (data.user || !proofError || proofError.status !== 404)
+        failures.push("owner absence proof");
+    });
+  }
+  expect(failures, "isolated wizard cleanup must finish and prove absence").toEqual([]);
 });
 
 async function login(page: Page): Promise<void> {
@@ -121,7 +165,7 @@ test.describe("o wizard monta um funcionário", () => {
     await page.locator("#display_name").fill("Clínica Bem Viver");
     await page.locator('input[type="checkbox"]').check();
     await page.getByRole("button", { name: /^continuar$/i }).click();
-    await page.waitForURL(/\/onboarding\/connect-whatsapp/, { timeout: 30_000 });
+    await page.waitForURL(/\/onboarding\/risco-whatsapp/, { timeout: 30_000 });
 
     // O layout do wizard é compartilhado entre os passos e não re-renderizava:
     // o cabeçalho seguia dizendo "Minha Empresa" o onboarding inteiro, mesmo
@@ -133,6 +177,23 @@ test.describe("o wizard monta um funcionário", () => {
     await expect(cabecalho).not.toContainText("Minha Empresa");
   });
 
+  test("aceitar o risco é obrigatório antes de escolher a conexão", async ({ page }) => {
+    await login(page);
+    await page.waitForURL(/\/onboarding\/risco-whatsapp/);
+    const accept = page.getByRole("button", { name: "Aceitar e conectar meu número" });
+    await expect(accept).toBeDisabled();
+    await page.locator('input[name="accepted"]').check();
+    await accept.click();
+    await page.waitForURL(/\/onboarding\/connect-whatsapp/);
+    const { data, error } = await svc
+      .from("organizations")
+      .select("onboarding_state")
+      .eq("id", orgId)
+      .single();
+    expect(error).toBeNull();
+    expect(data!.onboarding_state.risco_whatsapp).toMatchObject({ version: RISCO_WHATSAPP_VERSAO });
+    expect(data!.onboarding_state.risco_whatsapp.accepted_at).toBeTruthy();
+  });
   test("o passo do telefone pergunta COMO se conecta antes de assumir o código", async ({
     page,
   }) => {
@@ -179,9 +240,47 @@ test.describe("o wizard monta um funcionário", () => {
     await expect(corpo).not.toContainText(/Configurações → Canais/i);
 
     await page.getByRole("button", { name: /pular por enquanto/i }).click();
-    await page.waitForURL(/\/onboarding\/setup-ai/, { timeout: 30_000 });
+    await page.waitForURL(/\/onboarding\/configurar-atendimento/, { timeout: 30_000 });
   });
 
+  test("configurar coleta as respostas e exige revisão antes de treinar", async ({ page }) => {
+    await login(page);
+    await page.waitForURL(/\/onboarding\/configurar-atendimento/);
+    const answers: Record<string, string> = {
+      nome_do_negocio: "Clínica Bem Viver",
+      descricao_do_negocio: "Consultas e atendimentos agendados",
+      regiao_atendida: "São Paulo",
+      horario_de_atendimento: "Segunda a sexta, 8h às 18h",
+      servicos: "Consulta; retorno",
+      qualificacao: "Nome; tipo de atendimento",
+      passagem_para_humano: "Emergência; pedido de uma pessoa",
+      resumo_para_humano: "Nome; motivo; horário desejado",
+      temas_proibidos: "Não diagnosticar; não inventar disponibilidade",
+      tom_de_voz: "Objetivo e cordial",
+      perguntas_frequentes: "Atende sábado? => Não, somente segunda a sexta.",
+    };
+    for (const question of PERGUNTAS_CONFIGURADOR) {
+      const input = page.getByLabel(question.texto, { exact: true });
+      await expect(input).toBeVisible();
+      await input.fill(answers[question.id]!);
+      await page.getByRole("button", { name: "Responder e continuar", exact: true }).click();
+      await expect(input).not.toBeVisible();
+    }
+    await expect(page.getByRole("heading", { name: "Pronto para sua revisão" })).toBeVisible();
+    await expect(page).toHaveURL(/\/onboarding\/configurar-atendimento/);
+    await page.getByRole("button", { name: "Aprovar configuração" }).click();
+    await page.waitForURL(/\/onboarding\/setup-ai/);
+    const { data, error } = await svc
+      .from("organizations")
+      .select("onboarding_state")
+      .eq("id", orgId)
+      .single();
+    expect(error).toBeNull();
+    expect(data!.onboarding_state.configurador_atendimento.session.status).toBe("revisado");
+    expect(data!.onboarding_state.configurador_atendimento.session.spec.business.name).toBe(
+      "Clínica Bem Viver",
+    );
+  });
   test("treinar mostra o cérebro dele — e sem chave não é um beco", async ({ page }) => {
     // Vale nos dois mundos pela mesma razão do caso do quadro (ver lá): no CI
     // não há chave de provedor e o bloco vira o formulário para colar uma; na
@@ -318,7 +417,10 @@ test.describe("o wizard monta um funcionário", () => {
     // assumisse espaço livre vermelharia conforme a resposta do modelo. Remover
     // antes de acrescentar também é o que o dono faz — tira o que não serve e
     // põe o que falta.
-    await page.getByRole("button", { name: /^remover$/i }).last().click();
+    await page
+      .getByRole("button", { name: /^remover$/i })
+      .last()
+      .click();
     await page.getByRole("button", { name: /adicionar coluna/i }).click();
     await expect(page.getByText(/dê um nome à coluna em branco/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /usar este quadro/i })).toBeDisabled();
@@ -393,23 +495,16 @@ test.describe("o wizard monta um funcionário", () => {
 
     const { data: versao } = await svc
       .from("ai_agent_versions")
-      .select("system_prompt, provider, tool_ids, pipeline_ids")
+      .select("system_prompt, provider, tool_ids, pipeline_ids,status,credential_id")
       .eq("organization_id", orgId)
       .limit(1)
       .maybeSingle();
 
-    if (!versao) {
-      // Sem chave de IA (o caso do CI e de toda instalação que ainda não
-      // configurou provedor) a versão NÃO é criada de propósito: publicar
-      // apontando para uma chave inexistente entregaria um funcionário "no ar"
-      // que erra em toda mensagem. Ausência aqui é a decisão certa, não falha.
-      return;
-    }
-
-    expect(versao.system_prompt).not.toContain("Nunca prometa desconto");
-    // Publicou: então nasceu podendo mexer no CRM, com o provedor da instalação.
-    expect(versao.provider).toBe("anthropic");
-    expect((versao.tool_ids as string[])?.length ?? 0).toBeGreaterThan(0);
+    // Current onboarding saves an inert version before asking for a credential;
+    // creating this draft never publishes the agent or calls an external model.
+    expect(versao).toMatchObject({ status: "draft", credential_id: null, provider: "anthropic" });
+    expect(versao!.system_prompt).not.toContain("Nunca prometa desconto");
+    expect((versao!.tool_ids as string[])?.length ?? 0).toBeGreaterThan(0);
   });
 
   test("o wizard termina apresentando o sistema, e o resumo não acusa passo inexistente", async ({
@@ -417,9 +512,99 @@ test.describe("o wizard monta um funcionário", () => {
   }) => {
     await login(page);
     await page.waitForURL(/\/onboarding\/testar/, { timeout: 30_000 });
-    await page.getByRole("button", { name: /^continuar$/i }).click();
 
+    const countMessages = async () => {
+      const { count, error } = await svc
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", orgId);
+      expect(error).toBeNull();
+      return count;
+    };
+    const before = await countMessages();
+    await page.getByRole("button", { name: /^continuar$/i }).click();
+    await expect(page.getByText("Faça um ensaio com resposta antes de continuar.")).toBeVisible();
+    const reply = page.waitForResponse(
+      (res) =>
+        /\/versions\/[^/]+\/test$/.test(new URL(res.url()).pathname) &&
+        res.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Mandar mensagem", exact: true }).click();
+    const response = await reply;
+    expect(response.ok()).toBe(true);
+    const { data: result } = await response.json();
+    expect(result).toMatchObject({ stub: true, status: "ok" });
+    expect(result.final_text.trim()).not.toBe("");
+    await expect(page.getByText(result.final_text, { exact: true })).toBeVisible();
+    const { data: run, error: runError } = await svc
+      .from("ai_agent_runs")
+      .select("id,agent_id,agent_version_id,status,is_dry_run,completed_at")
+      .eq("organization_id", orgId)
+      .eq("id", result.run_id)
+      .single();
+    expect(runError).toBeNull();
+    expect(run).toMatchObject({ status: "completed", is_dry_run: true });
+    expect(run!.completed_at).toBeTruthy();
+    expect(await countMessages()).toBe(before);
+    await page.getByRole("button", { name: /^continuar$/i }).click();
+    await page.waitForURL(/\/onboarding\/ativar/);
+    const activation = page.getByRole("button", { name: "Ativar agente agora", exact: true });
+    await activation.click();
+    await expect(page.getByRole("alert")).toContainText("Não foi possível ativar");
+    const { data: agent, error: agentError } = await svc
+      .from("ai_agents")
+      .select("published_version_id")
+      .eq("organization_id", orgId)
+      .eq("id", run!.agent_id)
+      .single();
+    expect(agentError).toBeNull();
+    expect(agent!.published_version_id).toBeNull();
+    // Only in the guarded ephemeral runtime: synthetic credential, unpaired
+    // channel and empty phone allowlist. No external key or number is used.
+    const { data: version, error: versionError } = await svc
+      .from("ai_agent_versions")
+      .select("provider")
+      .eq("organization_id", orgId)
+      .eq("id", run!.agent_version_id)
+      .single();
+    expect(versionError).toBeNull();
+    const { data: credential, error: credentialError } = await svc
+      .from("ai_provider_credentials")
+      .insert({
+        organization_id: orgId,
+        provider: version!.provider,
+        label: "Sandbox wizard QA",
+        api_key_encrypted: "\\x00",
+        api_key_iv: "\\x00",
+        api_key_tag: "\\x00",
+        api_key_last4: "test",
+        is_active: true,
+        validated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    expect(credentialError).toBeNull();
+    const { data: channel, error: channelError } = await svc
+      .from("channel_sessions")
+      .insert({
+        organization_id: orgId,
+        provider: "waha",
+        session_name: `qa_wizard_${randomUUID().slice(0, 8)}`,
+        status: "WORKING",
+        metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [] },
+      })
+      .select("id")
+      .single();
+    expect(channelError).toBeNull();
+    const { error: bindError } = await svc
+      .from("ai_agent_versions")
+      .update({ credential_id: credential!.id, channel_session_id: channel!.id })
+      .eq("organization_id", orgId)
+      .eq("id", run!.agent_version_id);
+    expect(bindError).toBeNull();
+    await activation.click();
     await page.waitForURL(/\/onboarding\/invite-team/, { timeout: 30_000 });
+    expect(await countMessages()).toBe(before);
     await page.getByRole("button", { name: /pular por enquanto/i }).click();
     await page.waitForURL(/\/onboarding\/done/, { timeout: 30_000 });
 

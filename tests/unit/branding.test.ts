@@ -238,7 +238,7 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
   },
 
   // ─── INFRA — cookie/storage/contêiner. Renomear desloga ou perde estado. ───
-  "lib/theme.tsx": {
+  "lib/theme-storage.ts": {
     categoria: "INFRA",
     motivo:
       "chave de localStorage já gravada nos navegadores para preservar a escolha de tema. Renomear faria usuários existentes perderem a preferência sem migração",

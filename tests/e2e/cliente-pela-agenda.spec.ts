@@ -119,9 +119,14 @@ function linhaDoContato(page: Page) {
  * e passar vazia.
  */
 async function celulaDeTags(page: Page) {
-  const cabecalhos = (await page.getByRole("columnheader").allInnerTexts()).map((c) => c.trim());
-  const indice = cabecalhos.indexOf("Tags");
-  expect(indice, `a lista de Contatos perdeu a coluna Tags: ${JSON.stringify(cabecalhos)}`).toBeGreaterThan(-1);
+  const cabecalhos = (await page.getByRole("columnheader").allInnerTexts()).map((c) =>
+    c.trim().toLocaleLowerCase("pt-BR"),
+  );
+  const indice = cabecalhos.indexOf("tags");
+  expect(
+    indice,
+    `a lista de Contatos perdeu a coluna Tags: ${JSON.stringify(cabecalhos)}`,
+  ).toBeGreaterThan(-1);
   return linhaDoContato(page).getByRole("cell").nth(indice);
 }
 
