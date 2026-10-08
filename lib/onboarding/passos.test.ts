@@ -87,7 +87,7 @@ describe("próximo passo", () => {
         welcome: { accepted_at: "x", timezone: "America/Sao_Paulo", display_name: "N" },
         risco_whatsapp: { accepted_at: "x", version: "2026-10-01" },
         whatsapp: { status: "skipped", skipped: true },
-        configurador_atendimento: { session: SESSAO_REVISADA },
+        configurador_atendimento: { session: SESSAO_REVISADA, updated_at: "2026-10-01T22:00:00.000Z" },
         ai: { agent_id: "a", prompt_template: "p" },
         funil: { pipeline_id: "f", origem: "ia", etapas: 6 },
         teste,

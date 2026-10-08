@@ -39447,3 +39447,12 @@ end $$;
 -- a lista de erros benignos do update.sh, então a atualização não diz
 -- "atualizado" com módulo fora do ar. Instalação nova não tem módulo: no-op.
 do $f$ begin perform public.fn_conferir_modulos_instalados(); end $f$;
+
+-- ---- roteamento DID restrito ao worker (migration 0924) ----
+-- 0924 — DID routing is an internal service-role operation, never a tenant RPC.
+-- Preserve the existing routing query and repair privileges inherited from defaults.
+alter function public.fn_resolve_inbound_number(text) set search_path = public, pg_temp;
+revoke execute on function public.fn_resolve_inbound_number(text) from public, anon, authenticated;
+grant execute on function public.fn_resolve_inbound_number(text) to service_role;
+
+notify pgrst, 'reload schema';
