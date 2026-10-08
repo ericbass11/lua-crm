@@ -94,4 +94,41 @@ describe("E2E API target bound to actual ephemeral database", () => {
     ];
     expect(() => verifyEphemeralTarget(e)).toThrow(/another database/);
   });
+  it("allows direct bootstrap only through the verified database published port", () => {
+    const e = evidence();
+    e.directDatabaseUrl = "postgresql://postgres:synthetic@127.0.0.1:54322/postgres";
+    e.containers[0]!.NetworkSettings.Ports = {
+      "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "54322" }],
+    };
+    expect(() => verifyEphemeralTarget(e)).not.toThrow();
+    e.directDatabaseUrl = "postgresql://postgres:synthetic@127.0.0.1:55322/postgres";
+    expect(() => verifyEphemeralTarget(e)).toThrow(/Direct PostgreSQL/);
+    e.directDatabaseUrl = "postgresql://postgres:synthetic@127.0.0.1:54322/postgres?host=personal";
+    expect(() => verifyEphemeralTarget(e)).toThrow(/Direct PostgreSQL/);
+  });
+  it("rejects cross-family and ambiguous localhost PostgreSQL endpoints", () => {
+    const e = evidence();
+    const db = e.containers[0]!;
+    db.NetworkSettings.Ports = {
+      "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "54322" }],
+    };
+    e.directDatabaseUrl = "postgresql://postgres:synthetic@[::1]:54322/postgres";
+    expect(() => verifyEphemeralTarget(e)).toThrow(/Direct PostgreSQL/);
+    e.directDatabaseUrl = "postgresql://postgres:synthetic@localhost:54322/postgres";
+    expect(() => verifyEphemeralTarget(e)).toThrow(/Direct PostgreSQL/);
+    db.NetworkSettings.Ports["5432/tcp"]![0]!.HostIp = "::1";
+    e.directDatabaseUrl = "postgresql://postgres:synthetic@[::1]:54322/postgres";
+    expect(() => verifyEphemeralTarget(e)).not.toThrow();
+    e.directDatabaseUrl = "postgresql://postgres:synthetic@127.0.0.1:54322/postgres";
+    expect(() => verifyEphemeralTarget(e)).toThrow(/Direct PostgreSQL/);
+  });
+  it("refuses missing or divergent direct bootstrap credentials", () => {
+    const file = "NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321\n" +
+      "SUPABASE_SERVICE_ROLE_KEY=ephemeral\nSUPABASE_DB_URL=ephemeral-db";
+    const env = { NEXT_PUBLIC_SUPABASE_URL: "http://localhost:54321",
+      SUPABASE_SERVICE_ROLE_KEY: "ephemeral", SUPABASE_DB_URL: "personal-db" };
+    expect(() => verifyFixtureEnvironment(file, env, true)).toThrow(/credentials differ/);
+    expect(() => verifyFixtureEnvironment(file, { ...env, SUPABASE_DB_URL: undefined }, true))
+      .toThrow(/credentials differ/);
+  });
 });

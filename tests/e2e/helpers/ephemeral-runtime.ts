@@ -20,14 +20,20 @@ export function projectApiConfig(config: string): { project: string; apiPort: nu
   return { project, apiPort };
 }
 
-export function verifyFixtureEnvironment(file: string, env: Record<string, string | undefined>): void {
+export function verifyFixtureEnvironment(
+  file: string,
+  env: Record<string, string | undefined>,
+  requireDirectDatabase = false,
+): void {
   const values: Record<string, string> = {};
   for (const line of file.split("\n")) {
     const clean = line.trim();
     const index = clean.indexOf("=");
     if (index > 0 && !clean.startsWith("#")) values[clean.slice(0, index)] = clean.slice(index + 1);
   }
-  for (const key of ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
+  const keys = ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
+  if (requireDirectDatabase) keys.push("SUPABASE_DB_URL");
+  for (const key of keys) {
     if (!values[key] || values[key] !== env[key])
       throw new Error("Fixture credentials differ from the application E2E environment.");
   }
@@ -56,6 +62,7 @@ export function verifyEphemeralTarget(input: {
   databaseId: string;
   containers: Container[];
   ci: boolean;
+  directDatabaseUrl?: string;
 }): void {
   const api = localApi(input.supabaseUrl);
   const appApi = localApi(input.appSupabaseUrl);
@@ -100,10 +107,28 @@ export function verifyEphemeralTarget(input: {
   ];
   if (!host || !aliases.includes(host))
     throw new Error("Ephemeral REST points to another database.");
+  if (input.directDatabaseUrl !== undefined) {
+    const direct = new URL(input.directDatabaseUrl);
+    if (
+      !["postgres:", "postgresql:"].includes(direct.protocol) ||
+      !["127.0.0.1", "[::1]"].includes(direct.hostname) ||
+      direct.pathname !== "/postgres" || direct.search || direct.hash ||
+      !direct.port ||
+      !db.NetworkSettings.Ports?.["5432/tcp"]?.some(
+        (p) => p.HostPort === direct.port &&
+          (direct.hostname === "127.0.0.1" ? ["0.0.0.0", "127.0.0.1"] : ["::", "::1"])
+            .includes(p.HostIp),
+      )
+    ) throw new Error("Direct PostgreSQL URL does not target the verified ephemeral database.");
+  }
 }
 
-export async function assertEphemeralRuntime(appUrl: string, requireStub = false): Promise<void> {
-  verifyFixtureEnvironment(fs.readFileSync(".env.e2e", "utf8"), process.env);
+export async function assertEphemeralRuntime(
+  appUrl: string,
+  requireStub = false,
+  requireDirectDatabase = false,
+): Promise<void> {
+  verifyFixtureEnvironment(fs.readFileSync(".env.e2e", "utf8"), process.env, requireDirectDatabase);
   const app = new URL(appUrl);
   localApi(app.origin);
   if (requireStub && process.env.INTERNAL_AGENT_RUN_STUB !== "true")
@@ -153,5 +178,6 @@ export async function assertEphemeralRuntime(appUrl: string, requireStub = false
     containers: inspect(ids),
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
     appSupabaseUrl,
+    directDatabaseUrl: requireDirectDatabase ? process.env.SUPABASE_DB_URL : undefined,
   });
 }

@@ -18,10 +18,12 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
+import pg from "pg";
 import { assertEphemeralRuntime } from "./helpers/ephemeral-runtime";
 
 import { PERGUNTAS_CONFIGURADOR } from "@/lib/onboarding/configurador";
 import { RISCO_WHATSAPP_VERSAO } from "@/lib/onboarding/risco-whatsapp";
+import { seedPlatformPlaybook } from "@/lib/agent-engine/agent/playbook-seed";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
@@ -111,7 +113,16 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await assertEphemeralRuntime(
       String(info.project.use.baseURL ?? `http://localhost:${process.env.E2E_PORT ?? "3001"}`),
       true,
+      true,
     );
+    // O CI não sobe o worker: reproduz somente seu bootstrap oficial,
+    // sem laços de consumo ou envio. O DSN foi vinculado ao mesmo DB efêmero.
+    const bootstrapPool = new pg.Pool({ connectionString: process.env.SUPABASE_DB_URL, max: 1 });
+    try {
+      await seedPlatformPlaybook(bootstrapPool);
+    } finally {
+      await bootstrapPool.end();
+    }
     // Reset ao estado recém-bootstrapado (re-runs idempotentes): wizard zerado,
     // sem agente, sem canal, sem fatores MFA do dono.
     const org = await orgRow();
