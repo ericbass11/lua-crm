@@ -12059,40 +12059,36 @@ create trigger trg_contacts_anonimizado_limpa_propostas
 -- editável numa versão publicada sem virar versão nova — a própria ausência de
 -- escopo, com aparência de controle. Racional completo na migration.
 
-alter table public.ai_agent_versions
-  add column if not exists pipeline_ids uuid[] not null default '{}'::uuid[];
+-- Correção canônica 0925: introduzir coluna e derivar histórico são uma operação.
+-- Coluna existente, inclusive escopo explicitamente vazio, não recebe backfill.
+DO $pipeline_initial_scope$
+DECLARE introduced boolean;
+BEGIN
+  LOCK TABLE public.ai_agent_versions IN ACCESS EXCLUSIVE MODE;
+  SELECT NOT EXISTS (
+    SELECT 1 FROM pg_attribute
+    WHERE attrelid='public.ai_agent_versions'::regclass
+      AND attname='pipeline_ids' AND attnum>0 AND NOT attisdropped
+  ) INTO introduced;
+  IF introduced THEN
+    ALTER TABLE public.ai_agent_versions
+      ADD COLUMN pipeline_ids uuid[] NOT NULL DEFAULT '{}'::uuid[];
+    UPDATE public.ai_agent_versions v
+      SET pipeline_ids=sub.funis
+      FROM (
+        SELECT ca.actor_agent_id AS agent_id,
+               array_agg(DISTINCT l.pipeline_id) AS funis
+        FROM public.crm_lead_activities ca
+        JOIN public.crm_leads l ON l.id=ca.lead_id
+        WHERE ca.actor_agent_id IS NOT NULL
+        GROUP BY ca.actor_agent_id
+      ) sub
+      WHERE v.agent_id=sub.agent_id AND v.pipeline_ids='{}'::uuid[];
+  END IF;
+END $pipeline_initial_scope$;
 
 comment on column public.ai_agent_versions.pipeline_ids is
   'Funis em que ESTE agente pode escrever (mover, editar, encerrar, taguear). Vazio = NENHUM: falha fechada. Escopo de ESCRITA; leitura não é filtrada por aqui (declarado na spec 17 §5).';
-
--- ---- backfill: o que JÁ funcionava continua funcionando ----
---
--- "Agente novo nasce fechado" e "agente existente vira fechado retroativamente"
--- são coisas MUITO diferentes. Sem este bloco, no dia do deploy todo agente em
--- produção pararia de mexer em card — de uma vez, e em silêncio.
---
--- O escopo inicial é DERIVADO do que cada agente realmente fez: os funis onde
--- ele já registrou atividade. Isso respeita o que funcionava E fecha os funis
--- que ele nunca tocou, que é o objetivo.
---
--- Medido antes de escrever: na produção deste projeto, apenas 1 dos 8 agentes
--- tem histórico (o SDR, no funil "Pedidos"). Os outros 7 nascem fechados sem
--- quebrar nada, porque nunca moveram card nenhum.
---
--- Só para versões PUBLICADAS/rascunho que ainda estão vazias — re-aplicar não
--- reabre escopo que alguém tenha fechado à mão depois.
-update public.ai_agent_versions v
-   set pipeline_ids = sub.funis
-  from (
-    select a.actor_agent_id as agent_id,
-           array_agg(distinct l.pipeline_id) as funis
-      from public.crm_lead_activities a
-      join public.crm_leads l on l.id = a.lead_id
-     where a.actor_agent_id is not null
-     group by a.actor_agent_id
-  ) sub
- where v.agent_id = sub.agent_id
-   and v.pipeline_ids = '{}'::uuid[];
 
 -- ---- o trigger de imutabilidade para de ignorar metade da configuração ----
 --
