@@ -127,12 +127,18 @@ describe("pacingKnobsUpdateSchema — number_activated_at (contrato da API)", ()
 
   it("aceita data passada", () => {
     expect(
-      pacingKnobsUpdateSchema.safeParse({ ...base, number_activated_at: "2026-07-14" }).success,
+      pacingKnobsUpdateSchema.safeParse({
+        ...base,
+        number_activated_at: "2026-07-14T12:00:00.000Z",
+      }).success,
     ).toBe(true);
   });
 
   it("recusa data no futuro", () => {
-    const r = pacingKnobsUpdateSchema.safeParse({ ...base, number_activated_at: "2099-01-01" });
+    const r = pacingKnobsUpdateSchema.safeParse({
+      ...base,
+      number_activated_at: "2099-01-01T12:00:00.000Z",
+    });
     expect(r.success).toBe(false);
   });
 
@@ -142,10 +148,10 @@ describe("pacingKnobsUpdateSchema — number_activated_at (contrato da API)", ()
     ).toBe(false);
   });
 
-  it("recusa null — 'sem data' não existe nesta coluna (not null no banco)", () => {
+  it("aceita null para voltar ao comportamento conservador do motor", () => {
     expect(
       pacingKnobsUpdateSchema.safeParse({ ...base, number_activated_at: null }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("segue .strict(): campo desconhecido derruba (evita typo salvar nada em silêncio)", () => {

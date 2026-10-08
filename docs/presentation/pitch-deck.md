@@ -3,18 +3,20 @@ marp: true
 theme: default
 class: invert
 paginate: true
-title: LUA CRM — Pitch Deck v0.1
+title: DeskcommCRM — Pitch Deck v0.1
 description: CRM operacional com IA pra e-commerce brasileiro
 date: 2026-04-29
 ---
 
-# LUA CRM
+> **Registro de 2026-04-29.** Este deck foi montado quando o alvo de deploy era a Vercel — daí os slides de arquitetura e de custo. Hoje o CRM é self-host em VPS, e o deploy que vale está em [`docs/runbooks/deploy.md`](../runbooks/deploy.md).
+
+# DeskcommCRM
 
 ### O CRM operacional onde **IA e humanos atendem juntos** os clientes finais de PMEs de e-commerce no WhatsApp.
 
 **Multi-tenant · LGPD-nativo · MCP-ready · Brasil-first**
 
-<sub>Eric Souza — São Paulo, 29 de abril de 2026</sub>
+<sub>Rafael Melgaço — São Paulo, 29 de abril de 2026</sub>
 
 ---
 
@@ -34,7 +36,7 @@ PME de e-commerce brasileiro hoje atende cliente final num caos:
 
 ## 2. A nossa visão
 
-LUA CRM é a plataforma onde:
+DeskcommCRM é a plataforma onde:
 
 | Atendimento | Tecnologia | Compliance |
 |---|---|---|
@@ -287,8 +289,8 @@ Adotamos integralmente o **bundle herdado** da referência *Aula CRM Nichado WAH
 
 > "**Não é mais um CRM. É a plataforma onde IA e humanos atendem juntos.**"
 
-📧 eric@lua-crm.example
+📧 rafael@maudibrasil.com.br
 📍 São Paulo, BR
-🔗 docs: github.com/ericbass11/lua-crm (em breve)
+🔗 docs: github.com/melgarafael/DeskcommCRM (em breve)
 
 **Perguntas?**

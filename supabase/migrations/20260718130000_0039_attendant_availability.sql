@@ -1,4 +1,4 @@
--- 0039_attendant_availability — G5-01: config de roteamento + disponibilidade/
+-- 0170_attendant_availability — G5-01: config de roteamento + disponibilidade/
 -- horário por atendente (spec 13 §3.4/§3.5/§5). Persiste o <AttendantStatusToggle>
 -- da spec 04 §8.1-8.2 (100% ausente hoje — Apêndice B): is_available (toggle),
 -- capacity (ajustável por atendente, nunca constante no código), schedule

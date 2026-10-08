@@ -62,10 +62,18 @@ export interface SkillVersionRow {
 
 /** Skill ativa carregada por ponteiro — o que o runtime resolve no início do run. */
 export interface LoadedSkill {
+  versionId: string;
   name: string;
   description: string;
   body: string;
   matcher: SkillMatcher;
+  /**
+   * Manifesto do pacote instalável (Fase 2 — migration 0919): lista de arquivos
+   * `{ path, size, sha256, kind }` (kind: 'reference' | 'asset'). Skill sem pacote
+   * (body-only) tem manifest `[]`. Consumido por read_skill_reference (inbound-turn.ts)
+   * para validar que um ref_path pedido pelo modelo é conhecido ANTES de tocar storage.
+   */
+  manifest: unknown[];
 }
 
 function countLines(content: string): number {
@@ -86,10 +94,21 @@ export function validateSkillBody(body: string): void {
 /**
  * Publica uma versão nova de skill (imutável desde o INSERT — o trigger do banco veta
  * UPDATE). `tenantId` null = skill de plataforma (global). O matcher é validado aqui.
+ * `manifest` (lista de arquivos do pacote instalável) e `forkedFromVersionId` (fork-on-
+ * install do marketplace) são opcionais — default `[]`/null preserva os chamadores
+ * existentes (playbook seed, testes).
  */
 export async function insertSkillVersion(
   db: Queryable,
-  input: { tenantId: string | null; name: string; description: string; body: string; matcher: SkillMatcher },
+  input: {
+    tenantId: string | null;
+    name: string;
+    description: string;
+    body: string;
+    matcher: SkillMatcher;
+    manifest?: unknown[];
+    forkedFromVersionId?: string | null;
+  },
 ): Promise<SkillVersionRow> {
   if (input.name.trim() === '') {
     throw new Error('skill sem name — o índice precisa de um nome estável');
@@ -100,10 +119,18 @@ export async function insertSkillVersion(
   validateSkillBody(input.body);
   const matcher = skillMatcherSchema.parse(input.matcher);
   const { rows } = await db.query<SkillVersionRow>(
-    `insert into skill_versions (organization_id, name, description, body, matcher)
-     values ($1, $2, $3, $4, $5)
+    `insert into skill_versions (organization_id, name, description, body, matcher, manifest, forked_from_version_id)
+     values ($1, $2, $3, $4, $5, $6, $7)
      returning *`,
-    [input.tenantId, input.name, input.description, input.body, JSON.stringify(matcher)],
+    [
+      input.tenantId,
+      input.name,
+      input.description,
+      input.body,
+      JSON.stringify(matcher),
+      JSON.stringify(input.manifest ?? []),
+      input.forkedFromVersionId ?? null,
+    ],
   );
   const row = rows[0];
   if (row === undefined) {
@@ -149,13 +176,15 @@ export async function setSkillPointer(
  */
 export async function loadSkills(db: Queryable, tenantId: string): Promise<LoadedSkill[]> {
   const { rows } = await db.query<{
+    id: string;
     organization_id: string | null;
     name: string;
     description: string;
     body: string;
     matcher: SkillMatcher;
+    manifest: unknown[];
   }>(
-    `select v.organization_id, v.name, v.description, v.body, v.matcher
+    `select v.id, v.organization_id, v.name, v.description, v.body, v.matcher, v.manifest
      from skill_pointers p
      join skill_versions v on v.id = p.version_id
      where p.organization_id is null or p.organization_id = $1`,
@@ -165,7 +194,14 @@ export async function loadSkills(db: Queryable, tenantId: string): Promise<Loade
   const byName = new Map<string, LoadedSkill>();
   for (const r of rows) {
     if (!byName.has(r.name) || r.organization_id !== null) {
-      byName.set(r.name, { name: r.name, description: r.description, body: r.body, matcher: r.matcher });
+      byName.set(r.name, {
+        versionId: r.id,
+        name: r.name,
+        description: r.description,
+        body: r.body,
+        matcher: r.matcher,
+        manifest: r.manifest ?? [],
+      });
     }
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -256,6 +292,30 @@ export function latestInboundSignal(messages: readonly LeadContextMessage[]): st
     }
   }
   return '';
+}
+
+/**
+ * SINAL do matcher considerando o CONTEXTO recente, não só a última mensagem.
+ *
+ * Medido ao vivo (2026-09-21): depois de o agente mostrar "CB 300" e o cliente
+ * responder "A 2025" (a escolha), a skill `catalogo-apresentacao` NÃO era
+ * acionada — "A 2025" não tem palavra-chave —, o modelo não consultava o
+ * catálogo e as FOTOS da moto escolhida não eram enviadas. Concatenar as últimas
+ * mensagens INBOUND mantém a skill viva enquanto o assunto continua (a conversa
+ * está claramente sobre motos). Só inbound: é o que o CLIENTE disse.
+ */
+export function recentInboundSignal(
+  messages: readonly LeadContextMessage[],
+  janela = 6,
+): string {
+  const inbounds: string[] = [];
+  for (let i = messages.length - 1; i >= 0 && inbounds.length < janela; i -= 1) {
+    const m = messages[i];
+    if (m !== undefined && m.direction === 'inbound' && m.body.trim() !== '') {
+      inbounds.unshift(m.body);
+    }
+  }
+  return inbounds.join(' \n ');
 }
 
 /**

@@ -1,4 +1,4 @@
--- 0035_visibility_mode_conversation_rls — G4-01: escopo de visualização por
+-- 0166_visibility_mode_conversation_rls — G4-01: escopo de visualização por
 -- atendente (eixo 5, spec 13 §3.5 + §4). organizations.settings.visibility_mode
 -- ('all'|'own_and_unassigned'|'own', default 'own_and_unassigned' — decisão
 -- G1-06a) restringe o SELECT de conversations/messages APENAS para o role agent;

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH  /api/v1/webhook-sources/[id] — atualiza campos (inclui is_active — switch da UI).
  * DELETE /api/v1/webhook-sources/[id] — remove a fonte.
@@ -8,10 +9,12 @@ import type { NextRequest } from "next/server";
 import { ok, fail, noContent } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { autoriaDaMudanca } from "@/lib/operacao/autoria";
 import { updateWebhookSourceSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +23,14 @@ interface RouteCtx {
 }
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const authz = await requireRole("manager", { requestId, resource: "webhook_sources" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
   let raw: unknown = {};
@@ -34,7 +41,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
   const parsed = updateWebhookSourceSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("invalid_request", "Dados inválidos.", 400, {
+    return fail("invalid_request", t("Dados inválidos."), 400, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -48,12 +55,19 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!existing) return fail("not_found", "Fonte não encontrada.", 404, { requestId });
+  if (!existing) return fail("not_found", t("Fonte não encontrada."), 404, { requestId });
 
   // secret plaintext do input vira secret_encrypted (migration 0041); a coluna
   // em claro não existe mais. `secret: null` remove o segredo da fonte.
   const { secret: patchedSecret, ...restPatch } = parsed.data;
-  const patch: Record<string, unknown> = { ...restPatch, updated_at: new Date().toISOString() };
+  // A autoria vai junto de TODA escrita, pelo mesmo helper que o agente usa: a
+  // tela precisa distinguir o que ela mesma mudou do que o assistente mudou, e
+  // duas contas de "quem mexeu" divergiriam no primeiro ajuste (migration 0101).
+  const patch: Record<string, unknown> = {
+    ...restPatch,
+    updated_at: new Date().toISOString(),
+    ...autoriaDaMudanca({ type: "user", id: user.id, role: activeOrg.role }),
+  };
   if (patchedSecret !== undefined) {
     if (patchedSecret === null) {
       patch.secret_encrypted = null;
@@ -62,7 +76,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
       if (enc === null) {
         return fail(
           "encryption_unavailable",
-          "Não foi possível guardar o segredo com segurança. Configure NUVEMSHOP_OAUTH_ENCRYPTION_KEY (chave de cifra do banco) e tente de novo.",
+          t("Não foi possível guardar o segredo com segurança: a chave de cifra desta instalação não está ativa. Quem administra o servidor resolve rodando o update.sh, que gera e ativa a chave."),
           422,
           { requestId },
         );
@@ -95,10 +109,14 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 }
 
 export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const authz = await requireRole("manager", { requestId, resource: "webhook_sources" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
   const supabase = await createClient();
@@ -109,7 +127,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!existing) return fail("not_found", "Fonte não encontrada.", 404, { requestId });
+  if (!existing) return fail("not_found", t("Fonte não encontrada."), 404, { requestId });
 
   const { error: delErr } = await supabase.from("webhook_sources").delete().eq("id", id);
   if (delErr) return fail("internal_error", delErr.message, 500, { requestId });

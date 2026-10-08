@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { startCampaign } from "@/lib/mystery/engine";
+import { supportWriteError } from "@/lib/impersonate/support";
 
 // Local (não exportado): arquivo "use server" só pode exportar funções async.
 const startCampaignSchema = z.object({
@@ -37,6 +38,7 @@ export async function startMysteryCampaign(
 
   const authUser = await loadAuthUser();
   if (!authUser) return { ok: false, error: "unauthenticated" };
+  if (supportWriteError(authUser.support)) return { ok: false, error: "forbidden_role" };
   const activeOrg = await resolveActiveOrg(authUser);
   if (!activeOrg) return { ok: false, error: "forbidden_tenant" };
   if (!authUser.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {

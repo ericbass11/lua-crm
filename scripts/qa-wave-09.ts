@@ -7,23 +7,10 @@ import { chromium, type BrowserContext, type APIRequestContext } from "@playwrig
 import { createClient } from "@supabase/supabase-js";
 import * as fs from "fs";
 import * as path from "path";
+import { carregarEnvLocal } from "../scripts/lib/env-de-teste";
 
-// inline minimal .env.local loader
-{
-  const envPath = path.resolve(process.cwd(), ".env.local");
-  if (fs.existsSync(envPath)) {
-    for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m && m[1] && !process.env[m[1]]) {
-        let v = m[2] ?? "";
-        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-          v = v.slice(1, -1);
-        }
-        process.env[m[1]] = v;
-      }
-    }
-  }
-}
+// `process.env` vence o `.env.local` (scripts/lib/env-de-teste.ts).
+carregarEnvLocal();
 
 const BASE_URL = "http://localhost:3000";
 const ARTIFACTS_DIR = path.resolve(process.cwd(), "test-results/wave-09");
@@ -57,7 +44,7 @@ async function login(context: BrowserContext, email: string): Promise<void> {
   await page.locator("#password").focus();
   await page.waitForTimeout(200);
   await page.locator("#password").pressSequentially(PASSWORD, { delay: 25 });
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   try {
     await page.waitForURL(
       (url) => /\/app\b|\/login\/mfa/.test(url.toString()),

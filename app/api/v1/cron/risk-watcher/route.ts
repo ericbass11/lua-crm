@@ -19,20 +19,27 @@
  * Auth: mesmo contrato dos demais crons (Bearer INTERNAL_CRON_SECRET|
  * INTERNAL_SECRET, fail-closed).
  *
- * NOTA DE DEPLOY: não há `vercel.json` neste repo (self-host). O kit precisa
- * agendar esta rota no container `scheduler` — sugestão de cadência: a cada 15
- * min. Sem isso, nada esfria sozinho e a wave 7 volta a ser tela. A cadência não
- * precisa ser fina: a menor janela de estágio é medida em HORAS.
+ * DEPLOY: não há `vercel.json` neste repo (self-host). Esta rota é agendada no
+ * serviço `scheduler` do `docker-compose.prod.yml`, a cada 15 min — cadência
+ * grossa de propósito, porque a menor janela de estágio é medida em HORAS.
+ *
+ * ⚠️ Esta nota já pediu o agendamento no futuro do verbo ("o kit PRECISA
+ * agendar") e ficou assim por meses: a rota existia, tinha teste e tinha doc, e
+ * NINGUÉM A CHAMAVA num self-host — nada esfriava sozinho, nenhuma proposta
+ * nascia, e o modo de falha era silencioso ("nada esfriou" é indistinguível de
+ * "nada esfriou ainda"). Pedido em comentário não é agendamento. Hoje a garantia
+ * é mecânica: `tests/unit/cron-routes-scheduled.test.ts` compara o diretório de
+ * rotas com o crontab e fica VERMELHO se alguma rota ficar órfã dos dois lados.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { venceReativacoes } from "@/lib/leads/reactivation";
 import { observaTravessias } from "@/lib/leads/risk-worker";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -42,10 +49,7 @@ const ORG_LIMIT = 50;
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const auth = req.headers.get("authorization") ?? "";
-  const provided = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-  const accepted = [env.INTERNAL_CRON_SECRET, env.INTERNAL_SECRET].filter(Boolean);
-  if (accepted.length === 0 || !provided || !accepted.includes(provided)) {
+  if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
@@ -68,6 +72,11 @@ async function handle(req: NextRequest): Promise<Response> {
   let esfriaram = 0;
   let reativaram = 0;
   let falhas = 0;
+  // Gravações de estado que falharam. O observador parou de abortar a org na
+  // primeira linha ruim e passou a CONTAR a falha — e contagem que ninguém soma
+  // é o silêncio que o `continue` prometia evitar: a org some de
+  // `organizations_com_erro` e nada ocupa o lugar dela.
+  let gravacoesFalhas = 0;
   let propostas = 0;
   let vencidas = 0;
   const comErro: string[] = [];
@@ -79,6 +88,7 @@ async function handle(req: NextRequest): Promise<Response> {
       esfriaram += r.esfriaram;
       reativaram += r.reativaram;
       falhas += r.falhasDeAtividade;
+      gravacoesFalhas += r.falhasDeGravacao;
       propostas += r.propostas;
 
       // O VENCIMENTO RODA NO MESMO TICK, depois da travessia. Se morasse num
@@ -103,6 +113,9 @@ async function handle(req: NextRequest): Promise<Response> {
   if (falhas > 0) {
     logger.warn("[risk-watcher] travessias sem linha na timeline", { falhas, requestId });
   }
+  if (gravacoesFalhas > 0) {
+    logger.warn("[risk-watcher] travessias sem estado gravado", { gravacoesFalhas, requestId });
+  }
 
   return ok(
     {
@@ -113,6 +126,7 @@ async function handle(req: NextRequest): Promise<Response> {
       propostas_criadas: propostas,
       propostas_vencidas: vencidas,
       atividades_falhas: falhas,
+      gravacoes_falhas: gravacoesFalhas,
       organizations_com_erro: comErro.length,
     },
     { requestId },

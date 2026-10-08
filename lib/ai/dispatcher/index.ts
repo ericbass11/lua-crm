@@ -22,13 +22,13 @@
  * keeps `status='pending'` so the next batch picks it up.
  */
 
+import { silencioVigente } from "@/lib/inbox/comando-da-conversa";
 import { randomUUID } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { aiDispatchModeSchema } from "@/lib/schemas/settings";
-import { checkTenantBudget } from "./budget";
 import { checkRateLimit } from "./rate-limit";
 import {
   triggerMatches,
@@ -49,7 +49,6 @@ export type DispatchOutcome =
   | "dispatched"
   | "no_match"
   | "conv_busy"
-  | "budget_exceeded"
   | "rate_limited"
   | "skipped_invalid_payload"
   | "skipped_missing_message"
@@ -94,7 +93,6 @@ const EMPTY_OUTCOMES = (): Record<DispatchOutcome, number> => ({
   dispatched: 0,
   no_match: 0,
   conv_busy: 0,
-  budget_exceeded: 0,
   rate_limited: 0,
   skipped_invalid_payload: 0,
   skipped_missing_message: 0,
@@ -241,20 +239,34 @@ async function processEvent(event: EventRow): Promise<DispatchOutcome> {
 
   // Portões de intervenção humana (paridade com IA-01..IA-08 do worker legado —
   // sem eles o bot atropela o atendente: responde mesmo após handoff/Assumir).
+  //
+  // ⚠️ `assigned_to_user_id` NÃO é mais portão, de propósito (sync v1.16.1).
+  // Este gate nasceu em 2026-07-15, quando "Assumir" não calava o automático e
+  // ter um responsável era o único sinal de que uma pessoa tinha tomado a
+  // conversa. A migration 0173 do upstream mudou o modelo: `fn_conversation_assign`
+  // grava `bot_silenced_until = 'infinity'` em claim/transfer, `null` em release
+  // — e, deliberadamente, NÃO mexe quando `p_reason = 'routing'`: o rodízio
+  // DISTRIBUI (escolhe quem cuida se precisar), não toma o comando. Um gate por
+  // `assigned_to_user_id` anularia essa ressalva: numa org em round-robin, toda
+  // conversa nova nasce atribuída pelo worker de roteamento, e a IA emudeceria na
+  // primeira mensagem da vida de cada cliente — sem nenhuma pista apontando aqui.
+  // O silêncio já está codificado em `bot_silenced_until` por quem tem contexto
+  // para decidir (a função do banco), e é ela que este gate lê. Medido antes da
+  // troca: 0 conversas assumidas sem silêncio gravado, então não há backfill.
   const convContact = (Array.isArray(convRow.contacts) ? convRow.contacts[0] : convRow.contacts) as {
     force_human: boolean | null;
     is_blocked: boolean | null;
   } | null;
   const silencedUntil = convRow.bot_silenced_until as string | null;
+  // `'infinity'` vira `Date` inválida (NaN) e `NaN > now` é false — o silêncio
+  // durável passaria batido. `silencioVigente` trata infinity/NaN como vigente.
   const humanGate = convContact?.is_blocked
     ? "contact_blocked"
     : convContact?.force_human
       ? "force_human"
-      : silencedUntil && new Date(silencedUntil).getTime() > Date.now()
+      : silencioVigente(silencedUntil, new Date()).vigente
         ? "bot_silenced"
-        : convRow.assigned_to_user_id
-          ? "assigned_to_human"
-          : null;
+        : null;
   if (humanGate) {
     await markEventProcessed(event, "skipped_human_active", { reason: humanGate });
     return "skipped_human_active";
@@ -301,23 +313,13 @@ async function processEvent(event: EventRow): Promise<DispatchOutcome> {
     return "conv_busy";
   }
 
-  // Tenant budget guard.
-  const budget = await checkTenantBudget(orgId);
-  if (!budget.ok) {
-    await markEventProcessed(event, "budget_exceeded", {
-      is_throttled: budget.is_throttled,
-      is_disabled: budget.is_disabled,
-      monthly_limit_cents: budget.monthly_limit_cents,
-      consumed_cents: budget.current_month_consumed_cents,
-    });
-    logger.warn("[agent-dispatcher] ai_budget_exceeded", {
-      organization_id: orgId,
-      event_id: event.id,
-      monthly_limit_cents: budget.monthly_limit_cents,
-      consumed_cents: budget.current_month_consumed_cents,
-    });
-    return "budget_exceeded";
-  }
+  // O guard de orçamento saiu daqui junto com `./budget.ts`: ele lia
+  // `ai_budgets.is_throttled/is_disabled`, flags sem escritor vivo desde que o
+  // cron que as ligava foi apagado. Este módulo é `@deprecated` e a rota que o
+  // acionava (`app/api/v1/cron/agent-dispatcher/route.ts`) é no-op permanente,
+  // então não há teto a reimplantar aqui — quem aplica o teto é
+  // `aplicarOrcamento` no seam do engine e `vetoPorTetoDeGasto` no caminho
+  // legado do `ai-response-worker`.
 
   // Per-tenant rate limit (60/min default). Failed limit → requeue, not drop.
   const rateResult = await checkRateLimit(`ai-runs:${orgId}`, RATE_LIMIT_PER_MIN, RATE_LIMIT_WINDOW_SEC);

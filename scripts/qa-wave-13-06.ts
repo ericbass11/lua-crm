@@ -6,22 +6,10 @@
 import { chromium, type APIRequestContext } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
+import { carregarEnvLocal } from "../scripts/lib/env-de-teste";
 
-{
-  const envPath = path.resolve(process.cwd(), ".env.local");
-  if (fs.existsSync(envPath)) {
-    for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m && m[1] && !process.env[m[1]]) {
-        let v = m[2] ?? "";
-        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-          v = v.slice(1, -1);
-        }
-        process.env[m[1]] = v;
-      }
-    }
-  }
-}
+// `process.env` vence o `.env.local` (scripts/lib/env-de-teste.ts).
+carregarEnvLocal();
 
 const BASE_URL = "http://localhost:3001";
 const creds = JSON.parse(
@@ -44,7 +32,7 @@ async function loginAndGetApi(): Promise<{ api: APIRequestContext; close: () => 
   await page.goto(`${BASE_URL}/login`, { waitUntil: "domcontentloaded" });
   await page.locator("#email").pressSequentially(ADMIN_EMAIL, { delay: 20 });
   await page.locator("#password").pressSequentially(PASSWORD, { delay: 20 });
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   try {
     await page.waitForURL((u) => /\/app\b|\/login\/mfa/.test(u.toString()), { timeout: 20_000 });
   } catch { /* tolerate */ }

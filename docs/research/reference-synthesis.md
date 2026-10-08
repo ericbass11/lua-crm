@@ -1,10 +1,12 @@
 # Reference Synthesis — Aula CRM Nichado com WhatsApp (WAHA)
 
-**Origem:** `/Users/ericsouza/Documents/Obsidian Vault/Ecossistema Labs/AutomatikLabs/Treinamentos e Cursos/Aula - CRM Nichado com WhatsApp (WAHA)/`
+**Origem:** `/Users/rafaelmelgaco/Documents/Obsidian Vault/Ecossistema Labs/AutomatikLabs/Treinamentos e Cursos/Aula - CRM Nichado com WhatsApp (WAHA)/`
 
-**Status:** Adotada integralmente como linha de base arquitetural do LUA CRM (decisão registrada em memória do projeto).
+**Status:** Adotada integralmente como linha de base arquitetural do DeskcommCRM (decisão registrada em memória do projeto).
 
-Esse documento extrai apenas as decisões e padrões da referência que o LUA CRM herda. Para citações literais, schema SQL completo e edge cases detalhados, consultar a fonte original.
+> **O corpo abaixo é registro, não estado — este arquivo não traz data.** Foi escrito quando o alvo de deploy era a Vercel; hoje o CRM é self-host em VPS, e o deploy que vale está em [`docs/runbooks/deploy.md`](../runbooks/deploy.md).
+
+Esse documento extrai apenas as decisões e padrões da referência que o DeskcommCRM herda. Para citações literais, schema SQL completo e edge cases detalhados, consultar a fonte original.
 
 ---
 
@@ -118,7 +120,10 @@ create policy "tenant_isolation_X_all" on public.<tabela> for all
 - **Auth Plus**: `WAHA_API_KEY` no env é o hash SHA512 hex; cliente envia plaintext em `X-Api-Key`
 - **HMAC SHA512** em webhooks com `crypto.timingSafeEqual`
 - **Rate limit anti-banimento**: 1 msg/1.2s + jitter ≤800ms (campanha: 1 msg/5s); warm-up 7-14d; spinning de copy; limites 200-500/dia em número novo; janela 7h-22h, evitar domingo
-- **Detecção STOP automática**: regex `/STOP|PARAR|SAIR|UNSUBSCRIBE/i` no inbound → `is_blocked=true`
+- **Detecção STOP automática**: era regex `/STOP|PARAR|SAIR|UNSUBSCRIBE/i` no inbound → `is_blocked=true`.
+  **Superada em 2026-08-21** (PR #295): a regra em vigor é `lib/opt-out/deteccao.ts` — palavra
+  ISOLADA ou verbo de cessação com objeto de comunicação. Este documento registra o que foi
+  HERDADO do curso de referência, então a linha original fica, marcada.
 - **Mídia**: sobe pro Storage primeiro, passa URL ao WAHA (não inline base64)
 - **Cron `recover-stuck-messages`**: marca `status='sending'` há mais de 5 min como `failed`
 - **Multi-device sync**: assinar `message.any` (não só `message`), tratar `fromMe=true` sem duplicar
@@ -214,13 +219,13 @@ Write: `create_lead`, `update_lead`, `move_lead_to_stage`, `delete_lead`, `mark_
 
 ---
 
-## 11. Gaps a desenhar do LUA CRM (não cobertos pela referência)
+## 11. Gaps a desenhar do DeskcommCRM (não cobertos pela referência)
 
 1. **Integração Nuvemshop** — OAuth, webhooks `order/created|paid|cancelled|fulfilled|cart_abandoned|customer/redact|customer/data_request`, sync inicial, tabela `orders` linkada a `crm_leads`
 2. **LGPD webhooks Nuvemshop específicos** — pseudonimização vs delete, audit trail, export estruturado
 3. **Sentiment detection + handoff bot→humano** — onde rodar, threshold, marcador de timeline, política de retomada
 4. **Chatbot RAG por tenant** — vector store (pgvector? Supabase Vector?), ingestão (FAQ + política + catálogo Nuvemshop), roteamento contexto+RAG
-5. **Super-admin de plataforma** — coluna `is_platform_admin` ou tabela separada; helper RLS retorna TRUE para essa role; UI separada (`admin.lua-crm.example`)
+5. **Super-admin de plataforma** — coluna `is_platform_admin` ou tabela separada; helper RLS retorna TRUE para essa role; UI separada (`admin.deskcomm.com`)
 6. **AI provider strategy** — Vercel AI Gateway recomendado (model fallback, observability, zero data retention)
 7. **Adapter pattern de e-commerce** — `EcommercePlatformAdapter` interface; Nuvemshop é primeira impl; VTEX/Shopify ficam plugáveis
 

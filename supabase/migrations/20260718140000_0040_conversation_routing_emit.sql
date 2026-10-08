@@ -1,4 +1,4 @@
--- 0040_conversation_routing_emit — G5-02 (AT-03, spec 13 §5): a ENTRADA de uma
+-- 0171_conversation_routing_emit — G5-02 (AT-03, spec 13 §5): a ENTRADA de uma
 -- conversa na fila emite `conversation.routing_requested` em event_log; o worker
 -- (cron TS lib/routing/worker.ts) consome e distribui. Trigger NUNCA faz HTTP —
 -- só emit_event (INSERT em event_log). Worker consome o side effect.
