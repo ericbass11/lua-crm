@@ -469,7 +469,8 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await expect(activation).toBeEnabled();
     // Real publication validation still rejects the installation without a key.
     await activation.click();
-    await expect(page.getByRole("alert")).toContainText("Não foi possível ativar");
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível ativar" }))
+      .toContainText("Não foi possível ativar");
     expect(
       (
         await svc

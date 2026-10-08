@@ -1,3 +1,9 @@
+---
+impacto: nada_mudou
+secao: corrigido
+titulo: O ensaio de instalação fresca prepara o playbook oficial antes do atendimento
+---
+
 O ensaio automatizado de instalação fresca agora executa o bootstrap oficial do
 playbook de plataforma antes de testar o primeiro atendimento. A suíte não sobe
 o worker nem seus consumidores: usa o mesmo seed idempotente do boot, preservando

@@ -18,10 +18,12 @@ import { randomUUID } from "node:crypto";
 
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
+import pg from "pg";
 import { assertEphemeralRuntime } from "./helpers/ephemeral-runtime";
 
 import { PERGUNTAS_CONFIGURADOR } from "@/lib/onboarding/configurador";
 import { RISCO_WHATSAPP_VERSAO } from "@/lib/onboarding/risco-whatsapp";
+import { seedPlatformPlaybook } from "@/lib/agent-engine/agent/playbook-seed";
 
 const svc = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -42,7 +44,14 @@ let appUrl = "";
  */
 test.beforeAll(async ({}, info) => {
   appUrl = String(info.project.use.baseURL ?? `http://localhost:${process.env.E2E_PORT ?? "3001"}`);
-  await assertEphemeralRuntime(appUrl, true);
+  await assertEphemeralRuntime(appUrl, true, true);
+  // Sem worker no CI, prepara somente seu bootstrap oficial no DB verificado.
+  const bootstrapPool = new pg.Pool({ connectionString: process.env.SUPABASE_DB_URL, max: 1 });
+  try {
+    await seedPlatformPlaybook(bootstrapPool);
+  } finally {
+    await bootstrapPool.end();
+  }
   if (process.env.INTERNAL_AGENT_RUN_STUB !== "true")
     throw new Error("Wizard requires controlled provider, without external calls.");
   const { data: criado, error: errUser } = await svc.auth.admin.createUser({
