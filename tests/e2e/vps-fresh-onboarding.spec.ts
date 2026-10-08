@@ -24,6 +24,7 @@ import { assertEphemeralRuntime } from "./helpers/ephemeral-runtime";
 import { PERGUNTAS_CONFIGURADOR } from "@/lib/onboarding/configurador";
 import { RISCO_WHATSAPP_VERSAO } from "@/lib/onboarding/risco-whatsapp";
 import { seedPlatformPlaybook } from "@/lib/agent-engine/agent/playbook-seed";
+import { bufToBytea, encryptKey } from "@/lib/crypto/aes_gcm";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
@@ -31,7 +32,6 @@ const OWNER_EMAIL = "dono@qa.local";
 const OWNER_PASSWORD = "QaVps!2026#Dono";
 const OWNER_STATE_PATH = path.join(process.cwd(), ".e2e-owner.json");
 const EVIDENCE_DIR = path.join(process.cwd(), ".superpowers/evidence/vps-qa");
-
 
 const svc = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -109,6 +109,33 @@ async function login(page: Page, password = OWNER_PASSWORD): Promise<void> {
 test.describe.configure({ mode: "serial", timeout: 120_000 });
 
 test.describe("J1 — onboarding do dono numa instalação fresca", () => {
+  let activationFixture: { orgId: string; credentialId: string; channelId: string } | undefined;
+  test.afterAll(async ({}, info) => {
+    if (!activationFixture) return;
+    await assertEphemeralRuntime(
+      String(info.project.use.baseURL ?? `http://localhost:${process.env.E2E_PORT ?? "3001"}`),
+      true,
+      true,
+    );
+    expect(
+      (
+        await svc
+          .from("ai_provider_credentials")
+          .update({ is_active: false })
+          .eq("organization_id", activationFixture.orgId)
+          .eq("id", activationFixture.credentialId)
+      ).error,
+    ).toBeNull();
+    expect(
+      (
+        await svc
+          .from("channel_sessions")
+          .update({ status: "STOPPED" })
+          .eq("organization_id", activationFixture.orgId)
+          .eq("id", activationFixture.channelId)
+      ).error,
+    ).toBeNull();
+  });
   test.beforeAll(async ({}, info) => {
     await assertEphemeralRuntime(
       String(info.project.use.baseURL ?? `http://localhost:${process.env.E2E_PORT ?? "3001"}`),
@@ -469,8 +496,9 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await expect(activation).toBeEnabled();
     // Real publication validation still rejects the installation without a key.
     await activation.click();
-    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível ativar" }))
-      .toContainText("Não foi possível ativar");
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Não foi possível ativar" }),
+    ).toContainText("Não foi possível ativar");
     expect(
       (
         await svc
@@ -482,39 +510,60 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
       ).data?.published_version_id,
     ).toBeNull();
 
-    // Controlled transport/provider fixture, only in the guarded ephemeral runtime.
-    // No paired number, no external provider key, no worker or outbound delivery.
+    // Changing credential_id on an existing factory draft clears its provenance.
+    // Keep the no-key journey above, then reset ONLY this guarded QA draft and
+    // recreate it through the wizard with the fixture available from the start.
     const { data: version, error: versionError } = await svc
       .from("ai_agent_versions")
-      .select("provider,channel_session_id")
+      .select("provider,channel_session_id,status,provisioning_origin")
       .eq("organization_id", org.id)
       .eq("id", run!.agent_version_id)
       .single();
     expect(versionError).toBeNull();
+    expect(version).toMatchObject({ status: "draft", provisioning_origin: "onboarding" });
+    expect(version!.channel_session_id).toBeTruthy();
+    const encrypted = encryptKey("e2e-synthetic-provider-key-not-for-external-use");
     const { data: credential, error: credentialError } = await svc
       .from("ai_provider_credentials")
       .insert({
         organization_id: org.id,
         provider: version!.provider,
         label: "Sandbox de ativação QA",
-        api_key_encrypted: "\\x00",
-        api_key_iv: "\\x00",
-        api_key_tag: "\\x00",
-        api_key_last4: "test",
+        api_key_encrypted: bufToBytea(encrypted.ciphertext),
+        api_key_iv: bufToBytea(encrypted.iv),
+        api_key_tag: bufToBytea(encrypted.tag),
+        api_key_last4: encrypted.last4,
         is_active: true,
         validated_at: new Date().toISOString(),
       })
       .select("id")
       .single();
     expect(credentialError).toBeNull();
+    activationFixture = {
+      orgId: org.id,
+      credentialId: credential!.id,
+      channelId: version!.channel_session_id,
+    };
     expect(
       (
         await svc
-          .from("ai_agent_versions")
-          .update({ credential_id: credential!.id })
+          .from("ai_agent_runs")
+          .delete()
           .eq("organization_id", org.id)
-          .eq("id", run!.agent_version_id)
+          .eq("agent_id", run!.agent_id)
       ).error,
+    ).toBeNull();
+    expect(
+      (await svc.from("ai_agents").delete().eq("organization_id", org.id).eq("id", run!.agent_id))
+        .error,
+    ).toBeNull();
+    const restartState = { ...(await orgRow()).onboarding_state };
+    delete restartState.ai;
+    delete restartState.teste;
+    delete restartState.ativacao;
+    expect(
+      (await svc.from("organizations").update({ onboarding_state: restartState }).eq("id", org.id))
+        .error,
     ).toBeNull();
     expect(
       (
@@ -528,6 +577,64 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
           .eq("id", version!.channel_session_id)
       ).error,
     ).toBeNull();
+    // The setup screen normally proves credit against the provider. This fixture
+    // has no external key: report an unperformed proof instead of calling out.
+    await page.route("**/api/v1/system/instalacao?provar=1", (route) =>
+      route.fulfill({
+        json: { data: { prova: { feita: false } } },
+      }),
+    );
+    await page.goto("/onboarding");
+    await page.waitForURL(/\/onboarding\/setup-ai/);
+    await page.locator("#name").fill("Tomik QA");
+    await page.getByRole("button", { name: /criar e continuar/i }).click();
+    await page.waitForURL(/\/onboarding\/testar/, { timeout: 20_000 });
+    const { data: freshVersion, error: freshVersionError } = await svc
+      .from("ai_agent_versions")
+      .select("id,agent_id,credential_id,channel_session_id,provisioning_origin,status")
+      .eq("organization_id", org.id)
+      .single();
+    expect(freshVersionError).toBeNull();
+    expect(freshVersion).toMatchObject({
+      credential_id: credential!.id,
+      channel_session_id: version!.channel_session_id,
+      provisioning_origin: "onboarding",
+      status: "draft",
+    });
+    const freshReply = page.waitForResponse(
+      (res) =>
+        new URL(res.url()).pathname ===
+          `/api/v1/ai/agents/${freshVersion!.agent_id}/versions/${freshVersion!.id}/test` &&
+        res.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Mandar mensagem", exact: true }).click();
+    const freshResponse = await freshReply;
+    expect(freshResponse.ok()).toBe(true);
+    const { data: freshResult } = await freshResponse.json();
+    expect(freshResult).toMatchObject({ stub: true, status: "ok" });
+    expect(freshResult.final_text.trim()).not.toBe("");
+    const { data: freshRun, error: freshRunError } = await svc
+      .from("ai_agent_runs")
+      .select("id,agent_id,agent_version_id,status,is_dry_run,completed_at")
+      .eq("organization_id", org.id)
+      .eq("id", freshResult.run_id)
+      .single();
+    expect(freshRunError).toBeNull();
+    expect(freshRun).toMatchObject({
+      agent_id: freshVersion!.agent_id,
+      agent_version_id: freshVersion!.id,
+      status: "completed",
+      is_dry_run: true,
+    });
+    expect(freshRun!.completed_at).toBeTruthy();
+    await expect(page.getByText(freshResult.final_text, { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /^continuar$/i }).click();
+    await page.waitForURL(/\/onboarding\/ativar/, { timeout: 20_000 });
+    expect((await orgRow()).onboarding_state?.teste).toMatchObject({
+      run_id: freshRun!.id,
+      version_id: freshVersion!.id,
+      respondeu: true,
+    });
     await activation.click();
     await page.waitForURL(/\/onboarding\/invite-team/, { timeout: 20_000 });
     expect(
@@ -536,14 +643,14 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
           .from("ai_agents")
           .select("published_version_id")
           .eq("organization_id", org.id)
-          .eq("id", run!.agent_id)
+          .eq("id", freshVersion!.agent_id)
           .single()
       ).data?.published_version_id,
-    ).toBe(run!.agent_version_id);
+    ).toBe(freshVersion!.id);
     expect(
       ((await orgRow()).onboarding_state as { ativacao?: { version_id: string } }).ativacao
         ?.version_id,
-    ).toBe(run!.agent_version_id);
+    ).toBe(freshVersion!.id);
     expect(await countMessages()).toBe(before);
     await snap(page, "j1.24-ativacao-com-recibo");
   });
