@@ -64,20 +64,23 @@ describe("ativação explícita do agente no onboarding", () => {
     });
   });
 
-  it("recusa ativar antes de uma resposta bem-sucedida no sandbox", async () => {
-    mocks.loadState.mockResolvedValue({
-      state: {
-        ai: { agent_id: "33333333-3333-4333-8333-333333333333", prompt_template: "p" },
-        teste: { respondeu: false },
-      },
-      onboardedAt: null,
-    });
+  it.each([{ respondeu: false }, { skipped: true }])(
+    "recusa ativar sem recibo mesmo após resolver o passo: %j",
+    async (teste) => {
+      mocks.loadState.mockResolvedValue({
+        state: {
+          ai: { agent_id: "33333333-3333-4333-8333-333333333333", prompt_template: "p" },
+          teste,
+        },
+        onboardedAt: null,
+      });
 
-    const result = await ativarAgenteDoOnboarding("44444444-4444-4444-8444-444444444444");
+      const result = await ativarAgenteDoOnboarding("44444444-4444-4444-8444-444444444444");
 
-    expect(result).toEqual({ ok: false, error: "sandbox_required" });
-    expect(mocks.publish).not.toHaveBeenCalled();
-  });
+      expect(result).toEqual({ ok: false, error: "sandbox_required" });
+      expect(mocks.publish).not.toHaveBeenCalled();
+    },
+  );
 
   it("recusa qualquer papel que não seja o dono administrador", async () => {
     mocks.requireCtx.mockResolvedValue({ ...ctx, role: "manager" });
@@ -96,9 +99,9 @@ describe("ativação explícita do agente no onboarding", () => {
   });
 
   it("publica somente no clique explícito do dono e deixa trilha de auditoria", async () => {
-    await expect(
-      ativarAgenteDoOnboarding("44444444-4444-4444-8444-444444444444"),
-    ).rejects.toThrow("NEXT_REDIRECT:/onboarding");
+    await expect(ativarAgenteDoOnboarding("44444444-4444-4444-8444-444444444444")).rejects.toThrow(
+      "NEXT_REDIRECT:/onboarding",
+    );
 
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.anything(),

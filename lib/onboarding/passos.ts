@@ -111,7 +111,7 @@ export const PASSOS: readonly PassoDoOnboarding[] = [
     // primeiro cliente real, não depois.
     rotulo: "Ver ele atender",
     existe: () => true,
-    cumprido: (s) => marcado(s.teste),
+    cumprido: (s) => s.teste?.respondeu === true || foiPulado(s.teste),
     pulado: (s) => foiPulado(s.teste),
   },
   {

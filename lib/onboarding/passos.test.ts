@@ -75,6 +75,30 @@ describe("passos visíveis", () => {
 });
 
 describe("próximo passo", () => {
+  it.each([
+    { teste: { respondeu: false }, esperado: "testar", feito: false, pulado: false },
+    { teste: {}, esperado: "testar", feito: false, pulado: false },
+    { teste: { respondeu: true }, esperado: "ativar", feito: true, pulado: false },
+    { teste: { skipped: true }, esperado: "ativar", feito: false, pulado: true },
+  ])(
+    "ensaio $teste resulta em $esperado, sem confundir invalidação com recibo",
+    ({ teste, esperado, feito, pulado }) => {
+      const state: OnboardingState = {
+        welcome: { accepted_at: "x", timezone: "America/Sao_Paulo", display_name: "N" },
+        risco_whatsapp: { accepted_at: "x", version: "2026-10-01" },
+        whatsapp: { status: "skipped", skipped: true },
+        configurador_atendimento: { session: SESSAO_REVISADA },
+        ai: { agent_id: "a", prompt_template: "p" },
+        funil: { pipeline_id: "f", origem: "ia", etapas: 6 },
+        teste,
+      };
+      expect(proximoPasso(state, SEM_LOJA)?.segmento).toBe(esperado);
+      expect(
+        resumoDoOnboarding(state, SEM_LOJA).find((p) => p.segmento === "testar"),
+      ).toMatchObject({ feito, pulado });
+    },
+  );
+
   it("começa no primeiro", () => {
     expect(proximoPasso(VAZIO, SEM_LOJA)?.segmento).toBe("welcome");
   });

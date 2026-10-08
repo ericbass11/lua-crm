@@ -305,7 +305,9 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     await page.route(pattern, async (route) => {
       if (route.request().method() !== "GET") return route.continue();
       const start = new Date(new URL(route.request().url()).searchParams.get("de")!);
-      start.setTime(start.getTime() + 34 * 3600000);
+      // The rendered range may be a single day, retained by the prior mobile case.
+      // Place the fixture inside its first day rather than outside that range.
+      start.setTime(start.getTime() + 10 * 3600000);
       await route.fulfill({
         json: {
           data: populated
