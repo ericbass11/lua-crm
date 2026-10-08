@@ -559,7 +559,8 @@ test.describe("o wizard monta um funcionário", () => {
     await page.waitForURL(/\/onboarding\/ativar/);
     const activation = page.getByRole("button", { name: "Ativar agente agora", exact: true });
     await activation.click();
-    await expect(page.getByRole("alert")).toContainText("Não foi possível ativar");
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível ativar" }))
+      .toContainText("Não foi possível ativar");
     const { data: agent, error: agentError } = await svc
       .from("ai_agents")
       .select("published_version_id")
