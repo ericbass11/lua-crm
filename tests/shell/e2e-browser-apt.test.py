@@ -64,6 +64,63 @@ class AptPreparationTests(unittest.TestCase):
             prepare.prepare(self.root)
         self.assertEqual(limits.read_text(), "Unrelated value;\n")
 
+    def test_runner_mirror_source_rewrites_indirection_and_preserves_metadata(self):
+        source = self.root / "sources.list.d/ubuntu.sources"
+        source_text = "Types: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble noble-updates\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+        source.write_text(source_text)
+        mirror = self.root / "apt-mirrors.txt"
+        mirror.write_text("# runner mirrors\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:1 arch:amd64\nhttps://third.example/repo\tpriority:9\n")
+        prepare.prepare(self.root)
+        self.assertEqual(source.read_text(), source_text)
+        self.assertEqual(mirror.read_text(), "# runner mirrors\nhttps://archive.ubuntu.com/ubuntu/\tpriority:1 arch:amd64\nhttps://third.example/repo\tpriority:9\n")
+        prepare.prepare(self.root)
+
+    def test_security_mirrorlist_and_other_repositories_are_preserved(self):
+        (self.root / "sources.list").write_text("deb mirror+file:/etc/apt/apt-mirrors-security.txt noble-security main\n")
+        mirror = self.root / "apt-mirrors-security.txt"
+        text = "http://azure.archive.ubuntu.com/ubuntu\tpriority:1\nhttps://security.ubuntu.com/ubuntu\tpriority:2\n"
+        mirror.write_text(text)
+        prepare.prepare(self.root)
+        self.assertEqual(mirror.read_text(), text.replace("http://azure.archive.ubuntu.com", "https://archive.ubuntu.com"))
+
+    def test_unreferenced_or_unknown_mirrorlist_is_not_touched(self):
+        (self.root / "sources.list").write_text("deb mirror+file:/external/unrelated.txt noble main\n")
+        mirror = self.root / "apt-mirrors.txt"
+        text = "http://azure.archive.ubuntu.com/ubuntu\n"
+        mirror.write_text(text)
+        prepare.prepare(self.root)
+        self.assertEqual(mirror.read_text(), text)
+
+    def test_unsafe_mirrorlist_fails_before_source_and_limits_writes(self):
+        source = self.root / "sources.list"
+        text = "deb http://azure.archive.ubuntu.com/ubuntu noble main\ndeb mirror+file:/etc/apt/apt-mirrors.txt noble main\n"
+        source.write_text(text)
+        target = self.root / "external"
+        target.write_text("http://azure.archive.ubuntu.com/ubuntu\n")
+        (self.root / "apt-mirrors.txt").symlink_to(target)
+        with self.assertRaises(ValueError):
+            prepare.prepare(self.root)
+        self.assertEqual(source.read_text(), text)
+        self.assertFalse((self.root / "apt.conf.d/99-lua-e2e-network-limits").exists())
+
+    def test_bad_uri_in_later_mirrorlist_prevents_all_writes(self):
+        (self.root / "sources.list").write_text("deb mirror+file:/etc/apt/apt-mirrors.txt noble main\ndeb mirror+file:/etc/apt/apt-mirrors-security.txt noble-security main\n")
+        mirror = self.root / "apt-mirrors.txt"
+        text = "http://azure.archive.ubuntu.com/ubuntu\n"
+        mirror.write_text(text)
+        (self.root / "apt-mirrors-security.txt").write_text("http://azure.archive.ubuntu.com/unexpected\n")
+        with self.assertRaises(ValueError):
+            prepare.prepare(self.root)
+        self.assertEqual(mirror.read_text(), text)
+        self.assertFalse((self.root / "apt.conf.d/99-lua-e2e-network-limits").exists())
+
+    def test_ambiguous_mirrorlist_reference_and_missing_file_fail(self):
+        for uri in ("mirror+file:/etc/apt/apt-mirrors.txt?unexpected", "mirror+file:/etc/apt/apt-mirrors.txt"):
+            (self.root / "sources.list").write_text(f"deb {uri} noble main\n")
+            with self.assertRaises(ValueError):
+                prepare.prepare(self.root)
+            self.assertFalse((self.root / "apt.conf.d/99-lua-e2e-network-limits").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
