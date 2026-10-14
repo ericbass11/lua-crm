@@ -24,6 +24,8 @@ import { assertEphemeralRuntime } from "./helpers/ephemeral-runtime";
 import { PERGUNTAS_CONFIGURADOR } from "@/lib/onboarding/configurador";
 import { RISCO_WHATSAPP_VERSAO } from "@/lib/onboarding/risco-whatsapp";
 import { seedPlatformPlaybook } from "@/lib/agent-engine/agent/playbook-seed";
+import { bufToBytea, encryptKey } from "@/lib/crypto/aes_gcm";
+import type { Database } from "@/lib/database.types";
 
 const svc = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -578,16 +580,17 @@ test.describe("o wizard monta um funcionário", () => {
       .eq("id", run!.agent_version_id)
       .single();
     expect(versionError).toBeNull();
+    const encrypted = encryptKey("e2e-synthetic-provider-key-not-for-external-use");
     const { data: credential, error: credentialError } = await svc
       .from("ai_provider_credentials")
       .insert({
         organization_id: orgId,
         provider: version!.provider,
         label: "Sandbox wizard QA",
-        api_key_encrypted: "\\x00",
-        api_key_iv: "\\x00",
-        api_key_tag: "\\x00",
-        api_key_last4: "test",
+        api_key_encrypted: bufToBytea(encrypted.ciphertext),
+        api_key_iv: bufToBytea(encrypted.iv),
+        api_key_tag: bufToBytea(encrypted.tag),
+        api_key_last4: encrypted.last4,
         is_active: true,
         validated_at: new Date().toISOString(),
       })
@@ -599,21 +602,81 @@ test.describe("o wizard monta um funcionário", () => {
       .insert({
         organization_id: orgId,
         provider: "waha",
-        session_name: `qa_wizard_${randomUUID().slice(0, 8)}`,
+        waha_session_name: `qa_wizard_${randomUUID().slice(0, 8)}`,
+        webhook_secret_encrypted: "\\x00",
         status: "WORKING",
         metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [] },
-      })
+      } satisfies Database["public"]["Tables"]["channel_sessions"]["Insert"])
       .select("id")
       .single();
     expect(channelError).toBeNull();
-    const { error: bindError } = await svc
+    // Editing the old draft clears provenance. Recreate ONLY our QA agent
+    // through the official factory with these fixtures already available.
+    expect((await svc.from("ai_agent_runs").delete()
+      .eq("organization_id", orgId).eq("agent_id", run!.agent_id)).error).toBeNull();
+    expect((await svc.from("ai_agents").delete()
+      .eq("organization_id", orgId).eq("id", run!.agent_id)).error).toBeNull();
+    const { data: restartOrg, error: restartError } = await svc.from("organizations")
+      .select("onboarding_state").eq("id", orgId).single();
+    expect(restartError).toBeNull();
+    const restartState = { ...restartOrg!.onboarding_state };
+    delete restartState.ai;
+    delete restartState.teste;
+    delete restartState.ativacao;
+    expect((await svc.from("organizations").update({ onboarding_state: restartState })
+      .eq("id", orgId)).error).toBeNull();
+    // Do not send the synthetic key to an external credit probe.
+    await page.route("**/api/v1/system/instalacao?provar=1", (route) =>
+      route.fulfill({ json: { data: { prova: { feita: false } } } }));
+    await page.goto("/onboarding");
+    await page.waitForURL(/\/onboarding\/setup-ai/);
+    await page.locator("#name").fill("Bia");
+    await page.locator("#regras_da_casa").fill("Horário: 8h às 18h. Nunca prometa desconto.");
+    await page.getByRole("button", { name: /criar e continuar/i }).click();
+    await page.waitForURL(/\/onboarding\/testar/);
+    const { data: freshVersion, error: freshVersionError } = await svc
       .from("ai_agent_versions")
-      .update({ credential_id: credential!.id, channel_session_id: channel!.id })
-      .eq("organization_id", orgId)
-      .eq("id", run!.agent_version_id);
-    expect(bindError).toBeNull();
+      .select("id,agent_id,credential_id,channel_session_id,provisioning_origin,status")
+      .eq("organization_id", orgId).single();
+    expect(freshVersionError).toBeNull();
+    expect(freshVersion).toMatchObject({ credential_id: credential!.id,
+      channel_session_id: channel!.id, provisioning_origin: "onboarding", status: "draft" });
+    expect(freshVersion!.id).not.toBe(run!.agent_version_id);
+    const freshReply = page.waitForResponse((res) => new URL(res.url()).pathname ===
+      `/api/v1/ai/agents/${freshVersion!.agent_id}/versions/${freshVersion!.id}/test` &&
+      res.request().method() === "POST");
+    await page.getByRole("button", { name: "Mandar mensagem", exact: true }).click();
+    const freshResponse = await freshReply;
+    expect(freshResponse.ok()).toBe(true);
+    const { data: freshResult } = await freshResponse.json();
+    expect(freshResult).toMatchObject({ stub: true, status: "ok" });
+    expect(freshResult.final_text.trim()).not.toBe("");
+    const { data: freshRun, error: freshRunError } = await svc.from("ai_agent_runs")
+      .select("id,agent_id,agent_version_id,status,is_dry_run,completed_at")
+      .eq("organization_id", orgId).eq("id", freshResult.run_id).single();
+    expect(freshRunError).toBeNull();
+    expect(freshRun).toMatchObject({ agent_id: freshVersion!.agent_id,
+      agent_version_id: freshVersion!.id, status: "completed", is_dry_run: true });
+    expect(freshRun!.completed_at).toBeTruthy();
+    await expect(page.getByText(freshResult.final_text, { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /^continuar$/i }).click();
+    await page.waitForURL(/\/onboarding\/ativar/);
+    const { data: receiptOrg, error: receiptError } = await svc.from("organizations")
+      .select("onboarding_state").eq("id", orgId).single();
+    expect(receiptError).toBeNull();
+    expect(receiptOrg!.onboarding_state.teste).toMatchObject({ run_id: freshRun!.id,
+      version_id: freshVersion!.id, respondeu: true });
     await activation.click();
     await page.waitForURL(/\/onboarding\/invite-team/, { timeout: 30_000 });
+    const { data: published, error: publishedError } = await svc.from("ai_agents")
+      .select("published_version_id").eq("organization_id", orgId)
+      .eq("id", freshVersion!.agent_id).single();
+    expect(publishedError).toBeNull();
+    expect(published!.published_version_id).toBe(freshVersion!.id);
+    const { data: activatedOrg, error: activatedError } = await svc.from("organizations")
+      .select("onboarding_state").eq("id", orgId).single();
+    expect(activatedError).toBeNull();
+    expect(activatedOrg!.onboarding_state.ativacao.version_id).toBe(freshVersion!.id);
     expect(await countMessages()).toBe(before);
     await page.getByRole("button", { name: /pular por enquanto/i }).click();
     await page.waitForURL(/\/onboarding\/done/, { timeout: 30_000 });

@@ -11,3 +11,8 @@ qualquer ponteiro existente e exigindo que o DSN PostgreSQL corresponda à porta
 publicada do banco efêmero já ligado ao app e ao gateway verificados.
 
 As verificações do recibo de atendimento e da ativação explícita permanecem.
+
+O ensaio do wizard também prepara seu canal com as colunas reais do banco e
+recria o rascunho pela fábrica oficial depois de cadastrar a credencial sintética.
+Ele exige um novo recibo real do sandbox antes da ativação, preservando a
+proveniência do rascunho e a recusa original sem chave, sem enviar WhatsApp.
