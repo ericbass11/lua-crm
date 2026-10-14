@@ -1,22 +1,24 @@
 ---
-title: LUA CRM — Diagramas de Arquitetura
+title: DeskcommCRM — Diagramas de Arquitetura
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Eric Souza
+owner: Rafael Melgaço
 referencia_arquitetural: docs/research/reference-synthesis.md
 formato: Mermaid
 ---
 
-# LUA CRM — Diagramas de Arquitetura
+# DeskcommCRM — Diagramas de Arquitetura
 
-Este documento consolida os diagramas canônicos do LUA CRM em sintaxe Mermaid. Serve como referência visual única para discussões de arquitetura, onboarding técnico, revisão de PRs estruturais e auditoria LGPD. Os diagramas aderem ao modelo C4 (níveis 1, 2 e 3), complementados por ER, sequência, deployment, fluxo de dados e máquinas de estado. Toda decisão arquitetural representada aqui foi herdada do bundle de referência (`reference-synthesis.md`) ou explicitada nos sub-PRDs `01` a `06`.
+> **Registro de 2026-04-28.** Os diagramas abaixo foram desenhados quando o alvo de deploy era a Vercel. Hoje o CRM é self-host em VPS, e o deploy que vale está em [`docs/runbooks/deploy.md`](../runbooks/deploy.md). O corpo não foi atualizado: é o desenho daquele dia, não o estado do sistema.
+
+Este documento consolida os diagramas canônicos do DeskcommCRM em sintaxe Mermaid. Serve como referência visual única para discussões de arquitetura, onboarding técnico, revisão de PRs estruturais e auditoria LGPD. Os diagramas aderem ao modelo C4 (níveis 1, 2 e 3), complementados por ER, sequência, deployment, fluxo de dados e máquinas de estado. Toda decisão arquitetural representada aqui foi herdada do bundle de referência (`reference-synthesis.md`) ou explicitada nos sub-PRDs `01` a `06`.
 
 ---
 
 ## 1. C4 Level 1 — System Context
 
-Visão macro do LUA CRM como sistema único, mostrando os atores humanos (operadores BPO, lojistas, clientes finais) e os sistemas externos (Nuvemshop, WhatsApp via WAHA, AI Gateway, ANPD). O foco é responder "quem fala com quem" e "qual é a fronteira do produto". O LUA CRM concentra a lógica de negócio; tudo que aparece ao redor é dependência ou usuário.
+Visão macro do DeskcommCRM como sistema único, mostrando os atores humanos (operadores BPO, lojistas, clientes finais) e os sistemas externos (Nuvemshop, WhatsApp via WAHA, AI Gateway, ANPD). O foco é responder "quem fala com quem" e "qual é a fronteira do produto". O DeskcommCRM concentra a lógica de negócio; tudo que aparece ao redor é dependência ou usuário.
 
 ```mermaid
 graph TD
@@ -26,31 +28,31 @@ graph TD
     SuperAdmin[Super-admin de Plataforma<br/>sócio empresa operadora]
     Auditor[ANPD / Auditor LGPD<br/>regulador]
 
-    LUA CRM[LUA CRM<br/>CRM operacional + IA + LGPD<br/>multi-tenant SaaS/BPO]
+    DeskcommCRM[DeskcommCRM<br/>CRM operacional + IA + LGPD<br/>multi-tenant SaaS/BPO]
 
     Nuvemshop[Nuvemshop API<br/>OAuth + 8 webhooks<br/>+ catálogo + pedidos]
     WAHA[WAHA Plus<br/>WhatsApp HTTP API<br/>multi-sessão NOWEB]
     AIGW[Vercel AI Gateway<br/>Anthropic primário<br/>OpenAI fallback]
     Sentry[Sentry<br/>error tracking]
 
-    OperadorBPO -->|atende multi-tenant| LUA CRM
-    SuperAdmin -->|gerencia plataforma| LUA CRM
-    Tenant -->|configura RAG, vê KPIs| LUA CRM
-    Auditor -.->|requisita audit trail| LUA CRM
+    OperadorBPO -->|atende multi-tenant| DeskcommCRM
+    SuperAdmin -->|gerencia plataforma| DeskcommCRM
+    Tenant -->|configura RAG, vê KPIs| DeskcommCRM
+    Auditor -.->|requisita audit trail| DeskcommCRM
 
     Cliente <-->|conversa via WhatsApp| WAHA
-    WAHA <-->|webhooks + send| LUA CRM
+    WAHA <-->|webhooks + send| DeskcommCRM
 
-    LUA CRM <-->|OAuth + webhooks + sync| Nuvemshop
-    LUA CRM -->|chat completion + embeddings| AIGW
-    LUA CRM -->|telemetria de erros| Sentry
+    DeskcommCRM <-->|OAuth + webhooks + sync| Nuvemshop
+    DeskcommCRM -->|chat completion + embeddings| AIGW
+    DeskcommCRM -->|telemetria de erros| Sentry
 ```
 
 ---
 
 ## 2. C4 Level 2 — Container Diagram
 
-Decomposição do LUA CRM em containers de runtime. O Next.js App é o monolito hospedado na Vercel; Supabase entrega Postgres, Realtime e Storage gerenciados; Upstash provê Redis para rate-limit; WAHA Plus roda em VPS Hostgator próprio (Docker); o MCP server é projeto separado entrando na Fase 2. A linha pontilhada para o MCP marca componentes ainda não construídos no MVP.
+Decomposição do DeskcommCRM em containers de runtime. O Next.js App é o monolito hospedado na Vercel; Supabase entrega Postgres, Realtime e Storage gerenciados; Upstash provê Redis para rate-limit; WAHA Plus roda em VPS Hostgator próprio (Docker); o MCP server é projeto separado entrando na Fase 2. A linha pontilhada para o MCP marca componentes ainda não construídos no MVP.
 
 ```mermaid
 graph TB
@@ -168,7 +170,7 @@ graph TB
 
 ## 4. ER Diagram — Schema completo
 
-Schema central do LUA CRM. Em torno de `organizations` orbitam três sub-domínios: (a) chat/canal — `channel_sessions`, `contacts`, `conversations`, `messages`; (b) CRM core — `crm_pipelines` → `crm_stages` → `crm_leads` → `crm_lead_activities` (timeline polimórfica) + `crm_lead_links` (vínculos polimórficos); (c) integração e-commerce e LGPD — `tenant_integrations`, `orders`, `nuvemshop_products`. Tabelas de plataforma (`api_tokens`, `event_log`, `webhook_subscriptions`, `usage_events`) servem o monolito inteiro. Multi-tenancy aplicada via `organization_id` em toda tabela tenant-aware.
+Schema central do DeskcommCRM. Em torno de `organizations` orbitam três sub-domínios: (a) chat/canal — `channel_sessions`, `contacts`, `conversations`, `messages`; (b) CRM core — `crm_pipelines` → `crm_stages` → `crm_leads` → `crm_lead_activities` (timeline polimórfica) + `crm_lead_links` (vínculos polimórficos); (c) integração e-commerce e LGPD — `tenant_integrations`, `orders`, `nuvemshop_products`. Tabelas de plataforma (`api_tokens`, `event_log`, `webhook_subscriptions`, `usage_events`) servem o monolito inteiro. Multi-tenancy aplicada via `organization_id` em toda tabela tenant-aware.
 
 ```mermaid
 erDiagram

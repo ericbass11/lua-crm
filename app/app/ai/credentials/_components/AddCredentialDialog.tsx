@@ -27,16 +27,18 @@ import {
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import {
-  credentialsListQueryKey,
-  type CredentialRow,
-  type Provider,
-} from "@/hooks/ai/useCredentials";
+import { credentialsListQueryKey, type CredentialRow } from "@/hooks/ai/useCredentials";
+import { IDS_COM_CHAVE, PROVEDORES_COM_CHAVE, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
+import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
+import { useT } from "@/hooks/i18n/useT";
 
 const formSchema = z.object({
-  provider: z.enum(["anthropic", "openai", "google"]),
-  label: z.string().trim().min(1, "Obrigatório").max(80),
-  api_key: z.string().trim().min(8, "API key muito curta").max(2048),
+  // Derivado das listas (`lib/ai/pontos/provedores.ts`), como a rota.
+  provider: z.enum(IDS_COM_CHAVE),
+  // Opcional: o leigo cola só a chave. Em branco, o nome vira o do provedor
+  // (ver `onSubmit`) — o banco exige um, e a pessoa não precisa inventá-lo.
+  label: z.string().trim().max(80),
+  api_key: z.string().trim().min(8, "Chave muito curta").max(2048),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -48,19 +50,25 @@ interface CreateResponse {
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** O cartão do Jev abre o diálogo já nele; a tela de Credenciais, na Anthropic. */
+  providerInicial?: ProvedorComChave;
+  /** Chamado depois de gravar, para quem abriu o diálogo fora de Credenciais reler o que mostra. */
+  aoSalvar?: () => void;
 }
 
-export function AddCredentialDialog({ open, onOpenChange }: Props) {
+export function AddCredentialDialog({ open, onOpenChange, providerInicial = "anthropic", aoSalvar }: Props) {
+  const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
-  const [provider, setProvider] = useState<Provider>("anthropic");
+  const [provider, setProvider] = useState<ProvedorComChave>(providerInicial);
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
+  const provedor = PROVEDORES_COM_CHAVE.find((p) => p.id === provider) ?? PROVEDORES_COM_CHAVE[0];
 
   const reset = () => {
-    setProvider("anthropic");
+    setProvider(providerInicial);
     setLabel("");
     setApiKey("");
     setErrors({});
@@ -74,24 +82,25 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
     if (!parsed.success) {
       const flat = parsed.error.flatten().fieldErrors;
       setErrors({
-        provider: flat.provider?.[0],
-        label: flat.label?.[0],
-        api_key: flat.api_key?.[0],
+        provider: flat.provider?.[0] ? t(flat.provider[0]) : undefined,
+        label: flat.label?.[0] ? t(flat.label[0]) : undefined,
+        api_key: flat.api_key?.[0] ? t(flat.api_key[0]) : undefined,
       });
       return;
     }
 
     setSubmitting(true);
-    const validatingToast = toast.loading("Credencial salva. Validando…");
+    const validatingToast = toast.loading(t("Credencial salva. Validando…"));
     try {
-      const res = await apiClient.post<CreateResponse>(
-        "/api/v1/ai/credentials",
-        parsed.data,
-      );
+      const res = await apiClient.post<CreateResponse>("/api/v1/ai/credentials", {
+        ...parsed.data,
+        label: parsed.data.label || provedor.rotulo,
+      });
       toast.dismiss(validatingToast);
-      toast.success("Credencial salva. Validação em segundo plano.");
+      toast.success(t("Credencial salva. Validação em segundo plano."));
       reset();
       onOpenChange(false);
+      aoSalvar?.();
 
       // Poll uma vez após ~3s para refletir validated_at no card.
       setTimeout(async () => {
@@ -100,10 +109,15 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
         const justCreated = fresh?.find((c) => c.id === res.data.id);
         if (justCreated?.models_available != null) {
           toast.success(
-            `Validada — ${justCreated.models_available} modelos disponíveis.`,
+            `${t("Validada")} — ${justCreated.models_available.length} ${t("modelos disponíveis.")}`,
           );
         } else if (justCreated?.validation_error) {
-          toast.error(`Validação falhou: ${justCreated.validation_error}`);
+          const erro = descreverErroDeValidacao(justCreated.validation_error, justCreated.provider);
+          toast.error(
+            erro.generico
+              ? `${t("Falha na validação")} (${justCreated.validation_error}).`
+              : t(erro.frase),
+          );
         }
       }, 3000);
 
@@ -127,51 +141,62 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChangeWrapped}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Adicionar credencial</DialogTitle>
+          <DialogTitle>{t("Adicionar credencial")}</DialogTitle>
           <DialogDescription>
-            A chave é cifrada (AES-GCM) antes de gravar e nunca é retornada em
-            texto claro.
+            {t("A chave é guardada cifrada. Depois de salva, só os quatro últimos caracteres aparecem na tela.")}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="cred-provider">Provider</Label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as Provider)}>
+            <Label htmlFor="cred-provider">{t("Provedor")}</Label>
+            <Select value={provider} onValueChange={(v) => setProvider(v as ProvedorComChave)}>
               <SelectTrigger id="cred-provider">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="anthropic">Anthropic</SelectItem>
-                <SelectItem value="openai">OpenAI</SelectItem>
-                <SelectItem value="google">Google</SelectItem>
+                {PROVEDORES_COM_CHAVE.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.rotulo}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">{t(provedor.quandoUsar)}</p>
             {errors.provider && (
               <p className="text-xs text-destructive">{errors.provider}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="cred-label">Label</Label>
+            <Label htmlFor="cred-label">{t("Nome")}</Label>
             <Input
               id="cred-label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="Ex: Produção"
+              placeholder={t("Opcional — ex.: Chave da clínica")}
               maxLength={80}
-              required
             />
             {errors.label && <p className="text-xs text-destructive">{errors.label}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="cred-key">API key</Label>
+            <div className="flex items-baseline justify-between">
+              <Label htmlFor="cred-key">{t("Chave")}</Label>
+              <a
+                className="text-xs underline underline-offset-4"
+                href={provedor.ondePegarAChave}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("Onde pegar a chave")}
+              </a>
+            </div>
             <Input
               id="cred-key"
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-..."
+              placeholder={provedor.prefixoDaChave}
               autoComplete="off"
               required
             />
@@ -187,10 +212,10 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
               onClick={() => onOpenChangeWrapped(false)}
               disabled={submitting}
             >
-              Cancelar
+              {t("Cancelar")}
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Salvando…" : "Salvar e validar"}
+              {submitting ? t("Salvando…") : t("Salvar e validar")}
             </Button>
           </DialogFooter>
         </form>

@@ -18,11 +18,18 @@
  * aceita; quem escreve daqui é que fica preso ao vocabulário.
  */
 export type ActivityType =
+  // Spec 17: o lead nasceu da primeira mensagem. Sem esta linha na timeline, o
+  // card aparece no kanban sem que ninguém saiba de onde veio — e "apareceu
+  // sozinho" é como se perde a confiança num automatismo.
+  | "lead_created"
   | "stage_changed"
+  /** Um humano desfez ou redirecionou o que a IA tinha movido (spec 17 passo 5). */
+  | "agent_move_corrected"
   | "note"
   | "ai_turn"
   | "send_vetoed"
   | "handoff_triggered"
+  | "handoff_resolved"
   | "next_action_approved"
   | "next_action_dismissed"
   | "lead_edited"
@@ -30,14 +37,150 @@ export type ActivityType =
   | "lead_reactivated"
   | "reactivation_accepted"
   | "reactivation_dismissed"
-  | "reactivation_expired";
+  | "reactivation_expired"
+  | "followup_scheduled"
+  // DECISÃO 22 — a agenda na timeline do lead. `appointment_completed` e
+  // `appointment_no_show` são o PAR que a DECISÃO 17 exige: sem os dois,
+  // "aconteceu" e "faltou" não chegam à timeline, e o Radar não distingue lead
+  // atendido de lead que sumiu. A lista-espelho vive em `lib/agenda/tipos.ts`
+  // (`ATIVIDADES_DA_AGENDA`), e o compilador amarra as duas lá.
+  | "appointment_scheduled"
+  | "appointment_rescheduled"
+  | "appointment_cancelled"
+  | "appointment_completed"
+  | "appointment_no_show"
+  | "followup_cancelled"
+  /**
+   * As quatro formas de INTERVIR num follow-up em andamento, sem matá-lo.
+   * Antes delas, a única saída era cancelar — e quem lesse a timeline via o
+   * fluxo sumir sem saber se alguém desistiu ou se ele terminou.
+   */
+  | "followup_paused"
+  | "followup_resumed"
+  | "followup_snoozed"
+  | "followup_step_skipped"
+  | "demand_closed"
+  | "promise_unowned"
+  /**
+   * O respondente disse NÃO no formulário de captação (ex.: Respondi). A
+   * recusa é sinal, não ausência de sinal — sem linha na timeline, "por que
+   * ninguém mandou WhatsApp pra este lead" fica sem resposta visível, e é
+   * justamente esse silêncio que a automação de 1º toque precisa respeitar.
+   */
+  | "consent_declined"
+  /**
+   * Classificação inicial (ver `lib/leads/classificacao-inicial.ts`) bateu um
+   * dos 3 motivos exatos de desqualificação. Igual a `consent_declined`: o
+   * "não" é sinal — sem esta linha, um lead que some do funil comercial de
+   * primeiro toque parece esquecido, não desqualificado por regra.
+   */
+  | "lead_disqualified"
+  /**
+   * Classificação inicial pediu olho humano antes de classificar. São TRÊS
+   * motivos possíveis — conflito de identidade (o nome do envio diverge do já
+   * gravado no contato casado por telefone/e-mail), sinal de spam, ou
+   * contradição entre o que a empresa diz investir hoje e o que diz ser
+   * viável. Qual deles foi vai no `reason` da atividade; o rótulo não nomeia
+   * um só, porque nomear um dos três seria descrever errado os outros dois.
+   * Sem linha, ninguém sabe que o lead está parado esperando alguém decidir.
+   */
+  | "lead_needs_review"
+  /**
+   * A TROCA DE COMANDO ENTRE PESSOAS. A ida e a volta IA↔humano já estavam aqui
+   * (`handoff_triggered`/`handoff_resolved`); assumir, transferir e liberar não
+   * geravam linha nenhuma — grep nas três rotas devolvia zero. O efeito era uma
+   * timeline em que o cliente saía do automático, alguém resolvia, e a conversa
+   * reaparecia com outro dono sem nada explicando a passagem.
+   *
+   * Não vieram como tabela nova de propósito: a auditoria de atribuição
+   * (`conversation_assignment_events`) existe, é append-only e serve ao
+   * roteamento — mas uma SEGUNDA linha do tempo ao lado desta, no mesmo painel,
+   * seria dois lugares contando a mesma história.
+   */
+  | "conversation_claimed"
+  | "conversation_transferred"
+  | "conversation_released"
+  | "conversation_ai_paused"
+  /**
+   * Chamada de voz WhatsApp (WaCalls, spec 18) encerrada — gravada na timeline
+   * junto com mensagens/notas. Emitida pela ponte de eventos do worker
+   * (`lib/wacalls/events-bridge.ts`) ao receber `call-ended`, via
+   * `emitAgentActivityForContact` (mesmo roteador contato→lead que o resto do
+   * sistema usa, `sourceModule: 'voice_calls'`).
+   */
+  | "voice_call"
+  /**
+   * Chamada de voz que TOCOU e ninguém atendeu.
+   *
+   * Tipo próprio, e não um campo dentro de `voice_call`, porque quem decide o
+   * que fazer com esta linha é um TRIGGER que só enxerga `new.type`:
+   * `fn_update_last_activity_at` (migration 0079) carimba `last_activity_at`
+   * pela lista positiva de tipos. Uma ligação atendida quebra o silêncio do
+   * negócio; um telefone que tocou sem resposta é constatação de silêncio, e
+   * carimbar ali esfriaria o Radar de Risco por um contato com quem ninguém
+   * falou. Os dois desfechos precisam ser distinguíveis lá dentro.
+   */
+  | "voice_call_missed"
+  /**
+   * Ligação FEITA pelo CRM que ninguém atendeu. Não é "perdida": quem discou
+   * sabe que ninguém pegou, e o rótulo da linha do tempo sai do TIPO — gravar
+   * `voice_call_missed` aqui escrevia "Chamada de voz perdida" no negócio de
+   * quem acabou de ligar. Fora da lista positiva de `fn_update_last_activity_at`
+   * pelo mesmo motivo de `voice_call_missed`: ninguém falou com ninguém.
+   */
+  | "voice_call_unanswered"
+  /**
+   * A TAREFA COMBINADA, na linha do tempo do negócio (migration 0210).
+   *
+   * "Ligar de volta na terça" só existe por causa de um negócio. Sem estas duas
+   * linhas, quem abre o card vê a conversa parar e não sabe que há um retorno
+   * marcado — e "por que ninguém falou com este cliente?" fica sem resposta
+   * visível, que é o modo de morte que `consent_declined` já documenta aqui.
+   *
+   * São DUAS e não uma pelo mesmo motivo de `appointment_completed`/
+   * `appointment_no_show`: "foi combinado" e "foi feito" são fatos diferentes, e
+   * só o par permite distinguir o que ainda está pendurado do que já fechou.
+   */
+  | "task_created"
+  | "task_completed"
+  /**
+   * DOIS CADASTROS DA MESMA PESSOA VIRARAM UM. Emitido por
+   * `fn_mesclar_contatos` (migration 0215) em cada negócio que o contato
+   * vencedor passou a ter — inclusive nos que ELE não tinha e herdou do
+   * perdedor, que é justamente onde a linha explica por que o negócio mudou de
+   * dono sem ninguém o ter movido.
+   *
+   * ⚠️ O emissor é SQL, e é a única linha deste vocabulário que o compilador
+   * não amarra ao escritor: a função grava o literal `'contacts_merged'`. Se
+   * alguém renomear a constante daqui, renomeie no corpo da função também — a
+   * coluna `crm_lead_activities.type` é de vocabulário ABERTO (sem CHECK, por
+   * doutrina de migrations), então o banco aceitaria a divergência calado e a
+   * timeline cairia no fallback.
+   */
+  | "contacts_merged"
+  /**
+   * O negócio nasceu da TROCA DE FUNIL (`POST /api/v1/leads/[id]/clone`).
+   *
+   * ⚠️ Não é `lead_created`: aquele rótulo diz "Entrou pelo WhatsApp", e este
+   * negócio não entrou por canal nenhum — ele veio de outro funil, e é isso que
+   * quem abre o card no destino precisa ler. O outro lado da troca é a
+   * `demand_closed` da origem, com a razão "Levado para o funil X".
+   */
+  | "moved_from_pipeline";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
+  lead_created: "Entrou pelo WhatsApp",
   stage_changed: "Mudou de estágio",
+  agent_move_corrected: "Correção do que o assistente tinha feito",
   note: "Anotação",
   ai_turn: "Atendimento da IA",
   send_vetoed: "Envio bloqueado",
   handoff_triggered: "Passou para humano",
+  // A IDA existia e a VOLTA não: a linha do tempo mostrava o cliente saindo para
+  // uma pessoa e nunca voltando, como se o atendimento tivesse parado ali. Meia
+  // continuidade lida como continuidade — e é justamente na volta que quem lê
+  // precisa saber que o combinado com a pessoa foi repassado ao agente.
+  handoff_resolved: "Voltou para o atendimento automático",
   // A RECUSA é sinal, não ausência de sinal: "o humano viu e disse não" é o que
   // impede o agente de repropor o mesmo. Ignorar sem registro faz a IA insistir
   // no que já foi negado — por isso os dois lados geram atividade.
@@ -60,6 +203,70 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   reactivation_accepted: "Retomada de contato aprovada",
   reactivation_dismissed: "Retomada de contato descartada",
   reactivation_expired: "Sugestão de retomada venceu sem decisão",
+  // O RETORNO É O ANTI-MORTE (invariante 4): marcar e desmarcar são os dois
+  // acontecimentos que decidem se a demanda continua viva. Sem as duas linhas,
+  // o negócio some do radar (ou volta a ele) e a timeline não sabe explicar por
+  // quê — e é justamente o cancelamento que o agente precisa enxergar ao
+  // retomar, para não repropor o que uma pessoa já desmarcou.
+  followup_scheduled: "Retorno agendado",
+  // ⚠️ "Agendamento", não "Consulta". O produto é MULTI-NICHO por design:
+  // imobiliária faz visita, agência faz call, obra faz vistoria. "Consulta
+  // marcada" seria o vocabulário de UM nicho imposto aos outros quatro, que é o
+  // que o `VISION.md` proíbe. Quem quiser a palavra do próprio ramo tem o
+  // `vocabulary` do pipeline para isso — o rótulo padrão fica neutro.
+  appointment_scheduled: "Agendamento marcado",
+  appointment_rescheduled: "Agendamento remarcado",
+  appointment_cancelled: "Agendamento cancelado",
+  appointment_completed: "Agendamento realizado",
+  appointment_no_show: "Não compareceu",
+  followup_cancelled: "Retorno cancelado",
+  // PAUSAR NÃO É CANCELAR, e a diferença importa para quem pega o atendimento
+  // depois: cancelado é decisão fechada, pausado é o fluxo parado esperando uma
+  // pessoa. Sem as duas linhas, quem lê a timeline não sabe se o silêncio do
+  // agente é desistência ou espera — e, no caso do adiamento, nem que existe
+  // uma data combinada.
+  followup_paused: "Follow-up pausado",
+  followup_resumed: "Follow-up retomado",
+  followup_snoozed: "Follow-up adiado",
+  followup_step_skipped: "Passo do follow-up pulado",
+  // PROMESSA SEM RESPONSÁVEL. Entra na timeline pelo mesmo critério do
+  // `diffCheckpoint`: só o que muda o que alguém faria a seguir. Turno em que o
+  // Operador AGIU não gera linha própria — as ferramentas dele já geram as delas
+  // (`stage_changed`, `followup_scheduled`), e uma segunda linha dizendo "o
+  // Operador trabalhou" é o ruído que o diff existe para matar.
+  //
+  // O rótulo não diz "não cumprida": o sistema não apura cumprimento, apura se
+  // alguém assumiu.
+  promise_unowned: "Promessa sem responsável",
+  // ENCERRAR É O OUTRO LADO do invariante 4: uma demanda aberta precisa de
+  // próximo passo OU de desfecho registrado. Fechar como ganho ou perdido era
+  // invisível na timeline — só existia em audit e event_log, que ninguém lê na
+  // tela — e o dossiê de um negócio fechado terminava sem dizer que fechou.
+  demand_closed: "Demanda encerrada",
+  consent_declined: "Consentimento de contato recusado no formulário",
+  lead_disqualified: "Desqualificado na triagem inicial",
+  lead_needs_review: "Aguardando revisão humana",
+  // Rótulos com OBJETO, nunca verbo nu: "Liberou" sozinho não diz o quê, e numa
+  // clínica "liberar" é o que se faz com um exame. O resto do arquivo já segue
+  // essa régua ("Retorno agendado", "Demanda encerrada").
+  conversation_claimed: "Assumiu a conversa",
+  conversation_transferred: "Transferiu a conversa",
+  conversation_released: "Liberou a conversa",
+  // "automático" e não "IA": a palavra do estado já é contrato em quatro
+  // arquivos e o controle NEGATIVO de `handoff-por-orcamento.test.ts` usa
+  // literalmente "Voltar para a IA" como a sabotagem que deve reprovar.
+  conversation_ai_paused: "Pausou o automático",
+  voice_call: "Chamada de voz",
+  voice_call_missed: "Chamada de voz perdida",
+  voice_call_unanswered: "Chamada de voz sem resposta",
+  task_created: "Tarefa combinada",
+  task_completed: "Tarefa concluída",
+  // Rótulo com OBJETO e sem jargão de banco: "Mesclado" sozinho é palavra de
+  // engenheiro. O que aconteceu, para quem lê a timeline do negócio, é que dois
+  // cadastros da mesma pessoa viraram um — e é por isso que este negócio pode
+  // ter mudado de contato sem ninguém tê-lo movido.
+  contacts_merged: "Contatos duplicados juntados",
+  moved_from_pipeline: "Veio de outro funil",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */
@@ -108,10 +315,11 @@ export function actorShape(actorKind: string | null): ActivityActorShape {
 export function actorName(
   actorKind: string | null,
   nomes: { agente?: string | null; usuario?: string | null } = {},
+  t: (texto: string) => string = (texto) => texto,
 ): string {
   if (actorKind === "ai" && nomes.agente) return nomes.agente;
   if ((actorKind === "user" || actorKind === "contact") && nomes.usuario) return nomes.usuario;
-  return actorLabel(actorKind);
+  return t(actorLabel(actorKind));
 }
 
 /**

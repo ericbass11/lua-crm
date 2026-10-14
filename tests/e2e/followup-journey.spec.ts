@@ -39,7 +39,11 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
 
+import { zoomAte } from "./utils/canvas-do-fluxo";
+
+import { afirmarAdminDeTenantPuro } from "./utils/precondicao";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
+import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const ARTIFACTS_DIR = path.join(process.cwd(), "e2e-artifacts");
@@ -66,14 +70,29 @@ function loadCreds(): Creds {
 }
 
 function loadInternalSecret(): string {
-  const envFile = fs.readFileSync(path.join(process.cwd(), ".env.local"), "utf8");
-  const match = envFile.match(/^INTERNAL_SECRET=(.*)$/m);
+  const envDeTeste = carregarEnvLocal();
+  const match = [null, envDeTeste.INTERNAL_SECRET];
   const secret = match?.[1]?.trim();
   if (!secret) throw new Error("INTERNAL_SECRET não encontrado em .env.local");
   return secret;
 }
 
-const creds = loadCreds();
+let creds = loadCreds();
+
+// ── Precondição de identidade ────────────────────────────────────────────────
+// Esta spec dirige o produto como ADMIN DE TENANT (`creds.users.admin`), o
+// usuário compartilhado por 10 arquivos — e que `seed-e2e-system-update.ts`
+// promovia a dono do servidor sem revogar, num banco que o job `e2e` não reseta
+// entre as duas partes.
+//
+// ⚠️ Medido, e a diferença importa: com rank `admin` (5, o teto), a promoção NÃO
+// muda a navegação nem os gates `!is_platform_admin && ROLE_RANK < X` — muda só
+// as superfícies exclusivas do dono. Nenhuma asserção deste arquivo abre uma
+// delas hoje. A precondição existe para que a primeira que abrir não passe
+// medindo o escape. O raciocínio inteiro está em `utils/precondicao.ts`.
+test.beforeAll(async () => {
+  await afirmarAdminDeTenantPuro(creds.users.admin!.email);
+});
 const secret = loadInternalSecret();
 
 /** Roda 1 subcomando do helper de SQL cru e devolve o JSON impresso na última linha. */
@@ -90,7 +109,7 @@ async function loginWithTotp(page: Page, email: string, secretTotp: string): Pro
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/login\/mfa/);
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -116,8 +135,18 @@ async function loginWithTotp(page: Page, email: string, secretTotp: string): Pro
 // (duplicados aqui de propósito: cada spec deste repo é self-contido).
 // ---------------------------------------------------------------------------
 
-async function connectHandles(page: Page, sourceNodeId: string, targetNodeId: string): Promise<void> {
-  const source = page.locator(`.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`);
+async function connectHandles(
+  page: Page,
+  sourceNodeId: string,
+  targetNodeId: string,
+  sourceHandleId?: string,
+): Promise<void> {
+  // Nó que ramifica tem uma bolinha por saída: `.source` sozinho casa várias e o
+  // modo estrito recusa. Quem arrasta de um nó desses diz de qual saída.
+  const sourceSel = sourceHandleId
+    ? `.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source[data-handleid="${sourceHandleId}"]`
+    : `.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`;
+  const source = page.locator(sourceSel).first();
   const target = page.locator(`.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`);
   const sBox = await source.boundingBox();
   const tBox = await target.boundingBox();
@@ -188,6 +217,10 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
 
   test.beforeAll(() => {
     execFileSync("npx", ["tsx", "scripts/seed-e2e-followup-agent.ts"], { stdio: "inherit" });
+    // O seed ESCREVE em .e2e-creds.json, e `creds` foi lido no carregamento do
+    // módulo — sem reler, o objeto em memória nunca vê o bloco que o seed
+    // acabou de gravar. Mesmo idioma de queue-assign.spec.ts, que passa por isso.
+    creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
   });
 
   test("silêncio → enroll → trigger→wait→action→classify → resposta → outcome → fila", async ({ page }) => {
@@ -238,8 +271,7 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
       throw new Error("node ids ausentes após montar a paleta");
     }
 
-    const zoomOut = page.locator(".react-flow__controls-zoomout");
-    for (let i = 0; i < 6; i++) await zoomOut.click();
+    await zoomAte(page, 0.7);
     await page.waitForTimeout(300);
 
     const canvasBox = await page.getByTestId("flow-canvas").boundingBox();
@@ -253,14 +285,16 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     await moveNodeTo(page, endNoReplyId, ...at(260, 650));
     await moveNodeTo(page, endFallbackId, ...at(460, 650));
 
-    // Configura: classify → 1 classe "positivo" (troca o default hot/cold);
+    // Configura: classify → 1 classe "positivo" (troca o padrão Interessado/Sem interesse);
     // action → prompt_hint real; end-positivo → outcome "Convertido" (os
     // outros 2 fins ficam no default "Esgotado", coerente com no_reply/fallback).
     await page.locator(`[data-testid="node-card-${classifyId}"]`).click();
     const panel = page.getByTestId("node-config-panel");
     await panel.getByLabel("Classes (separadas por vírgula)").fill("positivo");
     await panel.getByLabel("Classes (separadas por vírgula)").blur();
-    await expect(page.locator(`[data-testid="node-card-${classifyId}"]`)).toContainText("1 classes");
+    // "1 classe", não "1 classes": o card conta em português, e esta linha fixava
+    // o plural errado que o produto mostrava.
+    await expect(page.locator(`[data-testid="node-card-${classifyId}"]`)).toContainText("1 classe · espera");
 
     await page.locator(`[data-testid="node-card-${actionId}"]`).click();
     const promptHint = "Pergunte com simpatia se ainda há interesse e ofereça ajuda para fechar.";
@@ -280,9 +314,12 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     await connectHandles(page, triggerId, waitId); // edge-1
     await connectHandles(page, waitId, actionId); // edge-2
     await connectHandles(page, actionId, classifyId); // edge-3
-    await connectHandles(page, classifyId, endPositivoId); // edge-4 → class_match positivo
-    await connectHandles(page, classifyId, endNoReplyId); // edge-5 → class_match no_reply
-    await connectHandles(page, classifyId, endFallbackId); // edge-6 → always (fica no default)
+    // Saem todas da bolinha "nenhuma delas" para nascerem `always`, como antes —
+    // as duas primeiras viram class_match logo abaixo, pelo painel da aresta,
+    // que é o que este trecho da jornada existe para exercitar.
+    await connectHandles(page, classifyId, endPositivoId, "else"); // edge-4 → class_match positivo
+    await connectHandles(page, classifyId, endNoReplyId, "else"); // edge-5 → class_match no_reply
+    await connectHandles(page, classifyId, endFallbackId, "else"); // edge-6 → always (fica no default)
     await expect(page.locator(".react-flow__edge")).toHaveCount(6);
 
     await setEdgeCondition(page, "edge-4", "positivo");

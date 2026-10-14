@@ -36,14 +36,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import pg from "pg";
 
-import { createPgAdminClient, completeTurnForEnrollment, type TurnResult } from "@/lib/followup/turn-bridge";
+import {
+  createPgAdminClient,
+  completeTurnForEnrollment,
+  type TurnResult,
+} from "@/lib/followup/turn-bridge";
+import { carregarEnvLocal } from "../scripts/lib/env-de-teste";
 
-const envFile = fs.readFileSync(path.join(process.cwd(), ".env.local"), "utf8");
-const env: Record<string, string> = {};
-for (const line of envFile.split("\n")) {
-  const m = line.match(/^([A-Z_]+)=(.*)$/);
-  if (m) env[m[1]!] = m[2]!.replace(/^"(.*)"$/, "$1");
-}
+const env = carregarEnvLocal();
 
 const DB_URL = env.SUPABASE_DB_URL;
 if (!DB_URL) throw new Error("Missing SUPABASE_DB_URL in .env.local");
@@ -75,7 +75,10 @@ async function main(): Promise<void> {
       case "prepare-agent-fixtures": {
         const creds = loadCreds();
         const fixtures = creds.followup_agent_fixtures;
-        if (!fixtures) throw new Error("followup_agent_fixtures ausente em .e2e-creds.json — rode seed-e2e-followup-agent.ts antes");
+        if (!fixtures)
+          throw new Error(
+            "followup_agent_fixtures ausente em .e2e-creds.json — rode seed-e2e-followup-agent.ts antes",
+          );
         await pool.query(`update ai_provider_credentials set validated_at = now() where id = $1`, [
           fixtures.credential_id,
         ]);
@@ -114,7 +117,77 @@ async function main(): Promise<void> {
         );
         const conversationId = convRows[0]!.id;
 
-        out({ contactId, contactName, conversationId, channelSessionId: fixtures.channel_session_id });
+        // A MENSAGEM PRECISA EXISTIR, e carimbada — mesma correção feita em
+        // `e2e-elegibilidade-helpers.ts`, e pelo mesmo motivo.
+        //
+        // Esta fixture nasceu antes da fronteira do atendimento e criava o
+        // silêncio como um CAMPO (`last_inbound_at`), sem linha em `messages`.
+        // A varredura passou a exigir PROCEDÊNCIA: ela lê a mensagem inbound
+        // mais nova e o carimbo dela, porque é isso que separa "calado neste
+        // atendimento" de "calado desde outro". Sem a mensagem, a conversa é
+        // invisível para o gatilho e o contato nunca é enrolado.
+        //
+        // O carimbo não se escreve aqui: `fn_service_inbound` dispara no INSERT
+        // e o grava. Escrevê-lo à mão provaria a forma da linha, não o caminho.
+        await pool.query(
+          `insert into messages
+             (organization_id, conversation_id, channel_session_id, contact_id,
+              type, direction, status, sent_via, body, sent_at)
+           values ($1, $2, $3, $4, 'text', 'inbound', 'received', 'ai', 'Oi, tudo bem?', $5)`,
+          [creds.org_id, conversationId, fixtures.channel_session_id, contactId, lastInboundAt],
+        );
+
+        out({
+          contactId,
+          contactName,
+          conversationId,
+          channelSessionId: fixtures.channel_session_id,
+        });
+        break;
+      }
+
+      // ---- abrir-caso <conversationId> [source] — abre um agent_case como o
+      // ---- agente abre, e é setup legítimo: NÃO existe rota de criação de
+      // ---- caso (app/api/v1/ai/cases só expõe GET e reply). Quem abre é
+      // ---- `openCase` dentro do turno do agente, que exigiria modelo + WAHA.
+      // ---- O INSERT aqui passa pelo MESMO trigger de produção (0148) que o
+      // ---- turno do agente dispararia — o gatilho não é atalhado, só o
+      // ---- caminho até ele.
+      case "abrir-caso": {
+        const conversationId = args[0];
+        const source = args[1] ?? "agent";
+        if (!conversationId) throw new Error("conversationId obrigatório");
+        const creds = loadCreds();
+        const { rows } = await pool.query<{ id: string }>(
+          `insert into agent_cases
+             (organization_id, conversation_id, status, title, summary, blocker, source)
+           values ($1, $2, 'awaiting_human', $3, $4, $5, $6)
+           returning id`,
+          [
+            creds.org_id,
+            conversationId,
+            "Cliente pediu algo que eu não resolvo",
+            "O cliente quer negociar o valor e eu não tenho alçada.",
+            "precisa de alguém com alçada de desconto",
+            source,
+          ],
+        );
+        out({ caseId: rows[0]!.id, conversationId, source });
+        break;
+      }
+
+      // ---- fechar-caso <caseId> — o outro lado do laço. O UPDATE de status
+      // ---- dispara `ai.case_closed`, que cancela o follow-up nascido dele.
+      case "fechar-caso": {
+        const caseId = args[0];
+        if (!caseId) throw new Error("caseId obrigatório");
+        const creds = loadCreds();
+        const { rowCount } = await pool.query(
+          `update agent_cases set status = 'resolved', closed_at = now()
+            where id = $1 and organization_id = $2`,
+          [caseId, creds.org_id],
+        );
+        out({ caseId, atualizados: rowCount });
         break;
       }
 
@@ -136,7 +209,9 @@ async function main(): Promise<void> {
       case "get-enrollment": {
         const enrollmentId = args[0];
         if (!enrollmentId) throw new Error("enrollmentId obrigatório");
-        const { rows } = await pool.query(`select * from followup_enrollments where id = $1`, [enrollmentId]);
+        const { rows } = await pool.query(`select * from followup_enrollments where id = $1`, [
+          enrollmentId,
+        ]);
         out(rows[0] ?? null);
         break;
       }
@@ -146,7 +221,8 @@ async function main(): Promise<void> {
       // ---- (a API de sweep não devolve id nenhum — é um cron fire-and-forget).
       case "find-enrollment": {
         const [orgId, pointerId, contactId] = args;
-        if (!orgId || !pointerId || !contactId) throw new Error("orgId, pointerId, contactId obrigatórios");
+        if (!orgId || !pointerId || !contactId)
+          throw new Error("orgId, pointerId, contactId obrigatórios");
         const { rows } = await pool.query(
           `select * from followup_enrollments
            where organization_id = $1 and pointer_id = $2 and contact_id = $3
@@ -204,7 +280,12 @@ async function main(): Promise<void> {
           [
             "message.received",
             messageId,
-            JSON.stringify({ conversation_id: conversationId, contact_id: contactId, channel_session_id: channelSessionId, body_preview: body.slice(0, 280) }),
+            JSON.stringify({
+              conversation_id: conversationId,
+              contact_id: contactId,
+              channel_session_id: channelSessionId,
+              body_preview: body.slice(0, 280),
+            }),
             orgId,
           ],
         );
@@ -257,7 +338,10 @@ async function main(): Promise<void> {
           `delete from followup_enrollment_events where enrollment_id in (select id from followup_enrollments where pointer_id = $1)`,
           [pointerId],
         );
-        const { rowCount } = await pool.query(`delete from followup_enrollments where pointer_id = $1`, [pointerId]);
+        const { rowCount } = await pool.query(
+          `delete from followup_enrollments where pointer_id = $1`,
+          [pointerId],
+        );
         out({ ok: true, deleted: rowCount });
         break;
       }
@@ -293,6 +377,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("❌ e2e-followup-journey-helpers falhou:", err instanceof Error ? err.message : err);
+  console.error(
+    "❌ e2e-followup-journey-helpers falhou:",
+    err instanceof Error ? err.message : err,
+  );
   process.exit(1);
 });

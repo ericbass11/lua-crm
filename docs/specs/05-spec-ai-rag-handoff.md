@@ -99,7 +99,7 @@ Default. Razões: barato ($0.02/1M tokens; <$1/mês pra tenant médio com 10k ch
 
 ### 2.5 Outras dependências
 
-- **PDF parsing**: `pdf-parse` (Node) com fallback `pdfjs-dist` se layout complexo.
+- **PDF parsing**: `pdfjs-dist` (build `legacy`), engine única. Já houve um `pdf-parse` como primária "com fallback pdfjs-dist", mas não eram duas engines: o `pdf-parse@1` vendoriza o próprio pdf.js da Mozilla (v1.10.100, de 2018) e era o mesmo motor duas vezes, com a cópia velha rodando primeiro — e falhando (issue #238). Para saber o que está instalado hoje, `grep pdf package.json`.
 - **Markdown chunking**: `unified` + `remark-parse` pra respeitar headings.
 - **Tokenizer pra contagem**: `gpt-tokenizer` (compatível com cl100k_base; aproximação suficiente).
 - **PII detection**: regex próprias (CPF, telefone E.164, email, CEP) + lista de nomes próprios PT-BR (heurística).
@@ -450,14 +450,13 @@ export async function POST(req: Request) {
 **Pipeline**:
 
 ```ts
-import pdfParse from "pdf-parse";
+import { extractPdfText } from "@/lib/ai/rag/extractors/pdf";
 
 async function extractPolicyText(blobPath: string): Promise<string> {
   const blob = await supabaseAdmin.storage.from("ai-policy").download(blobPath);
   if (blobPath.endsWith(".pdf")) {
     const buffer = Buffer.from(await blob.data!.arrayBuffer());
-    const parsed = await pdfParse(buffer);
-    return parsed.text;
+    return await extractPdfText(buffer); // pdfjs-dist; lança PdfExtractError
   } else {
     // markdown
     return await blob.data!.text();
@@ -1105,6 +1104,20 @@ Default IA-06: bot **não reassume**. `conversations.bot_silenced_until` (timest
 ```
 
 Próxima conversation no mesmo contact (status=resolved + nova abertura) começa com bot, exceto `contacts.force_human=true`.
+
+**Retomada por prazo (opcional, por organização).** A IA-06 continua sendo o padrão, mas a
+organização pode ligar um prazo em Configurações › Distribuição de atendimento
+(`organizations.settings.routing.handoff_return_after_minutes`, 5 min – 24 h; `null` = nunca).
+Com o prazo ligado, o cron `app/api/v1/cron/handoff-devolucao` (a cada 5 min) devolve ao agente
+a conversa que está com humano de forma durável — `bot_silenced_until = 'infinity'`,
+`assignee_kind = 'user'` ou `assigned_to_user_id` preenchido — e ficou o prazo inteiro sem
+**nenhum sinal humano** (o maior entre `last_handoff_at`, `assigned_at` e `last_outbound_at`).
+A devolução passa pela MESMA função do botão (`devolverAtendimentoAoAgente`) e só acontece em
+sessão com agente publicado ou roteador ativo; a pausa por resposta pelo celular
+(`lib/escalacao/atendimento-manual.ts`, silêncio finito) não entra — vence sozinha. Regra pura e
+motivos de exclusão em `lib/escalacao/devolucao-automatica.ts`. Motivação medida: 12 de 31
+conversas ativas de um dia estavam em handoff formal e nenhuma foi devolvida — o cliente que
+escreveu de novo ficou sem resposta, com humano ocupado e IA proibida.
 
 ---
 

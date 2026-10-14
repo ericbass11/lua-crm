@@ -1,103 +1,51 @@
-import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { getWahaClient } from "@/lib/waha/client";
+import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getWahaClient } from "@/lib/waha/client";
+import { connectWahaChannel, ChannelConnectionError } from "@/lib/channels/connect-waha";
+import { loadOnboardingChannel } from "@/lib/channels/onboarding-session";
 
-/**
- * Onboarding WhatsApp session orchestration.
- *
- * GET  → returns current session status (status enum from WAHA: STARTING|SCAN_QR_CODE|WORKING|FAILED|STOPPED)
- * POST → starts session if not already running. Idempotent.
- *
- * The actual QR image is served via /api/v1/onboarding/whatsapp/qr (proxy
- * to WAHA so client can <img src="..." /> without exposing the API key).
- */
-
-interface WahaSessionResponse {
-  name?: string;
-  status?: string;
-  config?: Record<string, unknown>;
-  me?: { id?: string; pushName?: string };
-}
-
-function defaultSessionName(orgId: string): string {
-  return `org_${orgId.slice(0, 8)}`;
-}
-
-async function ensureChannelSession(orgId: string, sessionName: string): Promise<string> {
-  const supabase = await createClient();
-  const { data: existing } = await supabase
-    .from("channel_sessions")
-    .select("id")
-    .eq("organization_id", orgId)
-    .eq("waha_session_name", sessionName)
-    .maybeSingle();
-  if (existing?.id) return existing.id as string;
-  const { data: created, error } = await supabase
-    .from("channel_sessions")
-    .insert({
-      organization_id: orgId,
-      waha_session_name: sessionName,
-      engine: "NOWEB",
-      webhook_path_token: crypto.randomUUID().replace(/-/g, ""),
-      webhook_secret_encrypted: Buffer.from([0]),
-      status: "STARTING",
-      last_status_change_at: new Date().toISOString(),
-      consecutive_health_fails: 0,
-      daily_message_limit: 250,
-      metadata: {},
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(`channel_session_insert_failed: ${error.message}`);
-  return created.id as string;
-}
-
-export async function GET() {
-  const user = await loadAuthUser();
-  if (!user) return fail("unauthenticated", "Sessão expirada", 401);
-  const activeOrg = await resolveActiveOrg(user);
-  if (!activeOrg) return fail("tenant_not_found", "Sem organização ativa", 404);
-  const waha = getWahaClient();
-  if (!waha) return ok({ status: "WAHA_NOT_CONFIGURED", session: null });
-  const sessionName = defaultSessionName(activeOrg.orgId);
+export async function GET(): Promise<Response> {
+  const requestId = randomUUID();
+  const user = await loadAuthUser(); if (!user) return fail("unauthenticated", "Sessão expirada", 401, { requestId });
+  const org = await resolveActiveOrg(user); if (!org) return fail("tenant_not_found", "Sem organização ativa", 404, { requestId });
+  if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
+  const waha = getWahaClient(); if (!waha) return ok({ status: "WAHA_NOT_CONFIGURED", session: null }, { requestId });
   try {
-    const remote = (await waha.getSessionQr(sessionName)) as WahaSessionResponse;
-    return ok({ status: remote.status ?? "UNKNOWN", session: sessionName });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "unknown";
-    if (msg.includes("404")) return ok({ status: "NOT_STARTED", session: sessionName });
-    return ok({ status: "ERROR", session: sessionName, error: msg });
-  }
+    const db = await createClient(); const channel = await loadOnboardingChannel(db, org.orgId);
+    if (!channel || channel.archived_at) return ok({ status: "NOT_STARTED", session: null }, { requestId });
+    const remote = await waha.getVerifiedSession(channel.waha_session_name);
+    const status = remote?.status ?? "STOPPED";
+    const { error, data } = await db.from("channel_sessions").update({ status, last_health_check_at: new Date().toISOString() })
+      .eq("organization_id", org.orgId).eq("id", channel.id).is("archived_at", null).select("id").maybeSingle();
+    if (error || !data) throw new Error("connection_sync_failed");
+    return ok({ status, session: channel.waha_session_name, channel_session_id: channel.id }, { requestId });
+  } catch { return fail("connection_status_failed", "Não foi possível conferir a conexão. Tente novamente.", 502, { requestId }); }
 }
 
-export async function POST() {
-  const user = await loadAuthUser();
-  if (!user) return fail("unauthenticated", "Sessão expirada", 401);
-  const activeOrg = await resolveActiveOrg(user);
-  if (!activeOrg) return fail("tenant_not_found", "Sem organização ativa", 404);
-  const waha = getWahaClient();
-  if (!waha) return fail("waha_not_configured", "Suba o Docker (docker compose up -d waha) e tente novamente.", 503);
-  const sessionName = defaultSessionName(activeOrg.orgId);
-
-  // 1) Make sure we have a row in channel_sessions.
-  const channelSessionId = await ensureChannelSession(activeOrg.orgId, sessionName);
-
-  // 2) Start the session in WAHA. Idempotent — WAHA returns 422 if already started; treat as ok.
+export async function POST(req: Request): Promise<Response> {
+  const denied = await requireSupportWrite(); if (denied) return denied;
+  const requestId = randomUUID();
+  const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: true });
+  if (!auth.ok) return auth.response;
+  if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
+  const waha = getWahaClient(); if (!waha) return fail("waha_not_configured", "O serviço de conexão está indisponível. Tente novamente.", 503, { requestId });
   try {
-    const remote = (await waha.startSession(sessionName)) as WahaSessionResponse;
-    return ok({ status: remote.status ?? "STARTING", session: sessionName, channel_session_id: channelSessionId });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "unknown";
-    if (msg.includes("422") || msg.includes("409")) {
-      // Session already exists — just fetch status.
-      const remote = (await waha.getSessionQr(sessionName)) as WahaSessionResponse;
-      return ok({ status: remote.status ?? "RUNNING", session: sessionName, channel_session_id: channelSessionId });
-    }
-    return NextResponse.json(
-      { error: { code: "waha_start_failed", message: msg } },
-      { status: 502 },
-    );
+    const result = await connectWahaChannel(await createClient(), createAdminClient(), waha, {
+      organizationId: auth.org.orgId, idempotencyKey: req.headers.get("Idempotency-Key") ?? "",
+      userId: auth.user.id, requestId, onboarding: true, restart: new URL(req.url).searchParams.get("restart") === "1",
+    });
+    return ok({ status: result.channel.status, session: result.channel.waha_session_name, channel_session_id: result.channel.id }, { requestId });
+  } catch (error) {
+    if (error instanceof ChannelConnectionError) return fail(error.code,
+      error.code === "connection_in_progress" ? "A conexão ainda está sendo preparada. Aguarde e tente novamente."
+        : error.code === "connection_session_name_too_long" ? "O identificador desta conexão passou do limite que o WhatsApp aceita. Nada foi criado no WhatsApp — atualize o sistema e tente novamente."
+        : "Não foi possível concluir a conexão. Tente novamente ou repare o número em Conexões.",
+      error.status, { requestId, details: error.technical });
+    return fail("internal_error", "Não foi possível concluir a conexão. Tente novamente.", 500, { requestId });
   }
 }

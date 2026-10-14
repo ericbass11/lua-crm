@@ -6,6 +6,12 @@
  * carga). Retorna UMA linha por membro agent+ da org (LEFT JOIN availability),
  * com nome/carga — o painel de gestão (G5-04) consome só este endpoint.
  *
+ * LEITOR DECLARADO DA PRESENÇA (issue #996): `present` + `last_heartbeat_at`
+ * entram no roster para o painel da Equipe mostrar quem tem a tela aberta agora.
+ * É presença DERIVADA (`estaPresente`, prazo em lib/atendimento/presenca.ts) e
+ * ela NÃO entra na elegibilidade nem no plantão: `is_available` continua sendo
+ * só a decisão, e a jornada continua decidindo o resto (`estaDePlantao`).
+ *
  * Por que service role + filtro manual de org (doutrina): a RLS de
  * user_organizations restringe manager a ver só a PRÓPRIA linha (só admin vê o
  * roster inteiro), então listar a equipe pelo client user-scoped devolveria 1
@@ -17,29 +23,30 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { estaPresente } from "@/lib/atendimento/presenca";
 import { isServiceRoleConfigured } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { ROLE_RANK, type Role } from "@/lib/auth/types";
-import { OPEN_LOAD_STATUSES } from "@/lib/routing/eligibility";
+import { carregarRosterDeAtendimento } from "@/lib/escalacao/atendentes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 const SELECT_COLS =
-  "user_id, is_available, capacity, schedule, last_heartbeat_at, updated_at";
+  "user_id, is_available, capacity, schedule, updated_at, last_heartbeat_at";
 
 interface AvailabilityRow {
   user_id: string;
   is_available: boolean;
   capacity: number;
   schedule: unknown;
-  last_heartbeat_at: string | null;
   updated_at: string | null;
+  last_heartbeat_at: string | null;
 }
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  const agora = new Date();
 
   const authz = await requireRole("agent", { requestId, resource: "attendant_availability" });
   if (!authz.ok) return authz.response;
@@ -56,81 +63,68 @@ export async function GET(_req: NextRequest): Promise<Response> {
     if (error) return fail("internal_error", error.message, 500, { requestId });
     const rows = (data ?? []) as AvailabilityRow[];
     return ok(
-      rows.map((r) => ({ ...r, role: null, name: null, email: null, current_load: 0 })),
+      rows.map((r) => ({
+        ...r,
+        role: null,
+        name: null,
+        email: null,
+        current_load: 0,
+        // Presença DERIVADA aqui, e não no cliente: o prazo do sinal mora em
+        // `lib/atendimento/presenca.ts`, e uma tela que recalculasse a conta
+        // sozinha passaria a discordar do servidor no dia em que o prazo
+        // mudasse — a doença que o #720 curou entre a tela e o roteador.
+        present: estaPresente(r.last_heartbeat_at, agora),
+      })),
       { requestId },
     );
   }
 
   const admin = createAdminClient();
 
-  const { data: members, error: mErr } = await admin
-    .from("user_organizations")
-    .select("user_id, role")
-    .eq("organization_id", activeOrg.orgId)
-    .is("revoked_at", null);
-  if (mErr) return fail("internal_error", mErr.message, 500, { requestId });
-
-  // Atendentes = agent+ (viewer não é insumo de roteamento).
-  const attendants = (members ?? []).filter(
-    (m) => ROLE_RANK[m.role as Role] >= ROLE_RANK.agent,
-  ) as Array<{ user_id: string; role: Role }>;
-  const userIds = attendants.map((m) => m.user_id);
-  if (userIds.length === 0) return ok([], { requestId });
-
-  const { data: availData, error: aErr } = await admin
-    .from("attendant_availability")
-    .select(SELECT_COLS)
-    .eq("organization_id", activeOrg.orgId)
-    .in("user_id", userIds);
-  if (aErr) return fail("internal_error", aErr.message, 500, { requestId });
-  const availByUser = new Map(
-    ((availData ?? []) as AvailabilityRow[]).map((a) => [a.user_id, a] as const),
-  );
-
-  // Carga atual = conversas abertas atribuídas, contadas org-wide (mesma
-  // definição do worker de roteamento).
-  const { data: openConvs, error: loadErr } = await admin
-    .from("conversations")
-    .select("assigned_to_user_id")
-    .eq("organization_id", activeOrg.orgId)
-    .in("assigned_to_user_id", userIds)
-    .in("status", OPEN_LOAD_STATUSES as unknown as string[]);
-  if (loadErr) return fail("internal_error", loadErr.message, 500, { requestId });
-  const loadByUser = new Map<string, number>();
-  for (const c of (openConvs ?? []) as Array<{ assigned_to_user_id: string | null }>) {
-    if (c.assigned_to_user_id) {
-      loadByUser.set(c.assigned_to_user_id, (loadByUser.get(c.assigned_to_user_id) ?? 0) + 1);
-    }
+  // O roster + a carga vivem em lib/escalacao/atendentes.ts porque a capacidade
+  // do agente ("quem pode assumir agora?") lê exatamente a mesma coisa. Enquanto
+  // a regra morou aqui dentro, o agente escalava para uma fila cega.
+  let roster;
+  try {
+    roster = await carregarRosterDeAtendimento(admin, activeOrg.orgId, agora);
+  } catch (err) {
+    return fail("internal_error", err instanceof Error ? err.message : "roster", 500, {
+      requestId,
+    });
   }
+  if (roster.length === 0) return ok([], { requestId });
 
-  // Nome/email por atendente (mesmo padrão de /api/v1/metrics/attendants).
+  // Nome/email por atendente (mesmo padrão de /api/v1/metrics/attendants). Fica
+  // NA ROTA, não na função compartilhada: e-mail é PII e a superfície do agente
+  // não recebe e-mail nem telefone de atendente.
   const names = new Map<string, { name: string | null; email: string | null }>();
   await Promise.all(
-    userIds.map(async (id) => {
-      const { data: userRes } = await admin.auth.admin.getUserById(id);
+    roster.map(async ({ userId }) => {
+      const { data: userRes } = await admin.auth.admin.getUserById(userId);
       const u = userRes?.user;
-      names.set(id, {
+      names.set(userId, {
         name: (u?.user_metadata?.full_name as string | undefined) ?? null,
         email: u?.email ?? null,
       });
     }),
   );
 
-  const rows = attendants.map((m) => {
-    const a = availByUser.get(m.user_id);
-    return {
-      user_id: m.user_id,
-      role: m.role,
-      name: names.get(m.user_id)?.name ?? null,
-      email: names.get(m.user_id)?.email ?? null,
-      is_available: a?.is_available ?? false,
-      capacity: a?.capacity ?? null,
-      schedule: a?.schedule ?? { timezone: "America/Sao_Paulo", windows: [] },
-      last_heartbeat_at: a?.last_heartbeat_at ?? null,
-      updated_at: a?.updated_at ?? null,
-      current_load: loadByUser.get(m.user_id) ?? 0,
-    };
-  });
+  const rows = roster.map((m) => ({
+    user_id: m.userId,
+    role: m.papel,
+    name: names.get(m.userId)?.name ?? null,
+    email: names.get(m.userId)?.email ?? null,
+    is_available: m.disponivel,
+    capacity: m.capacidade,
+    schedule: m.agenda,
+    updated_at: m.atualizadoEm,
+    current_load: m.cargaAtual,
+    // Presença: "tem sinal recente" — nunca "está de plantão". Os dois campos
+    // andam juntos de propósito, para a tela poder dizer as duas coisas sem
+    // confundi-las (o selo de Status lê o plantão; a linha de presença lê isto).
+    last_heartbeat_at: m.ultimoSinalEm,
+    present: m.presente,
+  }));
 
   return ok(rows, { requestId });
 }

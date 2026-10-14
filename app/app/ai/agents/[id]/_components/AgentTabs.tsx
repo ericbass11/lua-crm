@@ -4,9 +4,14 @@
  */
 import * as React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useT } from "@/hooks/i18n/useT";
 import { AgentForm, type ChannelSessionLite } from "./AgentForm";
+import type { CoberturaPorFunil } from "./FunisDoAgente";
+import type { MaterialDoAcervo } from "./BasesDoAgente";
+import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
 import { TestPanel } from "./TestPanel";
 import { RunsTable } from "./RunsTable";
+import { UsoDasCapacidades } from "./UsoDasCapacidades";
 import { VersionHistory } from "./VersionHistory";
 import { ProposalsPanel } from "./ProposalsPanel";
 import type { AgentRow } from "@/hooks/ai/useAgent";
@@ -14,18 +19,31 @@ import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
 
 interface Props {
+  /** Funis da org, para a marcação de escopo do agente (spec 17 passo 3). */
+  funis?: FunilDaResposta[];
+  cobertura?: CoberturaPorFunil;
+  /** O acervo da organização, para a seção "o que ele consulta" (0181). */
+  materiais?: MaterialDoAcervo[];
   agent: AgentRow;
   draft: AgentVersionRow | null;
   published: AgentVersionRow | null;
+  /** De onde o formulário se hidrata — ver `lib/ai/agents/versoes-da-tela.ts`. */
+  base?: AgentVersionRow | null;
+  /** Rascunho anterior à publicada: existe, mas não abre nem publica. */
+  draftObsoleto?: AgentVersionRow | null;
   versions: AgentVersionRow[];
   credentials: CredentialRow[];
+  /** Provedores cuja chave veio na instalação — ver `AgentForm`. */
+  provedoresDaInstalacao?: string[];
   channelSessions: ChannelSessionLite[];
+  routerMembership?: { routerId: string; routerName: string } | null;
   readOnly?: boolean;
 }
 
 export function AgentTabs(props: Props) {
+  const t = useT();
   const [tab, setTab] = React.useState<
-    "configuration" | "test" | "runs" | "history" | "proposals"
+    "configuration" | "test" | "capacidades" | "runs" | "history" | "proposals"
   >("configuration");
   const hasVersion = !!(props.draft || props.published);
 
@@ -36,13 +54,14 @@ export function AgentTabs(props: Props) {
       className="flex flex-col gap-4"
     >
       <TabsList>
-        <TabsTrigger value="configuration">Configuração</TabsTrigger>
+        <TabsTrigger value="configuration">{t("Configuração")}</TabsTrigger>
         <TabsTrigger value="test" disabled={!hasVersion}>
-          Teste
+          {t("Teste")}
         </TabsTrigger>
-        <TabsTrigger value="runs">Execuções</TabsTrigger>
-        <TabsTrigger value="history">Histórico</TabsTrigger>
-        <TabsTrigger value="proposals">Propostas</TabsTrigger>
+        <TabsTrigger value="capacidades">{t("Capacidades")}</TabsTrigger>
+        <TabsTrigger value="runs">{t("Execuções")}</TabsTrigger>
+        <TabsTrigger value="history">{t("Histórico")}</TabsTrigger>
+        <TabsTrigger value="proposals">{t("Propostas")}</TabsTrigger>
       </TabsList>
 
       <TabsContent value="configuration" className="m-0">
@@ -51,8 +70,15 @@ export function AgentTabs(props: Props) {
           agent={props.agent}
           draft={props.draft}
           published={props.published}
+          base={props.base}
+          draftObsoleto={props.draftObsoleto}
           credentials={props.credentials}
+          provedoresDaInstalacao={props.provedoresDaInstalacao}
           channelSessions={props.channelSessions}
+          funis={props.funis}
+          cobertura={props.cobertura}
+          materiais={props.materiais}
+          routerMembership={props.routerMembership}
           readOnly={props.readOnly}
         />
       </TabsContent>
@@ -64,6 +90,10 @@ export function AgentTabs(props: Props) {
           published={props.published}
           readOnly={props.readOnly}
         />
+      </TabsContent>
+
+      <TabsContent value="capacidades" className="m-0">
+        <UsoDasCapacidades agentId={props.agent.id} active={tab === "capacidades"} />
       </TabsContent>
 
       <TabsContent value="runs" className="m-0">

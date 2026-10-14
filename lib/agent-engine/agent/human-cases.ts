@@ -1,3 +1,5 @@
+import { currentExecutionBoundary, guardServiceEffect } from "@/lib/atendimento/fronteira-server";
+import { TIPOS_DE_CASO, type TipoDeCaso } from "@/lib/ai/case-copy";
 /**
  * Casos humanos (spec 15) — o loop assíncrono IA↔humano quando o agente esbarra
  * num bloqueio que só um humano resolve (aprovar desconto, confirmar política,
@@ -21,8 +23,8 @@
  *
  * `agent_cases.lead_id` é FK para `crm_leads` (o lead do pipeline do CRM) — uma
  * entidade DIFERENTE do `contact_id`/`leadId` usado no resto do agent-engine (ver
- * draft-reply.ts). O espelho contact→crm_leads ainda não está ligado
- * (mirrorLeadStageToCrm retorna 'not_configured' — Fase 2 da fusão), então
+ * draft-reply.ts). O espelho de estágio (mirrorLeadStageToCrm) já resolve o
+ * negócio do contato para MOVER o card, mas nada aqui lê esse id, então
  * `agent_cases.lead_id` fica NULL sempre — o caso ancora em `conversation_id`
  * (CaseIds não carrega o contact_id: nada aqui o lê).
  */
@@ -37,11 +39,48 @@ export interface CaseIds {
   agentId?: string | null;
 }
 
+/**
+ * O vocabulário de `agent_case_events.kind`, do lado do TypeScript.
+ *
+ * Existe para ser comparado com o CHECK do banco em
+ * `tests/invariants/vocabulario-banco-x-typescript.test.ts` — é a única classe de
+ * divergência que o compilador não enxerga, e o sintoma seria um `23514` num
+ * INSERT de caminho pouco exercitado (o registro do agente no chamado é
+ * exatamente um desses).
+ */
+export type CaseEventKind =
+  | 'opened'
+  | 'human_replied'
+  | 'lead_asked'
+  | 'lead_provided'
+  | 'lead_unresponsive'
+  | 'resolved'
+  | 'escalated'
+  | 'cancelled'
+  | 'agent_noted'
+  // (migration 0292) A equipe foi avisada no WhatsApp de que este caso abriu.
+  // Escrito pelo handler do aviso DEPOIS do envio, com `actor_kind='system'`.
+  | 'alert_sent';
+
+/**
+ * A tupla que o `z.enum` exige, derivada de `TIPOS_DE_CASO` — a fonte única do
+ * vocabulário. Escrever a lista de novo aqui criaria a segunda cópia, e é assim
+ * que o seletor da tela e o que a IA pode escolher divergem.
+ */
+const TIPOS_DE_CASO_KEYS = Object.keys(TIPOS_DE_CASO) as [TipoDeCaso, ...TipoDeCaso[]];
+
 /** Whitelist EXATA do payload de open_human_case — mesmo padrão .strict() da F2-10/F3-02. */
 export const openHumanCaseInputSchema = z.strictObject({
   title: z.string().min(1).max(200),
   summary: z.string().min(1).max(4_000),
   blocker: z.string().min(1).max(1_000),
+  /**
+   * Do que o caso trata. OPCIONAL e com default: um modelo antigo, um clone com
+   * prompt diferente ou o fail-safe do guardrail continuam abrindo caso sem ele,
+   * e o caso cai em `outro` em vez de ser recusado. Classificação é conveniência
+   * de triagem — nunca pode ser motivo para o pedido do cliente não chegar.
+   */
+  kind: z.enum(TIPOS_DE_CASO_KEYS).optional(),
 });
 export type OpenHumanCaseInput = z.infer<typeof openHumanCaseInputSchema>;
 
@@ -135,16 +174,18 @@ export async function openCase(
     blocker: string;
     contextSnapshot?: Record<string, unknown>;
     source?: 'agent' | 'guardrail_autofallback';
+    kind?: string;
   },
 ): Promise<OpenCaseResult> {
+  await guardServiceEffect();
   const source = input.source ?? 'agent';
   const actorKind = source === 'agent' ? 'agent' : 'system';
 
   const { rows } = await db.query<{ case_id: string }>(
     `with new_case as (
        insert into agent_cases
-         (organization_id, conversation_id, agent_id, title, summary, blocker, context_snapshot, source)
-       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8
+         (organization_id, conversation_id, agent_id, title, summary, blocker, context_snapshot, source, kind)
+       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $11
         where not exists (
           select 1 from agent_cases
            where organization_id = $1 and conversation_id = $2
@@ -163,10 +204,13 @@ export async function openCase(
       input.title,
       input.summary,
       input.blocker,
-      JSON.stringify(input.contextSnapshot ?? {}),
+      JSON.stringify({ ...(input.contextSnapshot ?? {}), ...(currentExecutionBoundary() ? { service_boundary: currentExecutionBoundary() } : {}) }),
       source,
       OPEN_STATUSES,
       actorKind,
+      // O default mora aqui e no banco: se um caminho novo esquecer de passar, a
+      // linha nasce classificada como 'outro' em vez de nula.
+      input.kind ?? 'outro',
     ],
   );
 
@@ -313,6 +357,93 @@ export async function escalateCase(
      union all
      select $1::uuid, id, 'escalated', 'human', $3::uuid, null::text, null::text from updated`,
     [tenantId, caseId, actorUserId, reason],
+  );
+  return transitioned(rowCount);
+}
+
+/**
+ * O AGENTE registrando o que aconteceu num chamado ABERTO.
+ *
+ * Ator `agent` e kind `agent_noted` (0100) porque a alternativa seria reusar
+ * 'lead_provided'/'human_replied' — e aí a linha do tempo do chamado diria que
+ * quem falou foi o lead ou a pessoa. Timeline que mente sobre o autor é pior que
+ * timeline curta: ela é OBEDECIDA.
+ *
+ * A guarda de estado mora no `where exists` do próprio INSERT (mesma disciplina
+ * do `openCase`): registrar em chamado já fechado seria escrever história depois
+ * do fato, e checar antes num statement separado abriria corrida entre a
+ * checagem e a escrita.
+ *
+ * @returns false quando o chamado não existe, é de outra organização ou já fechou.
+ */
+export async function registrarNotaDoAgente(
+  db: Queryable,
+  tenantId: string,
+  caseId: string,
+  body: string,
+): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
+     select $1::uuid, c.id, 'agent_noted', 'agent', $3::text
+       from agent_cases c
+      where c.organization_id = $1 and c.id = $2 and c.status = any($4::text[])`,
+    [tenantId, caseId, body, OPEN_STATUSES],
+  );
+  return transitioned(rowCount);
+}
+
+/** Como um chamado pode terminar pela mão do agente. */
+export type DesfechoDoChamado = 'resolvido' | 'sem_necessidade';
+
+const STATUS_DO_DESFECHO: Record<DesfechoDoChamado, string> = {
+  resolvido: 'resolved',
+  sem_necessidade: 'cancelled',
+};
+
+const EVENTO_DO_DESFECHO: Record<DesfechoDoChamado, CaseEventKind> = {
+  resolvido: 'resolved',
+  sem_necessidade: 'cancelled',
+};
+
+/**
+ * awaiting_human|awaiting_lead -> resolved|cancelled, pela mão do AGENTE.
+ *
+ * Separado de `resolveCaseFromHuman` de propósito: aquela grava
+ * `actor_kind='human'` + `human_action='resolved'`, que é a afirmação de que uma
+ * PESSOA decidiu. Chamá-la a partir do agente colocaria uma decisão humana
+ * inventada no registro do chamado — e é desse registro que sai o resumo entregue
+ * ao próximo atendente.
+ *
+ * Aceita os DOIS estados abertos (diferente das transições do humano, que só
+ * saem de `awaiting_human`): o caso comum é o chamado ficar `awaiting_lead`, o
+ * lead resolver sozinho, e ninguém ter como fechar aquilo — chamado imortal na
+ * fila de outra pessoa.
+ */
+export async function encerrarChamadoPeloAgente(
+  db: Queryable,
+  tenantId: string,
+  caseId: string,
+  input: { desfecho: DesfechoDoChamado; nota: string },
+): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `with updated as (
+       update agent_cases
+          set status = $3, closed_at = now(), updated_at = now()
+        where organization_id = $1 and id = $2 and status = any($6::text[])
+        returning id
+     )
+     insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
+     select $1::uuid, id, 'agent_noted', 'agent', $5::text from updated
+     union all
+     select $1::uuid, id, $4::text, 'agent', null::text from updated`,
+    [
+      tenantId,
+      caseId,
+      STATUS_DO_DESFECHO[input.desfecho],
+      EVENTO_DO_DESFECHO[input.desfecho],
+      input.nota,
+      OPEN_STATUSES,
+    ],
   );
   return transitioned(rowCount);
 }

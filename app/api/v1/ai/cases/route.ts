@@ -2,6 +2,16 @@
  * GET /api/v1/ai/cases — lista os casos humanos da org (spec 15 §7, Wave 5).
  * Read-only via PostgREST (`createAdminClient`) — a escrita de estado do caso
  * mora em POST /api/v1/ai/cases/[id]/reply (pg.Pool do engine, ver ADR ali).
+ *
+ * A consulta em si vive em `lib/escalacao/chamados.ts`: a capacidade "ver os
+ * chamados em aberto" do agente lê exatamente a mesma lista, e a tela e o agente
+ * discordarem sobre o que está aberto seria o pior tipo de divergência.
+ *
+ * O que a tela e o agente NÃO compartilham é o alcance: `conversations` tem RLS
+ * por atendente, e esta lista devolve nome e telefone do contato. Por isso o
+ * conjunto de conversas visíveis é resolvido ANTES, com o cliente de SESSÃO — é
+ * a policy do banco que responde, não uma cópia da regra aqui —, e a divergência
+ * vai declarada no argumento `visiveisPara` (o agente passa `"todas"`).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -9,76 +19,68 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { conversasVisiveisDosCasos, listarChamados } from "@/lib/escalacao/chamados";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
-
-const OPEN_STATUSES = ["awaiting_human", "awaiting_lead"] as const;
-const RESOLVED_STATUSES = ["resolved", "escalated", "cancelled"] as const;
 
 const querySchema = z.object({
   status: z.enum(["open", "resolved"]).default("open"),
 });
 
-type CaseRow = {
-  id: string;
-  title: string;
-  summary: string;
-  blocker: string;
-  status: string;
-  opened_at: string;
-  conversation_id: string;
-  conversations: { contacts: { name: string | null; phone_number: string | null } | null } | null;
-};
-
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "agent_cases" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
 
   const parsed = querySchema.safeParse(
     Object.fromEntries(new URL(req.url).searchParams.entries()),
   );
   if (!parsed.success) {
-    return fail("validation_failed", "Query inválida.", 422, {
+    return fail("validation_failed", t("Query inválida."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
   }
-  const statuses = parsed.data.status === "open" ? OPEN_STATUSES : RESOLVED_STATUSES;
 
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("agent_cases")
-    .select(
-      "id, title, summary, blocker, status, opened_at, conversation_id, conversations:conversation_id(contacts:contact_id(name, phone_number))",
-    )
-    .eq("organization_id", org.orgId)
-    .in("status", statuses as unknown as string[])
-    .order("opened_at", { ascending: false });
-  if (error) {
-    return fail("internal_error", "Falha ao carregar os casos.", 500, { requestId });
+  try {
+    // A ordem importa: o recorte é resolvido pelo cliente de SESSÃO (RLS
+    // aplicada) ANTES da leitura privilegiada. Manager e admin seguem vendo
+    // tudo porque é `fn_can_view_conversation` que decide — eles são org-wide
+    // por desenho, e não há regra de papel repetida aqui para desatualizar.
+    const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId);
+    const { chamados, abertos } = await listarChamados(createAdminClient(), org.orgId, {
+      estado: parsed.data.status === "open" ? "abertos" : "fechados",
+      visiveisPara,
+    });
+    return ok({ cases: chamados, open_count: abertos }, { requestId });
+  } catch (erro) {
+    /**
+     * O `catch` era NU, e a fila de casos ficava sem causa em lugar nenhum.
+     *
+     * Medido em 2026-09-18 na prova em tela: a tela mostrou "Nenhum caso
+     * aberto" por 60 s seguidos enquanto o banco tinha o caso em
+     * `awaiting_human` — o 500 daqui vira `data === undefined` no React Query,
+     * e o componente não distingue "não há casos" de "não deu para saber".
+     * Quem estava diagnosticando tinha o banco correto, a tela vazia e NADA
+     * escrito entre os dois: o log do servidor não dizia uma palavra, porque
+     * este `catch` descartava o erro antes de qualquer um vê-lo.
+     *
+     * A frase para quem lê a tela não muda (genérica de propósito: a causa é do
+     * operador, não do atendente). O que muda é existir causa registrada — e é
+     * a diferença entre "falhar fechado na ação, aberto na informação" e
+     * simplesmente falhar.
+     */
+    logger.error("[ai/cases] falha ao listar os chamados", {
+      requestId,
+      organizationId: org.orgId,
+      erro: erro instanceof Error ? erro.message : String(erro),
+    });
+    return fail("internal_error", t("Falha ao carregar os casos."), 500, { requestId });
   }
-
-  const rows = (data ?? []) as unknown as CaseRow[];
-  const cases = rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    summary: r.summary,
-    blocker: r.blocker,
-    status: r.status,
-    opened_at: r.opened_at,
-    conversation_id: r.conversation_id,
-    contact_name: r.conversations?.contacts?.name ?? null,
-    contact_phone: r.conversations?.contacts?.phone_number ?? null,
-  }));
-
-  const { count: openCount } = await admin
-    .from("agent_cases")
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", org.orgId)
-    .in("status", OPEN_STATUSES as unknown as string[]);
-
-  return ok({ cases, open_count: openCount ?? 0 }, { requestId });
 }
