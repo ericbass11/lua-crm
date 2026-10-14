@@ -484,8 +484,11 @@ export async function patchConversationHandler(
       p_org: ctx.organization_id, p_conversation: conversationId, p_status: input.status,
       p_expected: input.expected_revision ?? observed.service_revision,
     });
-    if (statusError) throw new ApiError(statusError.code === "40001" ? 409 : statusError.code === "P0002" ? 404 : 500,
-      statusError.code === "40001" ? "conflict" : statusError.code === "P0002" ? "not_found" : "internal_error", undefined, ctx.requestId, statusError.message);
+    if (statusError) {
+      const conflict = statusError.code === "PT409" || statusError.code === "40001";
+      throw new ApiError(conflict ? 409 : statusError.code === "P0002" ? 404 : 500,
+        conflict ? "conflict" : statusError.code === "P0002" ? "not_found" : "internal_error", undefined, ctx.requestId, statusError.message);
+    }
   }
   if (input.tags !== undefined) {
     update.tags = input.tags;

@@ -11,7 +11,7 @@
  *    ganhou um ramo; não trocou o que já existia);
  *  - a revisão esperada viaja para a RPC (`p_expected`): é ela que transforma
  *    "clique em tela velha" em 409, e não em arquivamento silencioso;
- *  - 40001 da RPC → 409 e NENHUM evento: a auditoria só existe para o que
+ *  - PT409 e 40001 legado da RPC → 409 e NENHUM evento: a auditoria só existe para o que
  *    aconteceu de verdade;
  *  - quem não tem escrita de suporte (`requireSupportWrite`) não chega a
  *    chamar a RPC nem a auditar;
@@ -63,6 +63,8 @@ interface StubState {
   rpcCalls: RpcCall[];
   /** Erro devolvido pela RPC (ex.: { code: "40001" } do lock otimista). */
   erroRpc: { code: string; message: string } | null;
+  visible?: boolean;
+  updates: unknown[];
 }
 
 const CONV_ROW = {
@@ -79,7 +81,10 @@ function makeSupabaseStub(state: StubState) {
   const chain: Record<string, unknown> = {};
   Object.assign(chain, {
     select: () => chain,
-    update: () => chain,
+    update: (values: unknown) => {
+      state.updates.push(values);
+      return chain;
+    },
     insert: () => chain,
     eq: () => chain,
     neq: () => chain,
@@ -89,7 +94,8 @@ function makeSupabaseStub(state: StubState) {
     or: () => chain,
     order: () => chain,
     limit: () => chain,
-    maybeSingle: () => Promise.resolve({ data: CONV_ROW, error: null }),
+    maybeSingle: () =>
+      Promise.resolve({ data: state.visible === false ? null : CONV_ROW, error: null }),
     single: () => Promise.resolve({ data: CONV_ROW, error: null }),
   });
   return {
@@ -106,7 +112,7 @@ function makeAdminStub(state: StubState) {
   return {
     rpc: async (fn: string, args: Record<string, unknown>) => {
       state.rpcCalls.push({ fn, args });
-      return { data: null, error: state.erroRpc };
+      return { data: CONV_ROW, error: state.erroRpc };
     },
   };
 }
@@ -133,7 +139,7 @@ function agentSession(state: StubState) {
 }
 
 function stubState(overrides: Partial<StubState> = {}): StubState {
-  return { rpcCalls: [], erroRpc: null, ...overrides };
+  return { rpcCalls: [], erroRpc: null, updates: [], ...overrides };
 }
 
 function patchReq(body: Record<string, unknown>) {
@@ -166,10 +172,7 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     agentSession(state);
     const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
 
-    const res = await PATCH(
-      patchReq({ status: "archived", expected_revision: 7 }),
-      params,
-    );
+    const res = await PATCH(patchReq({ status: "archived", expected_revision: 7 }), params);
 
     expect(res.status).toBe(200);
     expect(rpcDoStatus(state)?.args).toMatchObject({
@@ -217,20 +220,25 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     expect(acoesAuditadas()).not.toContain("conversation.archived");
   });
 
-  it("conflito de revisão (40001) → 409 e nenhum evento de arquivamento", async () => {
-    const state = stubState({
-      erroRpc: { code: "40001", message: "revision mismatch" },
-    });
-    agentSession(state);
-    const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
+  it.each(["40001", "PT409"])(
+    "conflito de revisão (%s) → 409 e nenhuma auditoria",
+    async (code) => {
+      const state = stubState({
+        erroRpc: { code, message: "service_stale" },
+      });
+      agentSession(state);
+      const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
 
-    const res = await PATCH(patchReq({ status: "archived", expected_revision: 3 }), params);
+      const res = await PATCH(patchReq({ status: "archived", expected_revision: 3 }), params);
 
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("conflict");
-    expect(acoesAuditadas()).not.toContain("conversation.archived");
-  });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("conflict");
+      expect(vi.mocked(audit)).not.toHaveBeenCalled();
+      expect(state.rpcCalls).toHaveLength(1);
+      expect(state.updates).toHaveLength(0);
+    },
+  );
 
   it("sem escrita de suporte → 403, sem RPC e sem auditoria", async () => {
     const state = stubState();
@@ -243,6 +251,18 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     expect(res.status).toBe(403);
     expect(state.rpcCalls).toHaveLength(0);
     expect(vi.mocked(audit)).not.toHaveBeenCalled();
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it("conversa removida entre leitura e RPC permanece 404 sem auditar", async () => {
+    const state = stubState({ erroRpc: { code: "P0002", message: "service_not_found" } });
+    agentSession(state);
+    const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
+    const res = await PATCH(patchReq({ status: "archived" }), params);
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("not_found");
+    expect(vi.mocked(audit)).not.toHaveBeenCalled();
+    expect(state.updates).toHaveLength(0);
   });
 
   it("status fora do vocabulário gravável → 422 (não existe 'excluida')", async () => {
@@ -253,6 +273,79 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     const res = await PATCH(patchReq({ status: "excluida" }), params);
 
     expect(res.status).toBe(422);
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(vi.mocked(audit)).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /conversations/[id]/close — conflito sem repetição", () => {
+  function closeReq(body: Record<string, unknown> = {}) {
+    return new NextRequest(`http://localhost/api/v1/conversations/${CONV_ID}/close`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  it.each(["40001", "PT409"])("conflito %s retorna 409 sem auditar", async (code) => {
+    const state = stubState({ erroRpc: { code, message: "service_stale" } });
+    agentSession(state);
+    const { POST } = await import("@/app/api/v1/conversations/[id]/close/route");
+    const res = await POST(closeReq({ expected_revision: 3 }), params);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("conflict");
+    expect(state.rpcCalls).toEqual([
+      {
+        fn: "fn_service_status",
+        args: {
+          p_org: ORG_ID,
+          p_conversation: CONV_ID,
+          p_status: "closed",
+          p_expected: 3,
+        },
+      },
+    ]);
+    expect(vi.mocked(audit)).not.toHaveBeenCalled();
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it("fechamento bem-sucedido mantém auditoria da organização autenticada", async () => {
+    const state = stubState();
+    agentSession(state);
+    const { POST } = await import("@/app/api/v1/conversations/[id]/close/route");
+    const res = await POST(closeReq(), params);
+    expect(res.status).toBe(200);
+    expect(rpcDoStatus(state)?.args.p_expected).toBe(7);
+    expect(vi.mocked(audit)).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        action: "conversation.closed",
+        organizationId: ORG_ID,
+        resourceId: CONV_ID,
+      }),
+    );
+  });
+
+  it("conversa não visível permanece 404 sem chamar RPC administrativa", async () => {
+    const state = stubState({ visible: false });
+    agentSession(state);
+    const { POST } = await import("@/app/api/v1/conversations/[id]/close/route");
+    expect((await POST(closeReq(), params)).status).toBe(404);
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(vi.mocked(audit)).not.toHaveBeenCalled();
+  });
+
+  it("papel sem permissão de escrita permanece 403 sem chamar RPC administrativa", async () => {
+    const state = stubState();
+    agentSession(state);
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: false,
+      response: new Response(null, { status: 403 }),
+    } as never);
+    const { POST } = await import("@/app/api/v1/conversations/[id]/close/route");
+    expect((await POST(closeReq(), params)).status).toBe(403);
+    expect(vi.mocked(requireRole)).toHaveBeenCalledWith(
+      "agent",
+      expect.objectContaining({ resource: "conversations" }),
+    );
     expect(state.rpcCalls).toHaveLength(0);
     expect(vi.mocked(audit)).not.toHaveBeenCalled();
   });

@@ -599,6 +599,10 @@ Siga o desenvolvimento: [Instagram](https://www.instagram.com/melgarafael) · [Y
 
 > Toda melhoria feita nesta instalação DEVE ser registrada aqui (regra do guardrail no CLAUDE.md).
 
+### Correção local preparada em 14/10/2026
+
+- **Conflitos de status sem repetição interna (migration 0926):** `fn_service_status` usa `PT409` para revisão obsoleta ou contato alterado, evitando tratar uma recusa de negócio como falha de serialização no PostgREST 14.17. As APIs aceitam também o código legado durante a atualização. Sem mudança de interface, regras de status ou permissões. Validação do usuário e publicação na VPS pendentes; detalhes em [runbook](docs/runbooks/conflitos-de-status-do-atendimento.md).
+
 ### Sincronização com o upstream DeskcommCRM
 | Data | Mudança |
 |---|---|

@@ -50,9 +50,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     p_org: visible.organization_id, p_conversation: id, p_status: "closed",
     p_expected: parsed.data.expected_revision ?? visible.service_revision,
   });
-  if (error) return fail(error.code === "40001" ? "conflict" : "internal_error",
-    error.code === "40001" ? t("O atendimento mudou. Atualize e tente novamente.") : error.message,
-    error.code === "40001" ? 409 : 500, { requestId });
+  if (error) {
+    const conflict = error.code === "PT409" || error.code === "40001";
+    return fail(conflict ? "conflict" : "internal_error",
+      conflict ? t("O atendimento mudou. Atualize e tente novamente.") : error.message,
+      conflict ? 409 : 500, { requestId });
+  }
   const conv = data as unknown as Conversation;
 
   await audit({
