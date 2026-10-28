@@ -65,16 +65,33 @@ describe("handoff consulta o SQL real por conversa e preserva o comando humano",
     expect(await isLeadInHandoff(pool, GOV_ORG, CONTACT, CURRENT)).toBe(false);
   });
   it.each([null, "user"])(
-    "atribuição humana atual bloqueia sem silêncio (tipo=%s)",
+    "atribuição atual não substitui a pausa explícita (tipo=%s)",
     async (kind) => {
       await pool.query(
         `update conversations set assignee_kind=$4, assigned_to_user_id=$3
       where organization_id=$1 and id=$2`,
         [GOV_ORG, CURRENT, GOV_AGENT_A, kind],
       );
+      expect(await isLeadInHandoff(pool, GOV_ORG, CONTACT, CURRENT)).toBe(false);
+      await pool.query(
+        `update conversations set bot_silenced_until='infinity' where organization_id=$1 and id=$2`,
+        [GOV_ORG, CURRENT],
+      );
       expect(await isLeadInHandoff(pool, GOV_ORG, CONTACT, CURRENT)).toBe(true);
     },
   );
+  it("o banco recusa tipo humano sem um dono coerente", async () => {
+    await expect(
+      pool.query(
+        `update conversations set assignee_kind='user' where organization_id=$1 and id=$2`,
+        [GOV_ORG, CURRENT],
+      ),
+    ).rejects.toMatchObject({
+      code: "23514",
+      constraint: "conversations_assignee_kind_coherence",
+    });
+    expect(await isLeadInHandoff(pool, GOV_ORG, CONTACT, CURRENT)).toBe(false);
+  });
   it("force_human explícito no contato permanece global", async () => {
     await pool.query("update contacts set force_human=true where organization_id=$1 and id=$2", [
       GOV_ORG,

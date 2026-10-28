@@ -1700,6 +1700,9 @@ export const DICIONARIO: Traducoes = {
   "Sem tool calls (resposta direta do LLM).": {
     es: "Sin llamadas a herramientas (respuesta directa del LLM).",
   },
+  "Nenhuma chamada de ferramenta registrada neste teste.": {
+    es: "No se registró ninguna llamada a herramientas en esta prueba.",
+  },
   "execuções recentes": { es: "ejecuciones recientes" },
   "Atualizando…": { es: "Actualizando…" },
   Atualizar: { es: "Actualizar" },

@@ -103,7 +103,7 @@ export function detectAmbiguousOptOut(message: string): boolean {
 
 /**
  * NO-OP de runs futuros (acceptance 2): o lead está em handoff quando force_human está
- * setado no contato OU a conversa ATUAL está silenciada/atribuída a uma pessoa.
+ * setado no contato OU a conversa ATUAL está silenciada. Atribuição sem silêncio não pausa.
  * Conversa de outro canal ou encerrada no histórico não suspende a conversa atual.
  * Alvo ausente ou divergente falha fechado. Só o humano (via CRM) libera.
  */
@@ -113,8 +113,6 @@ export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: str
     `select (
        c.force_human
        or coalesce(current_conversation.bot_silenced_until > now(), false)
-       or coalesce(current_conversation.assignee_kind = 'user', false)
-       or current_conversation.assigned_to_user_id is not null
      ) as handoff
      from contacts c
      join conversations current_conversation

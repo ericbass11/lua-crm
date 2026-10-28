@@ -927,8 +927,8 @@ Cada run emite, em JSON:
 `isLeadInHandoff` recebe organização, contato e **conversa atual** em todos os
 consumidores: turno automático, rascunho assistido, envio fixo de follow-up e
 Operador. `contacts.force_human` continua global e só é liberado por ação humana.
-O silêncio futuro/infinito e a atribuição a usuário (`assignee_kind='user'` ou
-`assigned_to_user_id` preenchido) valem para a conversa atual. Um silêncio em
+O silêncio futuro/infinito vale para a conversa atual. Atribuição sem silêncio,
+como a distribuição por rodízio, não cria uma pausa. Um silêncio em
 outra conversa, inclusive encerrada em outro canal, não suspende uma conversa
 atual liberada. Alvo ausente ou que não corresponde à organização/contato falha
 fechado. A guarda não altera contato, conversa, fila nem configuração de custo.
