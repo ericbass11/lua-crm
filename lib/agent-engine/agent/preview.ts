@@ -22,6 +22,7 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
+import type { ModelStepDiagnostic } from '../edge/llm/step-diagnostics';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -39,6 +40,9 @@ export interface TurnPreview {
   result: PreviewResult;
 }
 export interface PreviewResult {
+  /** The only candidate is a runtime failure acknowledgement, not a completed answer. */
+  fallback_response?: boolean;
+  model_diagnostics?: { steps: ModelStepDiagnostic[]; step_limit_reached: boolean };
   checkpoint?: unknown;
   candidates: Array<{ body: string; citations: Citation[]; trace: GateTraceEntry[] }>;
   proposals: Array<{ tool: string; arguments: unknown }>;

@@ -47,6 +47,8 @@ export interface ToolBreakerOptions {
    * Tool fora desta lista é tratada como MUTANTE e nunca entra no modo.
    */
   readOnlyTools: readonly string[];
+  /** Vazio declarado pela definição da capacidade, nunca inferido do formato do payload. */
+  isDeclaredEmptyResult?: (toolName: string, result: unknown) => boolean;
   log: Logger;
   /** campos estruturados dos warns (tenant/lead/job) — args crus jamais. */
   logFields?: Record<string, unknown>;
@@ -184,7 +186,7 @@ export function wrapToolsWithBreaker(tools: ToolSet, opts: ToolBreakerOptions): 
       const result = await execute(input, options);
       const warnings: string[] = [];
 
-      if (isFailureResult(result)) {
+      if (isFailureResult(result) || opts.isDeclaredEmptyResult?.(toolName, result) === true) {
         const exact = exactCount + 1;
         exactFailures.set(exactKey, exact);
         const perTool = (toolFailures.get(toolName) ?? 0) + 1;

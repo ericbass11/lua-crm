@@ -302,7 +302,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
             <RunTrace
               toolCalls={result.tool_calls}
               finalText={result.final_text ?? null}
-              emptyMessage={t("Sem tool calls (resposta direta do LLM).")}
+              emptyMessage={t("Nenhuma chamada de ferramenta registrada neste teste.")}
             />
 
             {result.candidates ? (

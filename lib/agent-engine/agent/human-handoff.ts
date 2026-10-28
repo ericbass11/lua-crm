@@ -103,25 +103,27 @@ export function detectAmbiguousOptOut(message: string): boolean {
 
 /**
  * NO-OP de runs futuros (acceptance 2): o lead está em handoff quando force_human está
- * setado no contato OU alguma conversa dele ainda está silenciada (bot_silenced_until no
- * futuro — 'infinity' sempre vale). Lido no INÍCIO do turno, antes de qualquer chamada
- * de modelo. Só o humano (via CRM) libera.
+ * setado no contato OU a conversa ATUAL está silenciada/atribuída a uma pessoa.
+ * Conversa de outro canal ou encerrada no histórico não suspende a conversa atual.
+ * Alvo ausente ou divergente falha fechado. Só o humano (via CRM) libera.
  */
-export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: string): Promise<boolean> {
+export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: string, conversationId: string): Promise<boolean> {
+  if (!conversationId) return true;
   const { rows } = await db.query<{ handoff: boolean }>(
     `select (
        c.force_human
-       or exists (
-         select 1 from conversations v
-         where v.organization_id = $1 and v.contact_id = c.id
-           and v.bot_silenced_until is not null and v.bot_silenced_until > now()
-       )
+       or coalesce(current_conversation.bot_silenced_until > now(), false)
+       or coalesce(current_conversation.assignee_kind = 'user', false)
+       or current_conversation.assigned_to_user_id is not null
      ) as handoff
      from contacts c
+     join conversations current_conversation
+       on current_conversation.organization_id = c.organization_id
+       and current_conversation.contact_id = c.id and current_conversation.id = $3
      where c.organization_id = $1 and c.id = $2`,
-    [tenantId, leadId],
+    [tenantId, leadId, conversationId],
   );
-  return rows[0]?.handoff === true;
+  return rows[0]?.handoff !== false;
 }
 
 export interface HandoffIds {

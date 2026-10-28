@@ -4,7 +4,8 @@ import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
-import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
+import { currentExecutionBoundary, guardServiceEffect, guardServiceTools } from '@/lib/atendimento/fronteira-server';
+import { recoverStepLimit, fallbackDeliveryIsTerminal } from './step-limit-recovery';
 /**
  * Loop do agente v0 — handler do job `inbound_turn` (F2-09; blueprint 8.8).
  *
@@ -35,6 +36,7 @@ import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/
  * main.ts não completa nem re-tenta). PII nunca entra em log/erro de job.
  */
 import type pg from 'pg';
+import { getToolByName } from '@/lib/mcp/tools';
 import { z } from 'zod';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
 import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
@@ -63,6 +65,7 @@ import {
   type ToolSet,
 } from '../edge/llm/run-model-call';
 import type { ProviderRegistry } from '../edge/llm/providers';
+import { stepLimitWithoutResponse } from '../edge/llm/step-diagnostics';
 import { HANDOFF_REASON_ORCAMENTO } from '../edge/llm/orcamento';
 import { abreAvisoDoEspelhoRecusado, mirrorLeadStageToCrm } from '../edge/crm/move-lead-stage';
 import { insertInboxItem } from '../db/repository';
@@ -1887,7 +1890,7 @@ async function executarTurnoDoAgente(
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
-  if (!preview && (await isLeadInHandoff(pool, tenantId, leadId))) {
+  if (!preview && (await isLeadInHandoff(pool, tenantId, leadId, input.conversationId))) {
     runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: liveJob().kind });
     return;
   }
@@ -3874,7 +3877,12 @@ async function executarTurnoDoAgente(
         : rawTools;
     const tools = wrapToolsWithBreaker(previewTools, {
       thresholds: deps.knobs.breaker,
-      readOnlyTools: READ_ONLY_TOOLS,
+      readOnlyTools: [
+        ...READ_ONLY_TOOLS,
+        ...Object.keys(previewTools).filter((name) => getToolByName(name)?.category === 'read'),
+      ],
+      isDeclaredEmptyResult: (name, result) =>
+        getToolByName(name)?.motivoDoVazio?.(result) != null,
       log: runLog, // os warns dos gates do breaker saem carimbados com o run
     });
 
@@ -4092,6 +4100,73 @@ async function executarTurnoDoAgente(
       { registry: deps.registry, log: runLog },
     );
 
+    if (preview) preview.result.model_diagnostics = turn.diagnostics;
+    const exhaustedWithoutResponse = stepLimitWithoutResponse(turn.diagnostics,
+      preview ? preview.result.candidates.length > 0 : outcomes.length > 0);
+    if (exhaustedWithoutResponse) {
+      // Observable failure, never an exception/retry that buys the same loop again.
+      runLog.warn('turno sem resposta ao atingir o teto de etapas', {
+        code: 'step_limit_without_response',
+        steps_count: turn.diagnostics.steps.length,
+        model: turn.model,
+      });
+      const hadFailureBeforeFallback = runError !== null || outcomes.length > 0;
+      let fallbackAttempted = false;
+      const recovery = await recoverStepLimit({
+        exhausted: exhaustedWithoutResponse,
+        canSpeak: preview !== undefined || turnoVaiFalarComOLead(liveJob()),
+        hasImpediment: (preview?.result.impediments.length ?? 0) > 0 || hadFailureBeforeFallback,
+        attemptedSend: turn.diagnostics.steps.some((step) =>
+          step.tools.some((entry) => entry.tool_name === 'send_message')),
+        send: async (body) => {
+          // Reapply the service/operation boundary as well as send_message's
+          // normal before-send chain. Never call the channel directly.
+          const send = guardServiceTools(tools)?.send_message?.execute;
+          if (!send) return false;
+          fallbackAttempted = true;
+          const result = await send({ body }, {
+            toolCallId: 'runtime-step-limit', messages: [], context: undefined,
+          });
+          return result !== null && typeof result === 'object'
+            && 'ok' in result && result.ok === true;
+        },
+        notify: async () => {
+          if (preview) return;
+          try {
+            await insertInboxItem(pool, tenantId, {
+              kind: 'other', severity: 'warn',
+              title: 'Assistente encerrou um turno sem resposta',
+              body: 'O limite de etapas foi atingido e não houve resposta aceita. Confira as consultas e os impedimentos antes de repetir o atendimento.',
+              refKind: 'conversation', refId: input.conversationId,
+            }, 'kind_ref_e_titulo');
+          } catch {
+            runLog.warn('aviso de turno sem resposta indisponível', { code: 'step_limit_alert_failed' });
+          }
+        },
+      });
+      if (fallbackDeliveryIsTerminal({
+        attempted: fallbackAttempted, priorFailure: hadFailureBeforeFallback,
+        recovery, hasRunError: runError !== null, outcomeKinds: outcomes.map(outcome => outcome.kind),
+      })) {
+        runLog.warn('falha no aviso de limite encerrada sem repetir geração', {
+          code: 'step_limit_fallback_delivery_failed',
+        });
+        // The notice/ledger already records the failure. Keep the previous
+        // checkpoint and skip all further paid work/retry for this notice alone.
+        return;
+      }
+      if (recovery === 'accepted') {
+        runLog.warn('aviso de limite aceito pelo fluxo de envio', { code: 'step_limit_acknowledged' });
+        if (preview) {
+          preview.result.fallback_response = true;
+          preview.result.impediments.push({
+            code: 'step_limit_without_response',
+            message: 'O modelo atingiu o limite sem concluir a resposta. O texto exibido é apenas um aviso do sistema.',
+          });
+        }
+      }
+    }
+
     // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
     // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na
     // abertura; as tentativas de envio já passaram pelo loop). Dispara escalação humana em
@@ -4197,8 +4272,10 @@ async function executarTurnoDoAgente(
     const avisarSemCandidato = (p: NonNullable<typeof preview>): void => {
       if (p.result.candidates.length === 0 && p.result.impediments.length === 0)
         p.result.impediments.push({
-          code: 'no_candidate',
-          message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',
+          code: exhaustedWithoutResponse ? 'step_limit_without_response' : 'no_candidate',
+          message: exhaustedWithoutResponse
+            ? 'O agente atingiu o limite de etapas sem propor resposta. Confira as ferramentas nas etapas do modelo antes de repetir o teste.'
+            : 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',
         });
     };
     // ⚠️ RASCUNHO (modo assistido) não fecha o turno com checkpoint. O checkpoint
@@ -4533,7 +4610,7 @@ async function executarTurnoDoAgente(
       );
     }
 
-    runLog.info('turno do agente concluído', {
+    runLog.info(exhaustedWithoutResponse ? 'turno encerrado sem resposta' : 'turno do agente concluído', {
       kind: liveJob().kind,
       messages_sent: outcomes.length,
       model: turn.model,
@@ -4612,7 +4689,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       // Fica no ramo, não antes dele: o caminho automático já refaz as duas
       // checagens em `runAgentTurn`, e antecipá-las custaria duas queries por
       // turno sem mudar nenhum desfecho.
-      if (await isLeadInHandoff(pool, job.organization_id, job.contact_id)) {
+      if (await isLeadInHandoff(pool, job.organization_id, job.contact_id, payload.conversation_id)) {
         deps.log.info('rascunho pulado — lead em handoff humano (bot silenciado)', {
           job_id: job.id,
           conversation_id: payload.conversation_id,

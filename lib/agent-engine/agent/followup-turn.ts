@@ -634,7 +634,7 @@ async function sendFixedOutbound(
   const { tenantId, leadId, channelSessionId, conversationId } = target;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
 
-  if (await isLeadInHandoff(pool, tenantId, leadId)) {
+  if (await isLeadInHandoff(pool, tenantId, leadId, conversationId)) {
     runLog.info('envio fixo pulado — lead silenciado (handoff/opt-out)', { kind: job.kind });
     return { kind: "skipped" };
   }

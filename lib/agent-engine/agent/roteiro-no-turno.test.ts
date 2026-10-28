@@ -413,7 +413,7 @@ describe('ordem no turno (achado 5 da prova do #1130)', () => {
       'agentConfig.pausedAt',
       'detectHumanHandoffRequest(texto)',
       'detectAmbiguousOptOut(texto)',
-      'isLeadInHandoff(pool, tenantId, leadId)',
+      'isLeadInHandoff(pool, tenantId, leadId, input.conversationId)',
     ]) {
       const posicao = src.indexOf(trava);
       expect(posicao, trava).toBeGreaterThan(0);

@@ -242,11 +242,12 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
     // verde com o produto errado.
     const handoff = readFileSync(join(RAIZ, "lib/agent-engine/agent/human-handoff.ts"), "utf8");
     const corpo = handoff.slice(handoff.indexOf("export async function isLeadInHandoff"));
-    const predicado = corpo.slice(corpo.indexOf("`") + 1, corpo.indexOf("[tenantId, leadId]"));
+    const predicado = corpo.slice(corpo.indexOf("`") + 1, corpo.indexOf("[tenantId, leadId, conversationId]"));
     const sqlDoMotor = predicado
       .slice(0, predicado.lastIndexOf("`"))
       .replace(/\$1/g, `'${ORG}'`)
-      .replace(/\$2/g, "c.id")
+      .replace(/\$2/g, "v.contact_id")
+      .replace(/\$3/g, "v.id")
       .trim()
       .replace(/,\s*$/, "");
     expect(sqlDoMotor, "o SQL do motor não foi extraído — o formato do fonte mudou").toContain(
@@ -271,10 +272,7 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
         where v.organization_id = '${ORG}'
           and public.comando_da_conversa(v) = 'automatico'
           and (
-            (c.force_human or exists (
-               select 1 from conversations w
-                where w.organization_id = '${ORG}' and w.contact_id = c.id
-                  and w.bot_silenced_until is not null and w.bot_silenced_until > now()))
+            (select handoff from (${sqlDoMotor}) motor)
             or (c.is_blocked or c.force_human)
           )`,
     ).trim();

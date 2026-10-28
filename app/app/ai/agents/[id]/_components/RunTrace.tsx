@@ -72,7 +72,7 @@ export function RunTrace({
         const errMsg = errMsgBruto ? t(errMsgBruto) : null;
         return (
           <details
-            key={`${stepNum}-${s.tool_name ?? idx}`}
+            key={`${stepNum}-${s.tool_name ?? 'tool'}-${idx}`}
             className="group rounded-md border border-border/60 bg-background"
           >
             <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-sm">

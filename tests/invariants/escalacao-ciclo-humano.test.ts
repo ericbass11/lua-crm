@@ -170,7 +170,7 @@ describe("devolver o atendimento: as três travas", () => {
     const antes = await estadoDaConversa();
     expect(antes.force_human).toBe(true);
     expect(antes.bot_silenced_until).not.toBeNull();
-    expect(await isLeadInHandoff(pool, GOV_ORG, ESC_CONTATO)).toBe(true);
+    expect(await isLeadInHandoff(pool, GOV_ORG, ESC_CONTATO, ESC_CONVERSA)).toBe(true);
   });
 
   it("a IDA também aparece na linha do tempo — não só o caminho do CRM", async () => {
@@ -199,7 +199,7 @@ describe("devolver o atendimento: as três travas", () => {
       [GOV_ORG, ESC_CONVERSA],
     );
     expect(
-      await isLeadInHandoff(pool, GOV_ORG, ESC_CONTATO),
+      await isLeadInHandoff(pool, GOV_ORG, ESC_CONTATO, ESC_CONVERSA),
       "com force_human ainda ligado o turno é NO-OP e todo envio é vetado — a rota respondia sucesso mesmo assim",
     ).toBe(true);
   });
@@ -209,7 +209,7 @@ describe("devolver o atendimento: as três travas", () => {
       GOV_ORG,
       ESC_CONTATO,
     ]);
-    expect(await isLeadInHandoff(pool, GOV_ORG, ESC_CONTATO)).toBe(false);
+    expect(await isLeadInHandoff(pool, GOV_ORG, ESC_CONTATO, ESC_CONVERSA)).toBe(false);
   });
 
   it("o guarda do envio lê a mesma coluna — sem soltá-la, nada sai", async () => {

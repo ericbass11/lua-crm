@@ -41,6 +41,7 @@ import { costCents } from './pricing';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
 import { createDefaultRegistry, type ProviderRegistry } from './providers';
 import { buildStablePrefix } from './stable-prefix';
+import { diagnoseModelStep, type ModelStepDiagnostic } from './step-diagnostics';
 import {
   degrauDoEnderecoProprio,
   prazoLegivel,
@@ -656,6 +657,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   });
 
   const startedAt = Date.now();
+  const steps: ModelStepDiagnostic[] = [];
   let result: Awaited<ReturnType<typeof generateText>>;
   try {
     input.abortSignal?.throwIfAborted();
@@ -670,6 +672,16 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       messages: input.messages,
       abortSignal: input.abortSignal,
       tools: guardServiceTools(prefix.tools),
+      onStepFinish: step => {
+        const diagnostic = diagnoseModelStep(step, prefix.tools);
+        steps.push(diagnostic);
+        deps.log?.info('llm: etapa concluída', {
+          organization_id: input.tenantId,
+          job_id: input.jobId ?? null,
+          purpose,
+          ...diagnostic,
+        });
+      },
       stopWhen:
         input.maxSteps === undefined
           ? undefined
@@ -781,6 +793,12 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
   return {
     result,
+    diagnostics: {
+      steps,
+      step_limit_reached: input.maxSteps !== undefined
+        && steps.length >= input.maxSteps
+        && steps.at(-1)?.finish_reason === 'tool-calls',
+    },
     callId: rows[0]?.id ?? null,
     provider: config.provider,
     model,

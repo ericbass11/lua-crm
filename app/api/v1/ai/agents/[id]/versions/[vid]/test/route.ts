@@ -159,12 +159,20 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       channelId: version.channel_session_id,
     });
     const finalText = result.candidates.map((c) => c.body).join("\n\n");
+    const exhausted = (result.candidates.length === 0 || result.fallback_response === true)
+      && result.impediments.some(i => i.code === 'step_limit_without_response');
+    const toolTrace = result.model_diagnostics?.steps.flatMap(step => step.tools.map(tool => ({
+      step: step.step,
+      tool_name: tool.tool_name,
+      result: { status: tool.status, finish_reason: step.finish_reason },
+      error: tool.error_code,
+    }))) ?? [];
     resultPayload = {
       run_id: runRow.id,
-      status: result.candidates.length ? "ok" : "blocked",
+      status: exhausted ? "failed" : result.candidates.length ? "ok" : "blocked",
       latency_ms: Date.now() - startedAt.getTime(),
       final_text: finalText,
-      tool_calls: result.proposals,
+      tool_calls: toolTrace,
       ...result,
       stub: process.env.INTERNAL_AGENT_RUN_STUB === "true",
       guardrails: avaliarRespostaDeTeste(finalText),
@@ -177,16 +185,15 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     // nascia `running` e morria `running`, em toda instalação, para sempre.
     // Medido numa VPS v1.20.0: 16 execuções, 16 linhas em `running`.
     await atualizarRun(admin, activeOrg.orgId, runRow.id, requestId, {
-      status: "completed",
+      status: exhausted ? "failed" : "completed",
       completed_at: new Date().toISOString(),
       latency_ms: Date.now() - startedAt.getTime(),
-      // `steps_count`, `tokens_in`, `tokens_out` e `cost_cents` seguem em zero
-      // de propósito: o turno de prévia não devolve essas contagens à rota, e
-      // gravar `candidates.length` no lugar de passos seria um número errado com
-      // cara de certo. Quem tem o dado é `llm_calls` (`purpose='agent_preview'`),
-      // e ligar as duas é trabalho à parte — não se conserta um zero honesto com
-      // um palpite.
-      tool_calls: JSON.parse(JSON.stringify(result.proposals)),
+      // Etapas reais do SDK, não número de propostas/candidatos. Uso/custo
+      // continuam em llm_calls; a prévia não inventa essas contagens.
+      steps_count: result.model_diagnostics?.steps.length ?? 0,
+      error_code: exhausted ? 'step_limit_without_response' : null,
+      error_message: exhausted ? 'O modelo atingiu o teto de etapas sem propor uma resposta.' : null,
+      tool_calls: JSON.parse(JSON.stringify(toolTrace)),
     });
   } catch (err) {
     // ⚠️ Este `catch` era vazio, e engolir o erro aqui é o que tornava o

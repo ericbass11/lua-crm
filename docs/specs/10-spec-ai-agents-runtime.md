@@ -919,3 +919,60 @@ Cada run emite, em JSON:
 - Spec 03 — WAHA: `channel_sessions`, webhook handler estendido em §4.6
 - Spec 07 — Events/Workers: novo cron `agent-dispatcher` segue padrão existente
 - Spec 01 — Platform Base: RLS via `fn_user_org_ids()`, audit log via `fn_audit_log_row()`
+
+## Diagnóstico de etapas do modelo
+
+### Escopo da pausa humana
+
+`isLeadInHandoff` recebe organização, contato e **conversa atual** em todos os
+consumidores: turno automático, rascunho assistido, envio fixo de follow-up e
+Operador. `contacts.force_human` continua global e só é liberado por ação humana.
+O silêncio futuro/infinito e a atribuição a usuário (`assignee_kind='user'` ou
+`assigned_to_user_id` preenchido) valem para a conversa atual. Um silêncio em
+outra conversa, inclusive encerrada em outro canal, não suspende uma conversa
+atual liberada. Alvo ausente ou que não corresponde à organização/contato falha
+fechado. A guarda não altera contato, conversa, fila nem configuração de custo.
+
+O retorno é consumido pelos mesmos logs de turno pulado; a retomada continua
+dependendo dos comandos humanos existentes. Destino: núcleo; não há configuração,
+porta ou peça nova. A prova do SQL real e das atribuições está em
+`tests/invariants/handoff-escopo-da-conversa.test.ts`.
+
+### Metadados de execução
+
+O seam `runModelCall` registra metadados por etapa do SDK e os devolve ao turno:
+índice, motivo normalizado de parada, nomes de ferramentas declaradas e situação
+(`invalid`, `error`, `rejected`, `completed`, `no_result`). Nomes desconhecidos viram
+`unknown_tool`; mensagens de erro, argumentos, resultados e texto do modelo não entram
+no diagnóstico. Recusas da aplicação usam o código fixo `tool_rejected`.
+
+`PreviewResult.model_diagnostics` alimenta o teste de versão e seu histórico em
+`ai_agent_runs.tool_calls`. `proposals` permanece separado: propostas de mutação
+não representam todas as ferramentas consultadas. O teto de etapas sem candidato
+e sem veto registrado é `step_limit_without_response`, falha da prévia. Um veto
+já registrado continua sendo bloqueio. O teto sem resposta permite um único
+aviso neutro (`step-limit-recovery.ts`), somente em turno que pode falar e que
+ainda não tentou enviar. O aviso passa pelo mesmo `guardServiceTools` e
+`send_message`, com autorização e cadeia before-send atuais. Ele não usa texto
+livre do modelo nem uma nova geração conversacional. Classificadores auxiliares
+configurados na cadeia de envio continuam sujeitos ao orçamento existente.
+Na prévia, `fallback_response` distingue esse aviso de uma resposta concluída:
+o status continua sendo falha. Recusa ou falha de entrega do aviso abre um item
+`other` deduplicado por conversa e título na Central; falha exclusiva desse
+aviso encerra o turno antes do checkpoint/roteiro e não reinicia a geração.
+O checkpoint anterior e o ledger são preservados. Erros de envios anteriores
+do modelo continuam seguindo a política existente de retry.
+
+O breaker recebe o catálogo explícito de leituras e o predicado `motivoDoVazio`
+da própria definição MCP. Resultado vazio declarado conta como tentativa sem
+sucesso para conter consultas repetidas, sem inferir falha de um campo arbitrário
+e sem alterar o payload devolvido pela capacidade. Entrada: SDK → ferramenta →
+breaker. Saída no teto: recuperação limitada → envio guardado ou Central → Inbox.
+
+Destino: **núcleo**; observabilidade do mesmo motor, independente de extensões.
+Entrada: SDK → seam → turno. Saída: logs estruturados e Testar agente → histórico
+do teste. Porta: Agentes → Editar → Testar. Configuração: o teto existente da
+versão do agente. Retorno humano: corrigir o fluxo/ferramenta indicado e executar
+um novo teste autorizado; diagnóstico não é aprendizado automático. Limitação:
+não se conhece a ferramenta do incidente histórico sem uma nova execução com
+essa instrumentação; o diagnóstico não reconstitui dados nunca registrados.

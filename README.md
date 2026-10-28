@@ -597,6 +597,12 @@ Siga o desenvolvimento: [Instagram](https://www.instagram.com/melgarafael) · [Y
 
 ## 📒 Melhorias desta instalação (changelog local — 2026-07/08)
 
+- **28/10/2026 — Consultas sem progresso e resposta limitada:** o motor reconhece vazios declarados pelas ferramentas de consulta e contém buscas repetidas. Ao esgotar etapas sem tentar responder, tenta um único aviso neutro pela cadeia normal de envio; recusas continuam valendo e viram aviso na Central. A falha do aviso não reinicia a geração. Alteração local, sem implantação nesta etapa.
+
+- **28/10/2026 — Escopo da pausa humana (DEV):** a guarda dos turnos usa a conversa atual; silêncio histórico de outro canal não bloqueia uma conversa liberada. Atribuição humana atual e `force_human` explícito no contato continuam protegidos; alvo divergente falha fechado. Sem alteração de dados em produção.
+
+- **26/10/2026 — Diagnóstico de loop de ferramentas (DEV):** etapas reais do SDK, inclusive validação recusada antes de `execute`, aparecem no teste e nos logs sem argumentos, resultados ou mensagens privadas. Teto sem resposta fica explícito; não há retry, envio forçado, troca de modelo ou alteração dos guardrails.
+
 > Toda melhoria feita nesta instalação DEVE ser registrada aqui (regra do guardrail no CLAUDE.md).
 
 ### Correção local preparada em 14/10/2026
