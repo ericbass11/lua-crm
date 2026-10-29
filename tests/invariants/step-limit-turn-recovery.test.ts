@@ -27,10 +27,10 @@ const checkpoint = JSON.stringify({ commitments: [], objections: [], next_action
 
 interface Scenario { org: string; contact: string; session: string; conversation: string; message: string }
 
-async function scenario(org = ORG): Promise<Scenario> {
-  const value = { org, contact: randomUUID(), session: randomUUID(), conversation: randomUUID(), message: randomUUID() };
+async function scenario(org = ORG, sharedSession?: string): Promise<Scenario> {
+  const value = { org, contact: randomUUID(), session: sharedSession ?? randomUUID(), conversation: randomUUID(), message: randomUUID() };
   await pool.query(`insert into contacts(id,organization_id,name) values($1,$2,'Contato sintético')`, [value.contact, org]);
-  await pool.query(`insert into channel_sessions(id,organization_id,waha_session_name,status,webhook_secret_encrypted)
+  if (sharedSession === undefined) await pool.query(`insert into channel_sessions(id,organization_id,waha_session_name,status,webhook_secret_encrypted)
     values($1,$2,$3,'WORKING','\\x00'::bytea)`, [value.session, org, `recovery-${value.session}`]);
   await pool.query(`insert into conversations(id,organization_id,contact_id,channel_session_id,status,is_group)
     values($1,$2,$3,$4,'ai_handling',false)`, [value.conversation, org, value.contact, value.session]);
@@ -110,6 +110,15 @@ async function run(value: Scenario, h: ReturnType<typeof harness>, conversationI
   return { job: rows[0]!, error };
 }
 
+async function expectEscalated(value: Scenario) {
+  const passagem = await pool.query('select origem,motivo_codigo from passagens_de_atendimento where organization_id=$1 and conversation_id=$2', [value.org, value.conversation]);
+  expect(passagem.rows).toEqual([{ origem: 'runtime_nativo', motivo_codigo: 'low_confidence' }]);
+  const conversa = await pool.query(`select bot_silenced_until='infinity'::timestamptz as silenced from conversations where organization_id=$1 and id=$2`, [value.org, value.conversation]);
+  expect(conversa.rows[0]?.silenced).toBe(true);
+  const handoff = await pool.query('select id from agent_inbox_items where organization_id=$1 and kind=$2 and ref_kind=$3 and ref_id=$4', [value.org, 'handoff', 'conversation', value.conversation]);
+  expect(handoff.rows).toHaveLength(1);
+}
+
 async function calls(jobId: string) {
   const { rows } = await pool.query<{ purpose: string; n: number }>(
     'select purpose,count(*)::int n from llm_calls where job_id=$1 group by purpose', [jobId]);
@@ -161,21 +170,17 @@ describe('real inbound turn: bounded recovery after model-step exhaustion', () =
     expect(rows[0]?.vetoed_code).toBeNull();
   });
 
-  it.each(['failed', 'throw'] as const)('a %s fallback is terminal: alert retained, no paid checkpoint or retry', async outcome => {
+  it.each(['failed', 'throw'] as const)('a %s fallback hands the conversation to a person: no paid checkpoint or retry', async outcome => {
     const value = await scenario(), h = harness('loop', outcome);
     const result = await run(value, h);
     expect(result.error).toBeNull();
     expect(result.job.status).toBe('done');
     expect(result.job.attempts).toBe(1);
-    expect(h.sent.map(message => message.body)).toEqual([STEP_LIMIT_REPLY]);
+    expect(h.sent[0]?.body).toBe(STEP_LIMIT_REPLY);
     expect(h.counts.main).toBe(MAX_STEPS);
     expect(h.counts.checkpoint).toBe(0);
     expect(await calls(result.job.id)).toEqual({ agent_turn: 1 });
-    expect(h.logs.some(log => JSON.stringify(log.fields).includes('step_limit_fallback_delivery_failed'))).toBe(true);
-    const { rows } = await pool.query('select id from agent_inbox_items where organization_id=$1 and kind=$2 and ref_kind=$3 and ref_id=$4', [ORG, 'other', 'conversation', value.conversation]);
-    expect(rows).toHaveLength(1);
-    const traces = await pool.query('select id from before_send_traces where organization_id=$1 and job_id=$2', [ORG, result.job.id]);
-    expect(traces.rows).toHaveLength(1);
+    await expectEscalated(value);
   });
 
   it('an ordinary model-send failure retains the existing bounded job retry', async () => {
@@ -239,5 +244,55 @@ describe('real inbound turn: bounded recovery after model-step exhaustion', () =
     expect(result.error).toBeNull();
     expect(h.counts.main).toBe(MAX_STEPS);
     expect(h.sent.map(message => message.body)).toEqual([STEP_LIMIT_REPLY]);
+  });
+
+  it('never leaves a lead silent when the fixed acknowledgement repeats on the same number', async () => {
+    // Incidente de produção (2026-10-29): o gate anti-ban conta cópias idênticas em
+    // todos os leads do número; a partir do 3º turno esgotado o aviso era vetado e o
+    // lead não recebia nada. Todo turno agora termina em resposta ou em passagem.
+    const shared = (await scenario()).session;
+    const leads: Scenario[] = [];
+    for (let i = 0; i < 5; i++) leads.push(await scenario(ORG, shared));
+    const outcomes: string[] = [];
+    for (const value of leads) {
+      const h = harness();
+      const result = await run(value, h);
+      expect(result.error).toBeNull();
+      expect(result.job.status).toBe('done');
+      const vetoed = await pool.query("select id from before_send_traces where organization_id=$1 and job_id=$2 and vetoed_code='mass_identical'", [ORG, result.job.id]);
+      if (vetoed.rows.length === 0) {
+        expect(h.sent.map(message => message.body)).toEqual([STEP_LIMIT_REPLY]);
+        outcomes.push('acknowledged');
+      } else {
+        expect(h.sent).toHaveLength(1);
+        expect(h.sent[0]?.body).not.toBe(STEP_LIMIT_REPLY);
+        await expectEscalated(value);
+        outcomes.push('escalated');
+      }
+    }
+    expect(outcomes).toEqual(['acknowledged', 'acknowledged', 'escalated', 'escalated', 'escalated']);
+  });
+
+  it('a second consecutive exhaustion in the same conversation hands off instead of repeating', async () => {
+    const value = await scenario();
+    const firstHarness = harness();
+    const first = await run(value, firstHarness);
+    expect(first.error).toBeNull();
+    expect(firstHarness.sent.map(message => message.body)).toEqual([STEP_LIMIT_REPLY]);
+    // The capture channel does not persist; the real CRM channel writes the
+    // outbound row that the next turn's context reads.
+    await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at)
+      values($1,$2,$3,$4,$5,'text','outbound','sent',$6,'ai',$7)`,
+    [randomUUID(), ORG, value.conversation, value.session, value.contact, STEP_LIMIT_REPLY, new Date(CLOCK.getTime() + 30_000)]);
+    const message = randomUUID();
+    await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at)
+      values($1,$2,$3,$4,$5,'text','inbound','delivered','Ainda preciso de ajuda','external_device',$6)`,
+    [message, ORG, value.conversation, value.session, value.contact, new Date(CLOCK.getTime() + 60_000)]);
+    const h = harness();
+    const second = await run({ ...value, message }, h);
+    expect(second.error).toBeNull();
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]?.body).not.toBe(STEP_LIMIT_REPLY);
+    await expectEscalated(value);
   });
 });
