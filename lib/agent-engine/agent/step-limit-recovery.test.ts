@@ -48,6 +48,65 @@ describe('bounded step-limit recovery', () => {
     expect(input.notify).toHaveBeenCalledOnce();
   });
 
+  describe('escalation when the acknowledgement cannot reach the lead', () => {
+    it('hands off to a person when the guarded send refuses (e.g. spinning veto)', async () => {
+      const escalate = vi.fn(async () => true);
+      const { input, run } = recovery({ send: vi.fn(async () => false), escalate });
+      expect(await run()).toBe('escalated');
+      expect(input.send).toHaveBeenCalledOnce();
+      expect(escalate).toHaveBeenCalledOnce();
+      expect(input.notify).not.toHaveBeenCalled();
+    });
+
+    it('hands off when the send throws', async () => {
+      const escalate = vi.fn(async () => true);
+      const { run } = recovery({ send: vi.fn(async () => { throw new Error('stale_boundary'); }), escalate });
+      expect(await run()).toBe('escalated');
+    });
+
+    it('skips the repeated acknowledgement and hands off on a second consecutive exhaustion', async () => {
+      const escalate = vi.fn(async () => true);
+      const { input, run } = recovery({ repeatedExhaustion: true, escalate });
+      expect(await run()).toBe('escalated');
+      expect(input.send).not.toHaveBeenCalled();
+    });
+
+    it('hands off when the model attempted a send that never got through', async () => {
+      const escalate = vi.fn(async () => true);
+      const { input, run } = recovery({ attemptedSend: true, escalate });
+      expect(await run()).toBe('escalated');
+      expect(input.send).not.toHaveBeenCalled();
+    });
+
+    it('keeps the first accepted acknowledgement without escalating', async () => {
+      const escalate = vi.fn(async () => true);
+      const { run } = recovery({ escalate });
+      expect(await run()).toBe('accepted');
+      expect(escalate).not.toHaveBeenCalled();
+    });
+
+    it.each([{ hasImpediment: true }, { canSpeak: false }])('never escalates over %j', async (overrides) => {
+      const escalate = vi.fn(async () => true);
+      const { run } = recovery({ ...overrides, escalate });
+      await run();
+      expect(escalate).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the notice when the handoff itself fails', async () => {
+      const { input, run } = recovery({
+        send: vi.fn(async () => false), escalate: vi.fn(async () => { throw new Error('db'); }),
+      });
+      expect(await run()).toBe('unresolved');
+      expect(input.notify).toHaveBeenCalledOnce();
+    });
+
+    it('an escalated turn is never treated as a terminal fallback failure', () => {
+      expect(fallbackDeliveryIsTerminal({
+        attempted: true, priorFailure: false, recovery: 'escalated', hasRunError: true, outcomeKinds: ['failed'],
+      })).toBe(false);
+    });
+  });
+
   it('notifies instead of bypassing a stale service or human takeover', async () => {
     const { input, run } = recovery({ send: vi.fn(async () => { throw new Error('stale_boundary'); }) });
     expect(await run()).toBe('unresolved');

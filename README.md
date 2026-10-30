@@ -597,6 +597,8 @@ Siga o desenvolvimento: [Instagram](https://www.instagram.com/melgarafael) · [Y
 
 ## 📒 Melhorias desta instalação (changelog local — 2026-07/08)
 
+- **29/10/2026 — IA nunca fica muda:** em produção, o aviso fixo "Não consegui concluir esta resposta agora." era vetado pelo anti-ban a partir da 3ª vez no número, e o cliente ficava sem retorno. Agora, se esse aviso não sai (ou a conversa esgota as etapas duas vezes seguidas), o cliente recebe o aviso de transferência e a conversa vai para um humano (passagem `low_confidence`/`runtime_nativo` + Central). A última etapa fica reservada à resposta sem forçar `toolChoice` (no `ai@7` isso lança erro quando o modelo desobedece) e argumentos alternativos de `crm_search_knowledge` são reparados. Spec em `analises/ia-para-de-responder-2026-10-29/specs/001-ia-nunca-fica-muda/`.
+
 - **28/10/2026 — Consultas sem progresso e resposta limitada:** o motor reconhece vazios declarados pelas ferramentas de consulta e contém buscas repetidas. Ao esgotar etapas sem tentar responder, tenta um único aviso neutro pela cadeia normal de envio; recusas continuam valendo e viram aviso na Central. A falha do aviso não reinicia a geração. Alteração local, sem implantação nesta etapa.
 
 - **28/10/2026 — Escopo da pausa humana (DEV):** a guarda dos turnos usa a conversa atual; silêncio histórico de outro canal não bloqueia uma conversa liberada. O silêncio atual e `force_human` explícito no contato continuam protegidos; atribuição sem silêncio não cria uma pausa, e alvo divergente falha fechado. Sem alteração de dados em produção.

@@ -38,6 +38,7 @@ import {
   type ChaveDeOrcamento,
 } from './orcamento';
 import { costCents } from './pricing';
+import { repairKnowledgeToolCall } from './knowledge-tool-repair';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
 import { createDefaultRegistry, type ProviderRegistry } from './providers';
 import { buildStablePrefix } from './stable-prefix';
@@ -213,6 +214,8 @@ export interface RunModelCallInput {
    * agente), nunca constante.
    */
   maxSteps?: number;
+  /** Opt-in: use the final existing step for a still-needed guarded response. */
+  reservedResponse?: { needed: () => boolean };
   /**
    * Encerra o loop quando o predicado for verdadeiro ao fim de uma etapa (além
    * do teto de `maxSteps`). É predicado, e não nome de tool, de propósito: o
@@ -223,6 +226,8 @@ export interface RunModelCallInput {
   pararQuando?: () => boolean;
   /** Teto por chamada auxiliar; nunca aumenta o limite configurado pela organização. */
   maxOutputTokens?: number;
+  /** Explicit bounded transport retries; omitted retains the SDK default. */
+  maxRetries?: number;
   /** Cancelamento propagado pelo chamador; a falha continua registrada em llm_calls. */
   abortSignal?: AbortSignal;
   /**
@@ -509,6 +514,8 @@ async function registrarRecusaDeEnderecoSemChave(d: {
 }
 
 export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
+  if (input.maxRetries !== undefined && (!Number.isInteger(input.maxRetries) || input.maxRetries < 0 || input.maxRetries > 2))
+    throw new RangeError('llm_invalid_max_retries');
   // O knob do raciocínio da DeepSeek entra pela fábrica: `deepseekThinking` só é
   // lido pela fábrica `deepseek`, então os outros provedores não têm como mudar.
   const registry = deps.registry ?? createDefaultRegistry({ deepseekThinking: cfg.deepseekThinking });
@@ -671,7 +678,25 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       system: prefix.system,
       messages: input.messages,
       abortSignal: input.abortSignal,
+      ...(input.maxRetries === undefined ? {} : { maxRetries: input.maxRetries }),
       tools: guardServiceTools(prefix.tools),
+      repairToolCall: options => repairKnowledgeToolCall(options, diagnostic => {
+        deps.log?.warn('llm: validação da consulta de conhecimento', {
+          tool_name: 'crm_search_knowledge', ...diagnostic,
+        });
+      }),
+      prepareStep: ({ stepNumber }) => {
+        const maxSteps = input.maxSteps;
+        if (!input.reservedResponse || maxSteps === undefined || maxSteps <= 1
+          || stepNumber !== maxSteps - 1 || !prefix.tools?.send_message
+          || !input.reservedResponse.needed()) return undefined;
+        // Só restringe as ferramentas; NÃO força `toolChoice`. No `ai@7`, um
+        // `toolChoice` 'tool'/'required' desobedecido lança
+        // `ToolChoiceViolationError` e derruba o turno inteiro — e há provedor
+        // (via OpenRouter) que ignora o campo. Sem resposta aqui, o turno cai no
+        // caminho de esgotamento, que avisa ou passa a um humano.
+        return { activeTools: ['send_message'] };
+      },
       onStepFinish: step => {
         const diagnostic = diagnoseModelStep(step, prefix.tools);
         steps.push(diagnostic);

@@ -5,7 +5,7 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect, guardServiceTools } from '@/lib/atendimento/fronteira-server';
-import { recoverStepLimit, fallbackDeliveryIsTerminal } from './step-limit-recovery';
+import { recoverStepLimit, fallbackDeliveryIsTerminal, STEP_LIMIT_HANDOFF_TEXT, STEP_LIMIT_REPLY } from './step-limit-recovery';
 /**
  * Loop do agente v0 — handler do job `inbound_turn` (F2-09; blueprint 8.8).
  *
@@ -4081,6 +4081,13 @@ async function executarTurnoDoAgente(
         messages: openingMessages,
         tools,
         maxSteps,
+        ...((preview !== undefined || turnoVaiFalarComOLead(liveJob())) ? {
+          reservedResponse: {
+            needed: () => runError === null && (preview
+              ? preview.result.candidates.length === 0
+              : !outcomes.some(outcome => ['sent', 'already_sent', 'queued'].includes(outcome.kind))),
+          },
+        } : {}),
         // Rascunho: a resposta é o send_message ACEITO; a etapa seguinte só
         // "encerrava". Aceito, e não chamado: o envio vetado pela cadeia
         // before_send volta ao modelo para ele reescrever (o 1º veto ensina).
@@ -4112,12 +4119,52 @@ async function executarTurnoDoAgente(
       });
       const hadFailureBeforeFallback = runError !== null || outcomes.length > 0;
       let fallbackAttempted = false;
+      // O turno anterior desta conversa já terminou no mesmo aviso: repeti-lo só
+      // empilha "não consegui" (e alimenta o veto de spinning do número).
+      const ultimaDoBot = [...effectiveContext.messages].reverse()
+        .find((message) => message.direction === 'outbound');
       const recovery = await recoverStepLimit({
         exhausted: exhaustedWithoutResponse,
         canSpeak: preview !== undefined || turnoVaiFalarComOLead(liveJob()),
         hasImpediment: (preview?.result.impediments.length ?? 0) > 0 || hadFailureBeforeFallback,
         attemptedSend: turn.diagnostics.steps.some((step) =>
           step.tools.some((entry) => entry.tool_name === 'send_message')),
+        repeatedExhaustion: ultimaDoBot?.body?.trim() === STEP_LIMIT_REPLY,
+        // Sem resposta e sem aviso possível, o cliente ficava no vácuo. A passagem
+        // usa o aviso de escalação (variantes, fora do spinning) e só então silencia
+        // — mesma ordem do pedido explícito de atendente. Nunca na prévia (sem
+        // efeito) nem para quem pediu para parar (a passagem não é desculpa para
+        // falar com ele).
+        ...(!preview && !optedOutThisTurn ? {
+          escalate: async () => {
+            const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+              ...avisoDaEscalacao().base,
+              motivo: 'outro',
+            });
+            const briefing = montarBriefingDaPassagem({
+              checkpoint: previous,
+              pendentesDoCliente: inboundsPendentes,
+              motivo: { codigo: 'low_confidence', texto: STEP_LIMIT_HANDOFF_TEXT },
+            });
+            await performHumanHandoff(
+              pool,
+              { tenantId, leadId, conversationId: input.conversationId },
+              {
+                reason: 'low_confidence',
+                conversationSummary: briefing.body,
+                inboxTitle: 'A IA não conseguiu responder — assuma a conversa',
+                passagem: { origem: 'runtime_nativo', motivoCodigo: 'low_confidence', briefing },
+                avisoAoLead: aviso,
+                log: runLog,
+              },
+            );
+            runLog.warn('turno sem resposta passado a atendimento humano', {
+              code: 'step_limit_escalated',
+              lead_avisado: aviso.avisado,
+            });
+            return true;
+          },
+        } : {}),
         send: async (body) => {
           // Reapply the service/operation boundary as well as send_message's
           // normal before-send chain. Never call the channel directly.
@@ -4155,6 +4202,10 @@ async function executarTurnoDoAgente(
         // checkpoint and skip all further paid work/retry for this notice alone.
         return;
       }
+      // Passagem feita: o aviso saiu (ou o motivo de não sair ficou na passagem)
+      // e a conversa é de uma pessoa. Nada mais sai neste turno, como nos outros
+      // desvios de handoff — e não há geração a repetir.
+      if (recovery === 'escalated') return;
       if (recovery === 'accepted') {
         runLog.warn('aviso de limite aceito pelo fluxo de envio', { code: 'step_limit_acknowledged' });
         if (preview) {
