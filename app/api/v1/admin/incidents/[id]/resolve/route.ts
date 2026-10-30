@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/admin/incidents/[id]/resolve (S-11.11)
  *
@@ -26,6 +27,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await params;
 
@@ -111,5 +115,5 @@ export async function POST(
     },
   });
 
-  return ok({ data: { id, status: "resolved" } }, { requestId });
+  return ok({ id, status: "resolved" }, { requestId });
 }

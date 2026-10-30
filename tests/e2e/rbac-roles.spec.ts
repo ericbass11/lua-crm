@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+import { afirmarAdminDeTenantPuro } from "./utils/precondicao";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
 interface E2ECreds {
@@ -39,11 +40,26 @@ function loadCreds(): E2ECreds {
 
 const creds = loadCreds();
 
+// ── Precondição de identidade ────────────────────────────────────────────────
+// Esta spec é a matriz de PAPEL do tenant, e é onde um escape de plataforma
+// faria mais estrago: uma regressão de RBAC ficaria invisível na spec que existe
+// para pegá-la.
+//
+// ⚠️ MEDIDO antes de afirmar: as duas telas do caso do admin
+// (`app/app/settings/api-tokens/page.tsx:12` e `.../billing/page.tsx:20`)
+// gateiam em `ROLE_RANK[activeOrg.role] < ROLE_RANK.admin` **sem** escape de
+// `is_platform_admin`, e `requireRole` só bypassa com `allowPlatformAdmin: true`
+// explícito. Hoje a promoção NÃO muda o desfecho deste arquivo. A precondição
+// fica porque é aqui que a próxima asserção de papel vai nascer.
+test.beforeAll(async () => {
+  await afirmarAdminDeTenantPuro(creds.users.admin!.email);
+});
+
 async function login(page: Page, email: string): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app\//);
 }
 
@@ -51,7 +67,7 @@ async function loginWithTotp(page: Page, email: string, secret: string): Promise
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/login\/mfa/);
 
   // Até 2 tentativas: um código pode expirar na borda da janela de 30s.
@@ -124,7 +140,7 @@ test.describe("rbac role matrix (spec 13 §4)", () => {
     await expectNoBlockingA11y(page, '[role="tablist"]');
 
     await page.goto("/app/kanban");
-    await expect(page.getByRole("heading", { name: "Pipelines" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Funis" })).toBeVisible();
     await expectNoBlockingA11y(page);
   });
 

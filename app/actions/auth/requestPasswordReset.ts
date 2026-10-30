@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { forgotPasswordSchema, type ForgotPasswordInput } from "@/lib/auth/schemas";
 import { audit, hashEmail } from "@/lib/audit";
+import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { env } from "@/lib/env";
 
 export type RequestPasswordResetResult =
@@ -38,9 +39,19 @@ export async function requestPasswordReset(
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = hdrs.get("user-agent") ?? null;
 
+  // Sem teto, este endpoint é uma metralhadora de e-mail contra terceiros e um
+  // oráculo de enumeração de conta. Issue #64.
+  if (await authRateLimited("reset", parsed.data.email, AUTH_LIMITS.reset)) {
+    return { ok: false, error: "rate_limited" };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${origin}/auth/confirm`,
+    // ?type=recovery sobrevive ao redirect do GoTrue (preserva query string
+    // existente ao anexar `code=`/`token_hash=`) — sem SMTP customizado o
+    // Supabase usa o template padrão dele, que só devolve `code` (PKCE), sem
+    // `type`; /auth/confirm depende deste param pra saber que é recovery.
+    redirectTo: `${origin}/auth/confirm?type=recovery`,
   });
 
   if (error) {

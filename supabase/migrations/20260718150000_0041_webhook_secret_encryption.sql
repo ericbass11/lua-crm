@@ -1,4 +1,4 @@
--- 0041: cifragem at-rest dos secrets de webhooks (spec 2026-07-17 §10 — retrofit)
+-- 0172: cifragem at-rest dos secrets de webhooks (spec 2026-07-17 §10 — retrofit)
 -- webhook_sources.secret (text) -> secret_encrypted (bytea via fn_encrypt_oauth)
 -- automation_rules.actions[].config.secret -> config.secret_enc (hex do bytea)
 --

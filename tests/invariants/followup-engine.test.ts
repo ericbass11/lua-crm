@@ -1,3 +1,4 @@
+import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import pg from "pg";
 
@@ -5,6 +6,10 @@ import { runFollowupTick, type AdminClient, type FollowupJobRequest, type TickDe
 import { flowGraphSchema, type FlowGraph } from "@/lib/followup/graph-schema";
 import { MAX_ACTION_RECHECKS, type EnrollmentEventRef, type EnrollmentRow } from "@/lib/followup/node-handlers";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
+import { persistirRespostaFollowupPg } from "@/lib/followup/persistir-resposta";
+
+import { isolarFixtureDeFollowup } from "./followup-isolamento";
+import { relogioAncoradoNoBanco } from "./followup-relogio";
 
 /**
  * Task 4.1 — motor do worker de follow-up (tick + node-handlers) contra
@@ -37,19 +42,12 @@ afterAll(async () => {
   await pool.end();
 });
 
-// fn_claim_due_followup_enrollments é GLOBAL (sem filtro de org — mesmo
-// design usado em produção, SKIP LOCKED entre workers, provado em Task 1.2).
-// tests/invariants/** compartilha UM container Postgres não resetado entre
-// arquivos (vitest.db.config.ts, fileParallelism:false) — sem isto, uma
-// enrollment devida deixada por um `it` anterior (ex.: o wake de
-// followup-reactivity.test.ts empurra next_eval_at=now) entra no
-// `runFollowupTick({limit:5})` de outro `it` que espera `claimed`/
-// `advanced`/`jobs.length` exatos, corrompendo as contagens agregadas
-// (fix de review — Task 5.2). `followup_enrollment_events.enrollment_id` tem
-// `on delete cascade` (migration 0054) — deletar só `followup_enrollments`
-// já limpa os eventos junto; nenhuma outra tabela referencia essa FK.
+// Isolamento da fixture — a razão inteira está em ./followup-isolamento.ts.
+// Era um `delete` solto aqui desde a Task 5.2; virou helper compartilhado
+// porque os OUTROS arquivos que rodam tick não o tinham, e eram justamente os
+// que pintavam o CI de vermelho de forma intermitente.
 beforeEach(async () => {
-  await pool.query(`delete from followup_enrollments`);
+  await isolarFixtureDeFollowup(pool);
 });
 
 // ---- pg-backed AdminClient (test-only adapter; prod uses createSupabaseAdminClient) ----
@@ -102,17 +100,43 @@ function pgAdminClient(opts?: { failInboxTimes?: number }): AdminClient {
       return flowGraphSchema.parse(rows[0]!.graph);
     },
     async loadLeadFacts(orgId, contactId) {
-      const { rows } = await pool.query<{ stage_id: string | null; tags: string[] }>(
-        `select stage_id, tags from crm_leads where organization_id = $1 and contact_id = $2
+      const { rows: leads } = await pool.query<{
+        stage_id: string | null;
+        tags: string[];
+        custom_fields: Record<string, unknown> | null;
+      }>(
+        `select stage_id, tags, custom_fields from crm_leads where organization_id = $1 and contact_id = $2
          order by updated_at desc limit 1`,
         [orgId, contactId],
       );
-      if (rows.length === 0) return { lead_stage: null, tags: [] };
-      return { lead_stage: rows[0]!.stage_id, tags: rows[0]!.tags };
+      const { rows: contacts } = await pool.query<{ name: string | null }>(
+        `select name from contacts where organization_id = $1 and id = $2`,
+        [orgId, contactId],
+      );
+      const lead = leads[0];
+      return {
+        lead_stage: lead?.stage_id ?? null,
+        tags: lead?.tags ?? [],
+        contact_name: contacts[0]?.name ?? null,
+        custom_fields: lead?.custom_fields ?? {},
+      };
+    },
+    async loadLastInboundBody(orgId, contactId, conversationId) {
+      const params: unknown[] = [orgId, contactId];
+      const conv = conversationId ? "and conversation_id = $3" : "";
+      if (conversationId) params.push(conversationId);
+      const { rows } = await pool.query<{ body: string | null }>(
+        `select body from messages
+         where organization_id = $1 and contact_id = $2 and direction = 'inbound' ${conv}
+         order by sent_at desc limit 1`,
+        params,
+      );
+      const body = rows[0]?.body;
+      return typeof body === "string" ? body : null;
     },
     async loadEnrollmentEvents(enrollmentId): Promise<EnrollmentEventRef[]> {
       const { rows } = await pool.query<EnrollmentEventRef>(
-        `select node_id, idempotency_key from followup_enrollment_events where enrollment_id = $1`,
+        `select node_id, idempotency_key, event_type, payload from followup_enrollment_events where enrollment_id = $1 order by created_at asc`,
         [enrollmentId],
       );
       return rows;
@@ -158,6 +182,9 @@ function pgAdminClient(opts?: { failInboxTimes?: number }): AdminClient {
          values ($1, 'followup_dead', 'warn', $2, $3, 'followup_enrollment', $4)`,
         [item.organization_id, item.title, item.body, item.ref_id],
       );
+    },
+    async persistirRespostaFollowup(input) {
+      await persistirRespostaFollowupPg((sql, params) => pool.query(sql, params), input);
     },
   };
 }
@@ -206,10 +233,11 @@ async function seedEnrollment(params: {
   attempts?: number;
   maxAttempts?: number;
 }): Promise<string> {
+  const boundary = await criarOrigemDeFollowup(pool, params.org, params.contactId);
   const { rows } = await pool.query<{ id: string }>(
     `insert into followup_enrollments
-       (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, steps_taken, attempts, max_attempts)
-     values ($1, $2, $3, $4, $5, $6, ${params.nextEvalAt ?? "now() - interval '1 second'"}, $7, $8, $9)
+       (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, steps_taken, attempts, max_attempts, conversation_id, service_boundary)
+     values ($1, $2, $3, $4, $5, $6, ${params.nextEvalAt ?? "now() - interval '1 second'"}, $7, $8, $9, $10, $11::jsonb)
      returning id`,
     [
       params.org,
@@ -221,6 +249,7 @@ async function seedEnrollment(params: {
       params.stepsTaken ?? 0,
       params.attempts ?? 0,
       params.maxAttempts ?? 5,
+      boundary.conversation_id, JSON.stringify(boundary),
     ],
   );
   return rows[0]!.id;
@@ -234,7 +263,7 @@ async function getEnrollment(id: string): Promise<Record<string, unknown>> {
 function makeDeps(jobs: FollowupJobRequest[], db: AdminClient = pgAdminClient()): TickDeps {
   return {
     db,
-    clock: () => new Date(),
+    clock: relogioAncoradoNoBanco(),
     enqueueJob: async (job) => {
       jobs.push(job);
     },
@@ -490,7 +519,7 @@ describe("runFollowupTick — backoff progride e esgota em 'dead' + inbox item",
       versionId,
       contactId,
       currentNodeId: "t1",
-      stepsTaken: 31,
+      stepsTaken: 81,
     });
 
     const jobs: FollowupJobRequest[] = [];
@@ -533,7 +562,7 @@ describe("runFollowupTick — backoff progride e esgota em 'dead' + inbox item",
 // ---- 6. max_steps ---------------------------------------------------------
 
 describe("runFollowupTick — max_steps", () => {
-  it("steps_taken > 30 mata o enrollment sem sequer carregar o grafo", async () => {
+  it("steps_taken > 80 mata o enrollment sem sequer carregar o grafo", async () => {
     const org = "aaaaaaa5-0000-4000-8000-000000000001";
     await seedOrg(org);
     const contactId = await seedContact(org);
@@ -544,7 +573,7 @@ describe("runFollowupTick — max_steps", () => {
       versionId,
       contactId,
       currentNodeId: "t1",
-      stepsTaken: 31,
+      stepsTaken: 81,
     });
 
     const jobs: FollowupJobRequest[] = [];

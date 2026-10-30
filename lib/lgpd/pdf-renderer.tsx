@@ -3,10 +3,38 @@
  *
  * Template para Art. 18, II — direito de acesso aos dados. Renderizado para
  * Buffer via @react-pdf/renderer e entregue ao titular via Resend.
+ *
+ * ── ESTE DOCUMENTO NÃO LEVA MARCA. É decisão, não esquecimento ──────────────
+ *
+ * O rodapé imprime o CONTROLADOR (`organizations.legal_name`) e o Encarregado
+ * resolvido. Não imprime a marca do revendedor, não imprime a nossa, não leva
+ * logo e não leva cor.
+ *
+ * O motivo: o relatório do Art. 18 II responde a um DIREITO LEGAL do titular.
+ * Nomear ali o revendedor — que é OPERADOR, não controlador — inverteria os
+ * papéis num documento jurídico. Trocar `DeskcommCRM` por `Vendas Turbo CRM`
+ * no rodapé não é "completar o white-label": é piorar o defeito, porque hoje o
+ * nome é obviamente o do software, e depois passaria a parecer a declaração de
+ * quem responde pelos dados.
+ *
+ * Consequência boa e deliberada: a armadilha do @react-pdf não nos alcança.
+ * `var(--x)` e `oklch()` renderizam PDF VÁLIDO e descartam a cor em silêncio
+ * (medido: 1514 bytes contra 1538 do hex), então qualquer prova do tipo "gerei
+ * o PDF e ele abriu" passaria com a marca perdida. Como o documento não recebe
+ * cor de marca nenhuma, o `styles` de módulo abaixo pode continuar de módulo:
+ * zero risco assumido. Não parametrize, não mova para dentro do componente.
+ *
+ * A tela que resolve o outro lado disto é `/app/settings/tenant` (campo "Razão
+ * social"): `legal_name` nasce IGUAL a `display_name` no bootstrap
+ * (`scripts/bootstrap-owner.ts`, os dois recebem `ORG_NAME`), então o caso ruim
+ * aqui não é o campo vazio — é o nome fantasia impresso como razão social. Uma
+ * guarda "se vazio, use X" nunca dispararia; o que resolve é preencher a tela.
  */
 
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
+
+import { env } from "@/lib/env";
 
 import type { ExportPayload } from "./export-collector";
 
@@ -82,6 +110,38 @@ function fmtMoney(cents: number | null | undefined, currency: string | null | un
   return `${currency ?? "BRL"} ${v.toFixed(2)}`;
 }
 
+/**
+ * A MESMA cadeia que `lib/lgpd/sla-alarm.ts:93` já usa
+ * (organização acima, instalação abaixo — resolvida pelo coletor). Reusar a ordem, e não
+ * inventar outra, é o que impede o documento e o alarme de apontarem para
+ * encarregados diferentes na mesma organização.
+ *
+ * O texto anterior era `DPO: contato via canal oficial do controlador` — um
+ * não-resposta num campo cuja função é dizer a quem o titular reclama.
+ */
+function encarregado(data: ExportPayload): string {
+  // O renderizador não consulta configuração: ele desenha o que recebeu. Quem
+  // resolve o encarregado (organização acima, instalação abaixo) é o coletor,
+  // que é assíncrono e já busca `dpo_email` da organização. Deixar a busca aqui
+  // obrigaria um componente de PDF a falar com o banco no meio do desenho.
+  return data.dpo_email || "não informado pelo controlador";
+}
+
+// Concluir o processamento do job não comprova envio: ele também pode terminar
+// com um bloqueio. O relatório conserva essa diferença, sem anunciar entrega.
+const deliveryStatus: Record<string, string> = {
+  pending: "Pendente",
+  running: "Em processamento",
+  done: "Processamento concluído",
+  failed: "Falha no processamento",
+  dead: "Tentativas encerradas",
+};
+const noticeStatus: Record<string, string> = {
+  open: "Aberto",
+  resolved: "Resolvido",
+  dismissed: "Dispensado",
+};
+
 export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElement {
   const shortId = data.request_id.slice(0, 8);
 
@@ -90,9 +150,13 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Relatório LGPD — Solicitação de Acesso aos Dados</Text>
+          <Text style={styles.title}>Relatório de Acesso aos Dados</Text>
           <Text style={styles.subtitle}>
-            Base legal: LGPD Art. 18, II (Lei nº 13.709/2018) · Solicitação #{shortId}
+            {/* A lei vem do PERFIL do país da organização (issue #1033): país
+                sem citação revisada não cita lei nenhuma — citar a errada é
+                pior do que não citar artigo nenhum. */}
+            Base legal: {data.lei_citada ?? "não declarada (país sem citação revisada)"} ·
+            Solicitação #{shortId}
           </Text>
         </View>
 
@@ -103,8 +167,16 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
             <Text style={styles.label}>ID:</Text>
             <Text style={styles.value}>{data.request_id}</Text>
           </View>
+          {/* A razão social vem primeiro e o uuid vira "ID interno": o campo
+              existe para o TITULAR saber de quem são os dados, e um uuid cru
+              não responde isso a ninguém. O id continua no documento porque é
+              o que o suporte pede quando alguém liga citando o relatório. */}
           <View style={styles.row}>
             <Text style={styles.label}>Organização:</Text>
+            <Text style={styles.value}>{data.organization_legal_name || "—"}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>ID interno:</Text>
             <Text style={styles.value}>{data.organization_id}</Text>
           </View>
           <View style={styles.row}>
@@ -138,9 +210,13 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
               <Text style={styles.value}>{data.contact.phone_number ?? "—"}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.label}>CPF:</Text>
+              <Text style={styles.label}>{data.documento_rotulo}:</Text>
               <Text style={styles.value}>
-                {data.contact.cpf_present ? "Armazenado (criptografado)" : "—"}
+                {data.contact.cpf_present
+                  ? "Armazenado (criptografado)"
+                  : data.contact.cpf_informado_na_conversa
+                    ? "Informado na conversa (valor no arquivo de dados)"
+                    : "—"}
               </Text>
             </View>
             <View style={styles.row}>
@@ -155,6 +231,21 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
               <Text style={styles.label}>Anonimizado:</Text>
               <Text style={styles.value}>{data.contact.is_anonymized ? "Sim" : "Não"}</Text>
             </View>
+          </View>
+        ) : null}
+
+        {/* Respostas e campos personalizados (roteiros de atendimento, etc.) */}
+        {data.contact && (data.contact.campos_legiveis ?? []).length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Respostas e campos personalizados</Text>
+            {/* A pergunta em linha própria: rótulo de roteiro é frase, e na coluna
+                de 110pt dos dados fixos ele quebrava no meio da palavra. */}
+            {data.contact.campos_legiveis.map((campo, i) => (
+              <View key={i} style={styles.itemBlock}>
+                <Text style={styles.small}>{campo.rotulo}</Text>
+                <Text>{campo.valor}</Text>
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -244,6 +335,111 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
           </View>
         ) : null}
 
+        {/* Agenda — vai no PDF, e não só no JSON, porque é a substância legível
+            do Art. 18 II: "houve consulta no dia tal, sobre isto". `activities`
+            fica só no JSON de propósito (type/source_module é telemetria); um
+            compromisso, não. */}
+        {data.appointments.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Agenda — Compromissos</Text>
+            {data.appointments.map((c) => (
+              <View key={c.id} style={styles.itemBlock}>
+                <Text>
+                  {c.title ?? "(sem título)"} · {c.status}
+                  {c.location_details ? ` · ${c.location_details}` : ""}
+                </Text>
+                <Text style={styles.small}>
+                  {fmtDate(c.starts_at)} até {fmtDate(c.ends_at)} ({c.time_zone})
+                </Text>
+                {c.description ? <Text style={styles.small}>{c.description}</Text> : null}
+                {c.notes ? <Text style={styles.small}>Anotação: {c.notes}</Text> : null}
+                {c.meeting_url ? <Text style={styles.small}>Link da reunião: {c.meeting_url}</Text> : null}
+                {c.cancellation_reason ? (
+                  <Text style={styles.small}>Cancelado: {c.cancellation_reason}</Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* O fluxo entrega este PDF; armazenar as categorias só no JSON não
+            as disponibiliza ao titular. Consumir apenas a projeção do coletor. */}
+        {data.reply_drafts?.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Sugestões e respostas revisadas</Text>
+            {data.reply_drafts.map(reply=><View key={reply.id} style={styles.itemBlock}>
+              <Text>Estado: {reply.status}</Text>
+              {reply.original_body?<Text>Sugestão: {reply.original_body}</Text>:null}
+              {reply.edited_body&&reply.edited_body!==reply.original_body?<Text>Edição: {reply.edited_body}</Text>:null}
+              {reply.approved_body?<Text>Texto aprovado: {reply.approved_body}</Text>:null}
+              {reply.feedback?<Text>Revisão: {JSON.stringify(reply.feedback)}</Text>:null}
+              {Array.isArray(reply.proposals)&&reply.proposals.length?<Text>Propostas: {JSON.stringify(reply.proposals)}</Text>:null}
+              <Text style={styles.small}>Criado em {fmtDate(reply.created_at)}</Text>
+            </View>)}
+          </View>
+        ):null}
+
+        {data.meeting_deliveries?.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Entregas de links de reunião</Text>
+            {data.meeting_deliveries.map((delivery) => (
+              <View key={delivery.id} style={styles.itemBlock}>
+                <Text>{deliveryStatus[delivery.status] ?? delivery.status}</Text>
+                <Text style={styles.small}>Registro: {delivery.id}</Text>
+                <Text style={styles.small}>
+                  Compromisso: {delivery.appointment_id ?? "referência indisponível"}
+                </Text>
+                <Text style={styles.small}>
+                  Criado em {fmtDate(delivery.created_at)} · Programado para {fmtDate(delivery.run_after)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {data.appointment_notices?.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Avisos sobre compromissos</Text>
+            {data.appointment_notices.map((notice) => (
+              <View key={notice.id} style={styles.itemBlock}>
+                <Text>{notice.title} · {noticeStatus[notice.status] ?? notice.status}</Text>
+                {notice.body ? <Text>{notice.body}</Text> : null}
+                <Text style={styles.small}>Registro: {notice.id}</Text>
+                <Text style={styles.small}>
+                  Compromisso: {notice.ref_id ?? "referência indisponível"}
+                </Text>
+                <Text style={styles.small}>
+                  Criado em {fmtDate(notice.created_at)}
+                  {notice.resolved_at ? ` · Resolvido em ${fmtDate(notice.resolved_at)}` : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Captação — de onde a pessoa veio. Entra no PDF porque `remote_ip`,
+            `user_agent` e `utm` são dados que a organização guarda A RESPEITO
+            dela e que ela raramente imagina que existem. */}
+        {data.webhook_captures.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Como seus dados chegaram até nós</Text>
+            {data.webhook_captures.map((c) => (
+              <View key={c.id} style={styles.itemBlock}>
+                <Text>
+                  {c.source_name ?? "(origem não identificada)"} · {c.outcome}
+                </Text>
+                <Text style={styles.small}>
+                  Recebido em {fmtDate(c.received_at)}
+                  {c.remote_ip ? ` · IP ${c.remote_ip}` : ""}
+                </Text>
+                {c.user_agent ? (
+                  <Text style={styles.small}>Navegador: {c.user_agent.slice(0, 160)}</Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {/* Audit */}
         {data.audit_log_extract.length > 0 ? (
           <View style={styles.section}>
@@ -272,10 +468,12 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
         ) : null}
 
         {/* Footer */}
+        {/* CONTROLADOR, nunca marca — ver o cabeçalho deste arquivo. */}
         <View style={styles.footer} fixed>
           <Text>
-            LUA CRM · Relatório LGPD Art. 18 II · DPO: contato via canal oficial
-            do controlador · Validade do link de download conforme email recebido
+            Controlador: {data.organization_legal_name || "—"} · Relatório de Acesso aos
+            Dados{data.lei_citada ? ` — ${data.lei_citada}` : ""} · Encarregado (DPO):{" "}
+            {encarregado(data)} · Validade do link de download conforme e-mail recebido
           </Text>
         </View>
       </Page>

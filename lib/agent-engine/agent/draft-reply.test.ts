@@ -42,10 +42,15 @@ const AGENT: PublishedAgentConfig = {
   multimodalInput: false,
   casesEnabled: false,
   toolIds: [],
+  knowledgeSourceIds: [],
   activeKbVersionId: null,
   ragTopK: 5,
   ragSimilarityThreshold: 0.72,
+  janelaDeAtendimento: null,
   versionCreatedBy: null,
+  operatorEnabled: false,
+  operatorModel: null,
+  operatorToolIds: [], pipelineIds: [],
   agentCreatedBy: null,
 };
 

@@ -56,7 +56,7 @@ Inter / Geist / Space Grotesk **proibidos** por saturação em training data.
 ## Arquitetura
 
 - `lib/tokens.ts` — única source-of-truth para cores, fontes, densidade, motion.
-- `lib/fonts.ts` — todas as fontes carregadas via `next/font/google` no boot do
+- `lib/fonts.ts` — todas as fontes carregadas via `next/font/local` (arquivos em `app/fonts/`) no boot do
   `_design/layout.tsx` (escopo isolado). Variáveis CSS expostas globalmente.
 - `lib/variant-context.tsx` — Context React + `setProperty` em `:root` para
   injetar tokens. Hidrata de `localStorage`.
@@ -71,7 +71,8 @@ Inter / Geist / Space Grotesk **proibidos** por saturação em training data.
   calma operacional sem cair em "saúde mental clichê"; Bricolage tem width axis
   útil para hierarquia em headers de inbox.
 - **Iconografia recomendada**: Phosphor (duotone). Justificativa na seção Iconografia.
-- **CSS variables, não Tailwind classes**: o showcase intencionalmente bypassa
-  `tailwind.config.ts` para não poluir o config do app antes da decisão final.
-  Quando a variante for escolhida, migra-se para `theme.extend.colors` com
-  `var(--accent-N)` e os tokens viram parte do build.
+- **CSS variables, não Tailwind classes**: o showcase intencionalmente fica fora
+  do tema do app para não poluí-lo antes da decisão final. Quando a variante for
+  escolhida, migra-se para o `@theme inline` de `app/globals.css` com
+  `var(--accent-N)` e os tokens viram parte do build. (Até o Tailwind 4 o alvo
+  era `theme.extend.colors` do `tailwind.config.ts`, que não existe mais.)

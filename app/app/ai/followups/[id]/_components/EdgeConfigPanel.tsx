@@ -7,32 +7,54 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { ArrowRight } from "@/lib/ui/icons";
-import { edgeConditionOptions, conditionKey } from "@/lib/followup/edge-condition-options";
+import { ArrowRight, Trash } from "@/lib/ui/icons";
+import { conditionKey } from "@/lib/followup/edge-condition-options";
+import { branchIdForCondition, nodeBranches } from "@/lib/followup/graph-schema";
 import type { FlowEdge, FlowNode } from "@/lib/followup/graph-schema";
+import { rotuloDoRamo } from "@/lib/followup/rotulo-do-ramo";
+import { useT } from "@/hooks/i18n/useT";
+import { useEtapasDoFluxo } from "./EtapasDoFluxo";
 
 interface Props {
   sourceNode: FlowNode | undefined;
   targetNode: FlowNode | undefined;
   condition: FlowEdge["condition"];
   onChange: (condition: FlowEdge["condition"]) => void;
+  onDelete: () => void;
 }
 
 /**
- * Docked (non-modal) panel for the selected edge's routing condition — mirrors
- * NodeConfigPanel's shell/style. The option list is exhaustive per the source
- * node's type (`edgeConditionOptions`), so an `ai_classify` source can only
- * ever be wired to exactly what `validateFlowForPublish` accepts.
+ * Painel da aresta selecionada. As opções são as SAÍDAS DO NÓ DE ORIGEM, as
+ * mesmas que o canvas desenha e com o mesmo texto — coerência por construção,
+ * não por duas listas mantidas em paralelo.
+ *
+ * Antes a lista vinha do TIPO do nó, e por isso um nó no modo uma-saída-por-
+ * regra continuava oferecendo "Sim"/"Não": opções que nenhum ramo dele casa.
+ * Um controle que a tela oferece e o motor ignora é pior que um ausente — o
+ * ausente o usuário contorna, o decorativo ele acredita.
  */
-export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange }: Props) {
-  const options = edgeConditionOptions(sourceNode);
-  const currentKey = conditionKey(condition);
+export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange, onDelete }: Props) {
+  const t = useT();
+  const { nomes } = useEtapasDoFluxo();
+  const options = nodeBranches(
+    sourceNode ?? { type: "trigger", config: {} },
+  ).map((branch) => ({
+    key: conditionKey(branch.condition),
+    label: t(rotuloDoRamo(branch, nomes)),
+    condition: branch.condition,
+  }));
+  // Aresta apontando para um ramo que não existe mais (a regra foi apagada):
+  // nenhuma opção casa, o Select fica vazio em vez de mentir que está tudo bem,
+  // e o publish reprova com `missing_branch_edge` dizendo qual ramo ficou só.
+  const ramoAtual = branchIdForCondition(sourceNode, condition);
+  const currentKey = ramoAtual === null ? "" : conditionKey(condition);
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto" data-testid="edge-config-panel">
       <div className="space-y-1">
-        <h2 className="text-base font-semibold text-text">Condição da aresta</h2>
+        <h2 className="text-base font-semibold text-text">{t("Condição da aresta")}</h2>
         <p className="flex items-center gap-1.5 text-sm text-text-muted">
           <span className="truncate">{sourceNode?.label ?? "?"}</span>
           <ArrowRight size={12} aria-hidden className="shrink-0" />
@@ -41,7 +63,7 @@ export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange }:
       </div>
 
       <div className="space-y-2 border-t border-border pt-4">
-        <Label htmlFor="edge-condition">Quando seguir por esta aresta</Label>
+        <Label htmlFor="edge-condition">{t("Quando seguir por esta aresta")}</Label>
         <Select
           value={currentKey}
           onValueChange={(v) => {
@@ -60,11 +82,25 @@ export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange }:
             ))}
           </SelectContent>
         </Select>
-        {sourceNode?.type === "ai_classify" && (
+        {sourceNode && nodeBranches(sourceNode).length > 1 && (
           <p className="text-xs text-text-muted">
-            As opções vêm das classes configuradas no nó "{sourceNode.label}".
+            {t("São as saídas do nó")} &quot;{sourceNode.label}&quot; — {t("as mesmas que aparecem no card.")}
           </p>
         )}
+      </div>
+
+      <div className="mt-auto border-t border-border pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full text-destructive"
+          data-testid="delete-edge"
+          onClick={onDelete}
+        >
+          <Trash size={14} aria-hidden className="mr-1" />
+          {t("Excluir aresta")}
+        </Button>
       </div>
     </div>
   );

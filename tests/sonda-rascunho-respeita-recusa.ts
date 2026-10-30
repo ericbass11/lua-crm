@@ -16,11 +16,11 @@
  *
  * Run: E2E_PORT=3020 npx tsx tests/sonda-rascunho-respeita-recusa.ts
  */
-import * as fs from "node:fs";
 
 import { Pool } from "pg";
 
 import { carimbar } from "./qa-helpers";
+import { carregarEnvLocal } from "../scripts/lib/env-de-teste";
 
 carimbar([
   "tests/sonda-rascunho-respeita-recusa.ts",
@@ -28,14 +28,7 @@ carimbar([
   "lib/agent-engine/edge/crm/get-lead-context.ts",
 ]);
 
-const DB = fs
-  .readFileSync(".env.local", "utf8")
-  .split("\n")
-  .find((l) => l.startsWith("SUPABASE_DB_URL="))!
-  .split("=")
-  .slice(1)
-  .join("=")
-  .replace(/"/g, "");
+const DB = carregarEnvLocal().SUPABASE_DB_URL!;
 
 const ATAQUE = process.env.ATAQUE === "1";
 
@@ -66,7 +59,7 @@ async function main(): Promise<void> {
     const antes = await getLeadContext(
       pool,
       {} as never,
-      { tenantId: recusada.organization_id, leadId: recusada.contact_id },
+      { tenantId: recusada.organization_id, leadId: recusada.contact_id, fuso: "America/Sao_Paulo" },
       { historyLimit: 20, maxTokens: 1_000 },
     );
     if (!antes.ok) throw new Error(`getLeadContext falhou: ${antes.error.message}`);

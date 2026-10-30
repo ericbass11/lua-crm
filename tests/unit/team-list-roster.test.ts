@@ -19,6 +19,9 @@ import type { AuthUser } from "@/lib/auth/types";
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(),
   resolveActiveOrg: vi.fn(),
+  // Sessão sem dívida de MFA: estes testes medem RBAC, não o gate de
+  // segundo fator (que tem suíte própria em require-role-mfa.test.ts).
+  mfaEmDivida: vi.fn(async () => false),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 // admin.ts valida env no load; a rota só o chama quando isServiceRoleConfigured()
@@ -81,6 +84,7 @@ function managerSession(rows: Array<Record<string, unknown>>, spy: QuerySpy) {
     full_name: null,
     avatar_url: null,
     is_platform_admin: false,
+    idioma: "pt-BR" as const,
     organizations: [{ organization_id: ORG_ID, organization_name: "Org", role: "manager" }],
   };
   vi.mocked(loadAuthUser).mockResolvedValue(user);

@@ -4,8 +4,10 @@ import { toast } from "sonner";
 
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { useT } from "@/hooks/i18n/useT";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
-import { followupFlowsListQueryKey, type FollowupFlowStatus } from "./useFollowupFlows";
+import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
+import type { FollowupFlowStatus } from "./useFollowupFlows";
 
 export interface FollowupFlowDetailRow {
   id: string;
@@ -15,6 +17,8 @@ export interface FollowupFlowDetailRow {
   draft_graph: FlowGraph | null;
   handoff_policy: "pause" | "cancel" | "allow";
   trigger_config: Record<string, unknown>;
+  /** Superfície do fluxo: decide a paleta, os controles da barra e o Fim. */
+  surface: FollowupFlowSurface;
   created_at: string;
   updated_at: string;
   versions_count: number;
@@ -47,6 +51,7 @@ export function useFollowupFlow(id: string, opts?: { initialData?: FollowupFlowD
 
 /** PATCH draft_graph — "Salvar". Errors handled by the caller (dirty-state UI), no toast noise. */
 export function useSaveFollowupFlowDraft(id: string) {
+  const t = useT();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (draft_graph: FlowGraph) => {
@@ -59,7 +64,7 @@ export function useSaveFollowupFlowDraft(id: string) {
       qc.setQueryData<FollowupFlowDetailRow>(followupFlowQueryKey(id), (prev) =>
         prev ? { ...prev, ...updated } : prev,
       );
-      toast.success("Rascunho salvo.");
+      toast.success(t("Rascunho salvo."));
     },
     onError: (err) => showApiError(err),
   });
@@ -71,6 +76,7 @@ export function useSaveFollowupFlowDraft(id: string) {
  * offending node — a generic toast would duplicate/bury that signal.
  */
 export function usePublishFollowupFlow(id: string) {
+  const t = useT();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
@@ -79,13 +85,30 @@ export function usePublishFollowupFlow(id: string) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: followupFlowQueryKey(id) });
-      qc.invalidateQueries({ queryKey: followupFlowsListQueryKey });
-      toast.success("Fluxo publicado.");
+      qc.invalidateQueries({ queryKey: ["followup", "flows", "list"] });
+      toast.success(t("Fluxo publicado."));
     },
   });
 }
 
+export function useDeleteFollowupFlow() {
+  const t = useT();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiClient.delete<{ data: { id: string } }>(`/api/v1/ai/followup-flows/${id}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["followup", "flows", "list"] });
+      toast.success(t("Fluxo excluído."));
+    },
+    onError: (err) => showApiError(err),
+  });
+}
+
 export function useDisableFollowupFlow(id: string) {
+  const t = useT();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
@@ -97,14 +120,15 @@ export function useDisableFollowupFlow(id: string) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: followupFlowQueryKey(id) });
-      qc.invalidateQueries({ queryKey: followupFlowsListQueryKey });
-      toast.success("Fluxo desativado.");
+      qc.invalidateQueries({ queryKey: ["followup", "flows", "list"] });
+      toast.success(t("Fluxo desativado."));
     },
     onError: (err) => showApiError(err),
   });
 }
 
 export function useRollbackFollowupFlow(id: string) {
+  const t = useT();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (version_id: string) => {
@@ -115,7 +139,7 @@ export function useRollbackFollowupFlow(id: string) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: followupFlowQueryKey(id) });
-      toast.success("Fluxo revertido para a versão anterior.");
+      toast.success(t("Fluxo revertido para a versão anterior."));
     },
     onError: (err) => showApiError(err),
   });
@@ -123,6 +147,7 @@ export function useRollbackFollowupFlow(id: string) {
 
 /** PATCH trigger_config — controle de gatilho (Manual/Silêncio) na PublishBar. */
 export function useUpdateTriggerConfig(id: string) {
+  const t = useT();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (trigger_config: Record<string, unknown>) => {
@@ -135,13 +160,32 @@ export function useUpdateTriggerConfig(id: string) {
       qc.setQueryData<FollowupFlowDetailRow>(followupFlowQueryKey(id), (prev) =>
         prev ? { ...prev, ...updated } : prev,
       );
-      toast.success("Gatilho atualizado.");
+      toast.success(t("Gatilho atualizado."));
     },
     onError: (err) => showApiError(err),
   });
 }
 
+export function useRenameFollowupFlow() {
+  const t = useT();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const res = await apiClient.patch<SingleResponse>(`/api/v1/ai/followup-flows/${id}`, { name });
+      return res.data;
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData<FollowupFlowDetailRow>(followupFlowQueryKey(updated.id), (prev) =>
+        prev ? { ...prev, ...updated } : prev,
+      );
+      qc.invalidateQueries({ queryKey: ["followup", "flows", "list"] });
+      toast.success(t("Fluxo renomeado."));
+    },
+  });
+}
+
 export function useUpdateHandoffPolicy(id: string) {
+  const t = useT();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (handoff_policy: "pause" | "cancel" | "allow") => {
@@ -154,7 +198,7 @@ export function useUpdateHandoffPolicy(id: string) {
       qc.setQueryData<FollowupFlowDetailRow>(followupFlowQueryKey(id), (prev) =>
         prev ? { ...prev, ...updated } : prev,
       );
-      toast.success("Política de handoff atualizada.");
+      toast.success(t("Política de handoff atualizada."));
     },
     onError: (err) => showApiError(err),
   });

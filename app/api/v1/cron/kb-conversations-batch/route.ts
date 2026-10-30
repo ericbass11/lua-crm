@@ -17,9 +17,9 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { env } from "@/lib/env";
 import { ingestConversationsBatch } from "@/lib/ai/rag/ingest/conversations";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -33,16 +33,7 @@ interface AgentRow {
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const auth = req.headers.get("authorization") ?? "";
-  const provided = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-
-  const cronSecret = env.INTERNAL_CRON_SECRET;
-  const fallbackSecret = env.INTERNAL_SECRET;
-  const accepted: string[] = [];
-  if (cronSecret) accepted.push(cronSecret);
-  if (fallbackSecret) accepted.push(fallbackSecret);
-
-  if (accepted.length === 0 || !provided || !accepted.includes(provided)) {
+  if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
@@ -97,19 +88,32 @@ export async function GET(req: NextRequest): Promise<Response> {
     }
   }
 
-  await audit({
-    action: "rag.conversations_batch_run",
-    organizationId: null,
-    metadata: {
-      orgs_processed: orgsProcessed,
-      total_processed: totalProcessed,
-      total_flagged: totalFlagged,
-      total_skipped: totalSkipped,
-      failures: failures.length,
-      since_ts: sinceTs.toISOString(),
-    },
-    requestId,
-  });
+  // Rodada que não ingeriu, não sinalizou, não pulou e não falhou nada não é
+  // mutação e não ocupa linha de auditoria (mesmo critério do snooze-watcher e
+  // do recover-stuck-messages). `orgsProcessed` fica de propósito FORA da
+  // condição: ele conta organizações VISITADAS, e visitar uma organização sem
+  // conversa nova é exatamente o nada que esta guarda existe para não registrar.
+  //
+  // `failures` entra: uma rodada em que toda organização estourou tem os três
+  // contadores em zero, e sem esta cláusula ficaria idêntica, na trilha, à
+  // rodada de uma instalação sem conversa nenhuma.
+  const houveEfeito =
+    totalProcessed > 0 || totalFlagged > 0 || totalSkipped > 0 || failures.length > 0;
+  if (houveEfeito) {
+    await audit({
+      action: "rag.conversations_batch_run",
+      organizationId: null,
+      metadata: {
+        orgs_processed: orgsProcessed,
+        total_processed: totalProcessed,
+        total_flagged: totalFlagged,
+        total_skipped: totalSkipped,
+        failures: failures.length,
+        since_ts: sinceTs.toISOString(),
+      },
+      requestId,
+    });
+  }
 
   return ok(
     {

@@ -47,6 +47,8 @@ export interface ToolBreakerOptions {
    * Tool fora desta lista é tratada como MUTANTE e nunca entra no modo.
    */
   readOnlyTools: readonly string[];
+  /** Vazio declarado pela definição da capacidade, nunca inferido do formato do payload. */
+  isDeclaredEmptyResult?: (toolName: string, result: unknown) => boolean;
   log: Logger;
   /** campos estruturados dos warns (tenant/lead/job) — args crus jamais. */
   logFields?: Record<string, unknown>;
@@ -57,7 +59,17 @@ export interface ToolBreakerOptions {
  * modo idempotent_no_progress do breaker (F2-15). send_message e
  * update_lead_state são MUTANTES e ficam fora por construção, não por heurística.
  */
-export const READ_ONLY_TOOLS = ['get_lead_context', 'get_lead_note', 'search_knowledge'] as const;
+export const READ_ONLY_TOOLS = [
+  'get_lead_context',
+  'get_lead_note',
+  'search_knowledge',
+  'read_skill_reference',
+  // As tools do banco externo (Fase 5). São leitura pura — montam SELECT em
+  // transação somente-leitura — então o modo no_progress do breaker pode
+  // detectar a repetição idêntica sem confundir com mutação.
+  'crm_describe_external_data',
+  'crm_query_external_data',
+] as const;
 
 /** Resultado sintético de bloqueio — mesma convenção de ensino das tools do run. */
 export interface BreakerBlockedResult {
@@ -174,7 +186,7 @@ export function wrapToolsWithBreaker(tools: ToolSet, opts: ToolBreakerOptions): 
       const result = await execute(input, options);
       const warnings: string[] = [];
 
-      if (isFailureResult(result)) {
+      if (isFailureResult(result) || opts.isDeclaredEmptyResult?.(toolName, result) === true) {
         const exact = exactCount + 1;
         exactFailures.set(exactKey, exact);
         const perTool = (toolFailures.get(toolName) ?? 0) + 1;

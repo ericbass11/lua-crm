@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/channel-sessions — lista os canais WhatsApp da org (do DB).
  *   Acessível a qualquer membro (usado pelo seletor do inbox e pela sidebar).
@@ -9,18 +10,23 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
-import { audit } from "@/lib/audit";
+import { connectWahaChannel, ChannelConnectionError } from "@/lib/channels/connect-waha";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { mfaEmDivida } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
+import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
-import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
+import { getWahaClient } from "@/lib/waha/client";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
 export const CHANNEL_COLUMNS =
-  "id, waha_session_name, display_name, phone_number, status, status_reason, last_health_check_at, last_status_change_at, daily_message_limit, is_warmup_complete, created_at";
+  "id, provider, waha_session_name, display_name, phone_number, status, status_reason, last_health_check_at, last_status_change_at, daily_message_limit, is_warmup_complete, created_at";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
@@ -30,17 +36,40 @@ export async function GET(): Promise<Response> {
   if (!activeOrg) return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("channel_sessions")
-    .select(CHANNEL_COLUMNS)
-    .eq("organization_id", activeOrg.orgId)
-    .order("created_at", { ascending: true });
+  const base = () =>
+    supabase
+      .from("channel_sessions")
+      .select(CHANNEL_COLUMNS)
+      .eq("organization_id", activeOrg.orgId)
+      // Só canal de MENSAGEM. A linha de chamada de voz (spec 18) mora na mesma
+      // tabela, tem card próprio em Conexões e não tem `waha_session_name` nem
+      // telefone: entrando aqui, ela vira um número a mais no seletor do inbox e
+      // na barra lateral — sem nome, sem estado vigiado e sem para onde mandar.
+      .in("provider", [...PROVIDERS_DE_MENSAGEM]);
+  // Canais arquivados sobrevivem só como âncora das FKs RESTRICT
+  // (conversations/messages). Para o usuário eles foram excluídos.
+  //
+  // Tolerante à coluna ausente porque esta é a PRIMEIRA tela de quem já tem
+  // número ligado: num clone que subiu o código sem a migration 0106, o filtro
+  // devolveria 42703 → 500 → "Nenhum número conectado ainda", convidando o
+  // operador a parear de novo um número que já está no ar. Sem a coluna, nada
+  // está arquivado, e a lista sem o filtro é a lista certa (ver lib/channels/archived).
+  const { data, error, schemaOutdated } = await queryTolerantToMissingArchived(
+    () => base().is(ARCHIVED_AT, null).order("created_at", { ascending: true }),
+    () => base().order("created_at", { ascending: true }),
+  );
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  return ok(data ?? [], { requestId });
+  return ok(data ?? [], {
+    requestId,
+    ...(schemaOutdated ? { meta: { schema_outdated: true } } : {}),
+  });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("admin", {
     requestId,
@@ -48,13 +77,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     allowPlatformAdmin: true,
   });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
+  if (await mfaEmDivida()) return fail("mfa_required", t("Confirme a verificação em duas etapas."), 403, { requestId });
 
   const waha = getWahaClient();
   if (!waha) {
     return fail(
       "waha_not_configured",
-      "O serviço do WhatsApp (WAHA) não está ativo. Suba o container e tente de novo.",
+      t("O WhatsApp (WAHA) não está configurado neste ambiente: faltam WAHA_API_BASE_URL e/ou WAHA_API_KEY. Configure-as e tente de novo."),
       503,
       { requestId },
     );
@@ -68,60 +99,37 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const parsed = createChannelSchema.safeParse(raw ?? {});
   if (!parsed.success) {
-    return fail("validation_failed", "Dados inválidos.", 422, {
+    return fail("validation_failed", t("Dados inválidos."), 422, {
       requestId,
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
   }
 
-  const supabase = await createClient();
-  // Nome de sessão único por canal — o hardcode `org_<8>` era 1 número por org.
-  const sessionName = `org_${activeOrg.orgId.slice(0, 8)}_${randomUUID().replace(/-/g, "").slice(0, 6)}`;
-
-  const { data: created, error: insErr } = await supabase
-    .from("channel_sessions")
-    .insert({
-      organization_id: activeOrg.orgId,
-      waha_session_name: sessionName,
-      display_name: parsed.data.display_name ?? null,
-      purpose: parsed.data.purpose ?? "inbound",
-      engine: "NOWEB",
-      webhook_path_token: randomUUID().replace(/-/g, ""),
-      webhook_secret_encrypted: Buffer.from([0]),
-      status: "STARTING",
-      last_status_change_at: new Date().toISOString(),
-      consecutive_health_fails: 0,
-      daily_message_limit: 250,
-      metadata: {},
-    })
-    .select(CHANNEL_COLUMNS)
-    .single();
-  if (insErr || !created) {
-    return fail("internal_error", insErr?.message ?? "channel_session_insert_failed", 500, { requestId });
-  }
-
   try {
-    await waha.startSession(sessionName);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "unknown";
-    // Rollback: sem WAHA no ar, não deixamos um canal fantasma preso em STARTING.
-    await supabase
-      .from("channel_sessions")
-      .delete()
-      .eq("organization_id", activeOrg.orgId)
-      .eq("id", created.id);
-    return fail("waha_error", wahaFriendlyError(msg), 502, { requestId });
+    const admin = createAdminClient();
+    const result = await connectWahaChannel(await createClient(), admin, waha, {
+      organizationId: activeOrg.orgId, idempotencyKey: req.headers.get("Idempotency-Key") ?? "",
+      userId: user.id, requestId, displayName: parsed.data.display_name,
+    });
+    // Cliente Oculto (fork Lua CRM): o helper do upstream cria o canal via RPC
+    // sem `purpose`. Quando a tela pede um propósito != inbound (auditoria de
+    // cliente oculto), marcamos a linha logo após a criação — antes de qualquer
+    // inbound, então o roteamento em `lib/waha/ingest.ts` já enxerga a sessão
+    // certa (`session.purpose === "mystery_shopper"`).
+    if (parsed.data.purpose && parsed.data.purpose !== "inbound" && !result.replay) {
+      await admin
+        .from("channel_sessions")
+        .update({ purpose: parsed.data.purpose })
+        .eq("organization_id", activeOrg.orgId)
+        .eq("id", result.channel.id);
+    }
+    return ok(result.channel, { requestId, status: result.replay ? 200 : 201 });
+  } catch (error) {
+    if (error instanceof ChannelConnectionError) return fail(error.code,
+      error.code === "connection_in_progress" ? t("A conexão ainda está sendo preparada. Aguarde e tente novamente.")
+        : error.code === "connection_session_name_too_long" ? t("O identificador desta conexão passou do limite que o WhatsApp aceita. Nada foi criado no WhatsApp — atualize o sistema e tente novamente.")
+        : t("Não foi possível concluir a conexão. Abra Conexões para tentar novamente ou reparar o número."),
+      error.status, { requestId, details: error.technical });
+    return fail("internal_error", t("Não foi possível concluir a conexão. Tente novamente."), 500, { requestId });
   }
-
-  void audit({
-    action: "channel.connected",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
-    resourceType: "channel_session",
-    resourceId: created.id,
-    requestId,
-    metadata: { waha_session_name: sessionName },
-  });
-
-  return ok(created, { requestId, status: 201 });
 }

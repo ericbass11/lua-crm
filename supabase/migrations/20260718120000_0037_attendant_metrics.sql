@@ -1,4 +1,4 @@
--- 0037_attendant_metrics — G4-04: métricas por responsável (spec 13 §6).
+-- 0168_attendant_metrics — G4-04: métricas por responsável (spec 13 §6).
 -- Filtro por atendente no funil + performance individual (manager+). Definições
 -- congeladas na spec 13 §6 ANTES deste código.
 --

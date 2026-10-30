@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH  /api/v1/automation-rules/[id] — atualiza campos (inclui is_active — switch da UI).
  * DELETE /api/v1/automation-rules/[id] — remove a regra.
@@ -8,10 +9,12 @@ import type { NextRequest } from "next/server";
 import { ok, fail, noContent } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { autoriaDaMudanca } from "@/lib/operacao/autoria";
 import { updateAutomationRuleSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +23,14 @@ interface RouteCtx {
 }
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const authz = await requireRole("manager", { requestId, resource: "automation_rules" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
   let raw: unknown = {};
@@ -34,7 +41,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
   const parsed = updateAutomationRuleSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("invalid_request", "Dados inválidos.", 400, {
+    return fail("invalid_request", t("Dados inválidos."), 400, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -48,17 +55,24 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!existing) return fail("not_found", "Regra não encontrada.", 404, { requestId });
+  if (!existing) return fail("not_found", t("Regra não encontrada."), 404, { requestId });
 
   // Secrets de call_webhook nunca ficam em claro no jsonb (migration 0041);
   // secret_enc existente (round-trip do editor) passa intacto.
-  const patch: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() };
+  // A autoria vai junto de TODA escrita, pelo mesmo helper que o agente usa: uma
+  // regra ligada é o estado mais perigoso do sistema, e a tela precisa dizer
+  // quem a ligou (migration 0101).
+  const patch: Record<string, unknown> = {
+    ...parsed.data,
+    updated_at: new Date().toISOString(),
+    ...autoriaDaMudanca({ type: "user", id: user.id, role: activeOrg.role }),
+  };
   if (parsed.data.actions !== undefined) {
     const safeActions = await encryptRuleActionSecrets(createAdminClient(), parsed.data.actions);
     if (safeActions === null) {
       return fail(
         "encryption_unavailable",
-        "Não foi possível guardar o segredo do webhook com segurança. Configure NUVEMSHOP_OAUTH_ENCRYPTION_KEY e tente de novo.",
+        t("Não foi possível guardar o segredo do webhook com segurança: a chave de cifra desta instalação não está ativa. Quem administra o servidor resolve rodando o update.sh, que gera e ativa a chave."),
         422,
         { requestId },
       );
@@ -90,10 +104,14 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 }
 
 export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const authz = await requireRole("manager", { requestId, resource: "automation_rules" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
   const supabase = await createClient();
@@ -104,7 +122,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!existing) return fail("not_found", "Regra não encontrada.", 404, { requestId });
+  if (!existing) return fail("not_found", t("Regra não encontrada."), 404, { requestId });
 
   const { error: delErr } = await supabase.from("automation_rules").delete().eq("id", id);
   if (delErr) return fail("internal_error", delErr.message, 500, { requestId });

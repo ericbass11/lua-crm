@@ -117,7 +117,15 @@ export interface SendFinalResponseInput {
   supabase: SupabaseClient;
   organizationId: string;
   runId: string;
+  /**
+   * A linha em `ai_agents`. Separado de `runId` pela mesma razão do `Actor`:
+   * `id` correlaciona no audit e varia por runtime, `agent_id` é a única coisa
+   * que pode ir para coluna com FK. Ver `Actor` em lib/api/handlers/types.ts.
+   */
+  agentId: string;
   conversationId: string;
+  /** Mensagem inbound que autorizou esta resposta; ausente em saída proativa. */
+  inboundMessageId?: string | null;
   text: string;
   requestId: string;
   /** Nº do passo quando a mensagem é um follow-up automático (marca o ciclo). */
@@ -136,7 +144,8 @@ export async function sendFinalResponse(
   const actor: Actor = {
     type: "ai_agent",
     id: input.runId,
-    role: "agent",
+    agent_id: input.agentId,
+    role: "ai_operator",
   };
   try {
     const message = await sendMessageHandler(
@@ -145,6 +154,11 @@ export async function sendFinalResponse(
         organization_id: input.organizationId,
         actor,
         requestId: input.requestId,
+        outboundIntent: input.inboundMessageId
+          ? { kind: "inbound_reply", inboundMessageId: input.inboundMessageId }
+          : input.followupStep
+            ? { kind: "followup" }
+            : { kind: "system_outbound" },
       },
       {
         conversation_id: input.conversationId,
