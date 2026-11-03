@@ -331,8 +331,8 @@ export function corpoDaMensagem(m: CorpoDaMensagemRow): string {
   if (derived) return frameMediaBody(m.type, m.body, derived);
   if (m.body !== null) return m.body;
   if (hasMedia) return `[${m.type}]`;
-  // Mídia SEM arquivo: o WAHA entregou `hasMedia` sem `media.url` (download
-  // falhou do lado dele). Sem URL a esteira de mídia nem começa, e a linha
+  // Mídia SEM arquivo: o provedor do canal avisou que havia mídia, mas não
+  // entregou a URL (o download falhou do lado dele). Sem URL a esteira de mídia nem começa, e a linha
   // valia '' — a abertura dizia "não há texto utilizável" e o agente não sabia
   // que veio uma foto. Medido na VPS em 27/10 e 30/10/2026. Diz o que veio e
   // que não deu para ler, sem inventar conteúdo.
