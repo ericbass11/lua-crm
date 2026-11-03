@@ -12,20 +12,21 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
+import { publishAgentVersion } from "@/lib/ai/agents/publish";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { publishAgentVersion } from "@/lib/ai/agents/publish";
+import type { Role } from "@/lib/auth/types";
+import { duplicateAgentWithVersion } from "@/lib/ai/agents/duplicate";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ActionResult<T = void> =
-  | { ok: true; data?: T }
-  | { ok: false; error: string; message?: string };
+  { ok: true; data?: T } | { ok: false; error: string; message?: string };
 
 type AdminGuard =
-  | { kind: "ok"; authUser: { id: string }; activeOrg: { orgId: string; role: "viewer" | "agent" | "manager" | "admin" } }
+  | { kind: "ok"; authUser: { id: string }; activeOrg: { orgId: string; role: Role } }
   | { kind: "fail"; result: { ok: false; error: string } };
 
 async function ensureAdmin(): Promise<AdminGuard> {
@@ -54,27 +55,14 @@ export async function pauseAgentAction(id: string): Promise<ActionResult> {
     .maybeSingle();
 
   if (!existing) return { ok: false, error: "not_found" };
-  if (existing.archived_at) return { ok: false, error: "state_conflict", message: "Agent arquivado." };
+  if (existing.archived_at)
+    return { ok: false, error: "state_conflict", message: "Agent arquivado." };
 
   const requestId = randomUUID();
-  const previousVersionId = (existing as { published_version_id: string | null }).published_version_id;
+  const previousVersionId = (existing as { published_version_id: string | null })
+    .published_version_id;
 
-  if (previousVersionId) {
-    await admin
-      .from("ai_agent_versions")
-      .update({ status: "superseded", superseded_at: new Date().toISOString() })
-      .eq("id", previousVersionId)
-      .eq("organization_id", activeOrg.orgId)
-      .eq("status", "published");
-  }
-
-  const updates: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-    published_version_id: null,
-  };
-  // Legacy rag_bot: também flip is_active para refletir no badge.
-  if (existing.kind !== "mcp_agent") updates.is_active = false;
-
+  const updates = { paused_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   const { error } = await admin
     .from("ai_agents")
     .update(updates)
@@ -105,7 +93,7 @@ export async function unpauseAgentAction(id: string): Promise<ActionResult> {
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("ai_agents")
-    .select("id, kind, archived_at, is_active")
+    .select("id, kind, archived_at, is_active, published_version_id")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -162,9 +150,15 @@ export async function unpauseAgentAction(id: string): Promise<ActionResult> {
     return { ok: true };
   }
 
+  if (!existing.published_version_id)
+    return {
+      ok: false,
+      error: "publish_required",
+      message: "Conclua a configuração e publique uma versão.",
+    };
   const { error } = await admin
     .from("ai_agents")
-    .update({ is_active: true, updated_at: new Date().toISOString() })
+    .update({ paused_at: null, updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId);
   if (error) return { ok: false, error: "internal_error", message: error.message };
@@ -196,17 +190,42 @@ export async function archiveAgentAction(id: string): Promise<ActionResult> {
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (!existing) return { ok: false, error: "not_found" };
+  /**
+   * Arquivar o agente PADRÃO é recusado (regra do upstream, adotada na
+   * sincronização com a v1.4.1 e vigiada por
+   * `tests/unit/arquivar-agente-arquiva-mesmo.test.ts`).
+   *
+   * Esta fork fazia o contrário: arquivava e liberava a marca de padrão junto
+   * (`updates.is_default = false`), para o unique parcial `one_default_per_org`
+   * não ficar ocupado por um agente arquivado. O comportamento veio de um
+   * commit de sync genérico, sem justificativa escrita.
+   *
+   * Recusar é o lado seguro: o padrão é quem atende conversa nova, e arquivá-lo
+   * deixaria a organização sem ninguém atendendo — sem aviso. Quem quiser
+   * arquivar o padrão promove outro agente a padrão primeiro, e aí a marca já
+   * saiu deste. O caminho continua existindo; ele só deixou de ser silencioso.
+   */
+  if (existing.is_default) return { ok: false, error: "cannot_archive_default" };
 
-  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  // Agente default pode ser arquivado — a marca de default é liberada junto
-  // (o unique parcial one_default_per_org volta a aceitar outro default).
-  if (existing.is_default) updates.is_default = false;
-  if (existing.kind === "mcp_agent") {
-    updates.archived_at = new Date().toISOString();
-    updates.published_version_id = null;
-  } else {
-    updates.is_active = false;
-  }
+  /**
+   * Arquivar carimba a data e tira do ar — nos DOIS kinds.
+   *
+   * O legado recebia só `is_active = false`, e as três consequências eram
+   * visíveis: `archived_at` nulo mantinha o agente na lista (a rota filtra por
+   * ele), `deriveAgentStatus` o rotulava "Pausado" em vez de "Arquivado", e o
+   * dispatcher — que seleciona por `archived_at is null` + `published_version_id
+   * not null`, sem olhar `is_active` nem `kind` — continuava entregando
+   * conversas a ele. A auditoria, enquanto isso, gravava `ai_agent.archived`.
+   *
+   * `is_active = false` continua para o legado, e não é redundante: é o filtro
+   * que o worker antigo consulta (`workers/ai-response-worker.ts`).
+   */
+  const updates: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+    archived_at: new Date().toISOString(),
+    published_version_id: null,
+  };
+  if (existing.kind !== "mcp_agent") updates.is_active = false;
 
   const { error } = await admin
     .from("ai_agents")
@@ -267,43 +286,25 @@ export async function duplicateAgentAction(id: string): Promise<ActionResult<{ n
 
   const admin = createAdminClient();
 
-  const { data: source } = await admin
-    .from("ai_agents")
-    .select(
-      "id, name, description, model, system_prompt, kind, priority, config, guardrails, active_kb_version_id",
-    )
-    .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
-    .maybeSingle();
-  if (!source) return { ok: false, error: "not_found" };
+  // Mesma implementação da rota /api/v1/ai/agents/:id/duplicate. Antes daqui a
+  // action fazia cópia rasa (só a linha de ai_agents), e para mcp_agent isso
+  // devolvia um agente em branco: prompt, ferramentas, credencial, canal,
+  // palavras de handoff, budgets e follow-up vivem em ai_agent_versions.
+  // `requireVersion: false` porque o botão da lista também duplica rag_bot
+  // legado, que não tem versão nenhuma.
+  const result = await duplicateAgentWithVersion(admin, {
+    orgId: activeOrg.orgId,
+    agentId: id,
+    actorUserId: authUser.id,
+    requireVersion: false,
+  });
 
-  // Para mcp_agent, idealmente clona uma versão draft/published. Por simplicidade
-  // de UX, fazemos cópia "shallow" — agent + duplicate row; a versão fica ausente
-  // e o usuário re-publica. Conservador para a wave 10. (Spec 10 §4.3 detalha
-  // clonagem completa via /api/v1/ai/agents/:id/duplicate, que continua disponível.)
-  const { data: cloned, error } = await admin
-    .from("ai_agents")
-    .insert({
-      organization_id: activeOrg.orgId,
-      name: `${source.name} (cópia)`,
-      description: source.description,
-      model: source.model,
-      system_prompt: source.system_prompt,
-      kind: source.kind ?? "rag_bot",
-      priority: source.priority ?? 100,
-      is_active: false,
-      is_default: false,
-      config: source.config ?? {},
-      guardrails: source.guardrails ?? null,
-      active_kb_version_id: source.active_kb_version_id,
-      created_by: authUser.id,
-    })
-    .select("id")
-    .single();
-
-  if (error || !cloned) {
-    return { ok: false, error: "internal_error", message: error?.message };
+  if (!result.ok) {
+    if (result.error === "not_found") return { ok: false, error: "not_found" };
+    return { ok: false, error: "internal_error", message: result.message };
   }
+
+  const cloned = result.agent as { id: string };
 
   void audit({
     action: "ai_agent.duplicated",
@@ -311,7 +312,14 @@ export async function duplicateAgentAction(id: string): Promise<ActionResult<{ n
     organizationId: activeOrg.orgId,
     resourceType: "ai_agent",
     resourceId: cloned.id,
-    metadata: { source_agent_id: source.id },
+    metadata: {
+      source_agent_id: id,
+      // Mesma ação (`ai_agent.duplicated`) emitida de dois lugares: os dois metadata
+      // têm de ter a MESMA forma, senão quem lê o audit não sabe se o campo faltou
+      // porque não houve versão ou porque veio pelo outro caminho.
+      source_version_id: result.sourceVersionId,
+      source_version_copied: result.version !== null,
+    },
   });
 
   revalidatePath("/app/ai/agents");

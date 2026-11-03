@@ -204,7 +204,7 @@ create table public.ai_provider_credentials (
   provider text not null check (provider in ('anthropic', 'openai', 'google')),
   label text not null,                           -- "Produção", "Testes", etc
 
-  -- API key cifrada (AES-GCM, key em KMS/Vercel KV secret)
+  -- API key cifrada (AES-GCM, chave no `.env` da instalação)
   api_key_encrypted bytea not null,
   api_key_iv bytea not null,                     -- 12 bytes IV
   api_key_tag bytea not null,                    -- 16 bytes auth tag
@@ -530,12 +530,42 @@ if (!isGroup && !fromMe && message.kind === 'inbound') {
 
 ---
 
+### 4.7 Configuração conversacional e assistente de voz (contrato confirmado no código)
+
+`GET/PATCH /api/v1/prospecting/agents/session` persiste a conversa administrativa
+em `prospecting_campaigns.agent_setup`, com `revision` para rejeitar sobrescritas
+atrasadas (409). Não altera `campaign.config`. `attempt` e `attempt_action`
+preservam a diferença entre preparar um rascunho e publicar, inclusive após
+timeout. `POST /prospecting/agents/prepare` cria um rascunho pausado; o teste usa
+`POST /ai/agents/:id/versions/:vid/test`, pelo sandbox canônico, sem envio a contatos.
+`POST /prospecting/agents` continua sendo a publicação explícita.
+
+`GET /api/v1/ai/agents/:id/voice` retorna estado público e vozes disponíveis.
+`POST` no mesmo recurso aceita `action: credential | configure | test`. Administrador,
+organização autenticada, guarda de suporte e MFA protegem a escrita. A chave usa
+AES-GCM em `ai_provider_credentials`, provider `elevenlabs`, label `Assistentes de voz`;
+não é um provedor de texto no catálogo LLM. `ai_agents.config.voice_assistant`
+guarda apenas configuração e vínculo remoto. Auditoria usa `ai_agent.updated` ou
+`ai_agent.tested`, com módulo/operação, sem chave nem URL assinada.
+
+O agente remoto exige autenticação e não recebe ferramentas de escrita. Antes do
+teste, o servidor confere vínculo, prompt, voz, idioma, abertura, duração e privacidade
+remotos. Áudio não gravado e retenção de transcrição de até sete dias são condições
+verificadas, não apenas texto da interface. O navegador usa o SDK oficial com uma
+URL assinada temporária. Não há ligação automática deste assistente ao transporte
+WhatsApp, a chamadas de clientes ou às ferramentas do CRM.
+
+Erros: `prospecting_agent_session_failed`, `prospecting_agent_prepare_failed`,
+`prospecting_agent_chat_failed`, `prospecting_agent_setup_failed` e
+`voice_assistant_unavailable`; status distingue validação (422), ausência (404),
+conflito/recuperação pendente (409) e indisponibilidade (502/503).
+
 ## 5. Runtime — Worker `agent-dispatcher`
 
 ### 5.1 Cron (Spec 07)
 
 ```
-schedule: "*/5 * * * * *"   (a cada 5s; Vercel não suporta sub-minute, então roda a cada 1min e processa batch)
+schedule: "*/5 * * * * *"   (a cada 5s; cron de minuto não faz sub-minute, então roda a cada 1min e processa batch)
 endpoint: POST /api/v1/cron/agent-dispatcher
 auth: header X-Cron-Secret
 ```
@@ -660,7 +690,7 @@ function triggerMatches(config: TriggerConfig, msg: Message): boolean {
 
 ## 6. Runtime — Endpoint `/api/internal/agents/run`
 
-Não é parte de `/api/v1/`. É **internal-only**, autenticado por `X-Internal-Secret` (env var). Vercel function com `maxDuration = 300`.
+Não é parte de `/api/v1/`. É **internal-only**, autenticado por `X-Internal-Secret` (env var). Rota com `maxDuration = 300`.
 
 ### 6.1 Algoritmo
 
@@ -788,7 +818,7 @@ Preços vêm do seed `ai_models`. Sem hardcode.
 **Provider key handling — defesa em profundidade**:
 1. Plaintext recebido só no POST `/credentials` (HTTPS, body)
 2. Cifrado AES-GCM no servidor antes de bater no DB
-3. Key de criptografia em `process.env.AI_CRED_AES_KEY` (gerenciado por Vercel/KMS, rotacionado anualmente)
+3. Key de criptografia em `process.env.AI_CRED_AES_KEY` — no `.env` da instalação (modo 0600), exigida em `lib/env.ts`; rotação anual
 4. Decrypt apenas no `/api/internal/agents/run`, key fica só em variável de função
 5. Sentry `beforeSend` strip: `authorization`, `x-api-key`, `api_key`, `*_key`, `*_secret`
 6. Logs estruturados (lib/logger) já strippa esses campos
@@ -889,3 +919,60 @@ Cada run emite, em JSON:
 - Spec 03 — WAHA: `channel_sessions`, webhook handler estendido em §4.6
 - Spec 07 — Events/Workers: novo cron `agent-dispatcher` segue padrão existente
 - Spec 01 — Platform Base: RLS via `fn_user_org_ids()`, audit log via `fn_audit_log_row()`
+
+## Diagnóstico de etapas do modelo
+
+### Escopo da pausa humana
+
+`isLeadInHandoff` recebe organização, contato e **conversa atual** em todos os
+consumidores: turno automático, rascunho assistido, envio fixo de follow-up e
+Operador. `contacts.force_human` continua global e só é liberado por ação humana.
+O silêncio futuro/infinito vale para a conversa atual. Atribuição sem silêncio,
+como a distribuição por rodízio, não cria uma pausa. Um silêncio em
+outra conversa, inclusive encerrada em outro canal, não suspende uma conversa
+atual liberada. Alvo ausente ou que não corresponde à organização/contato falha
+fechado. A guarda não altera contato, conversa, fila nem configuração de custo.
+
+O retorno é consumido pelos mesmos logs de turno pulado; a retomada continua
+dependendo dos comandos humanos existentes. Destino: núcleo; não há configuração,
+porta ou peça nova. A prova do SQL real e das atribuições está em
+`tests/invariants/handoff-escopo-da-conversa.test.ts`.
+
+### Metadados de execução
+
+O seam `runModelCall` registra metadados por etapa do SDK e os devolve ao turno:
+índice, motivo normalizado de parada, nomes de ferramentas declaradas e situação
+(`invalid`, `error`, `rejected`, `completed`, `no_result`). Nomes desconhecidos viram
+`unknown_tool`; mensagens de erro, argumentos, resultados e texto do modelo não entram
+no diagnóstico. Recusas da aplicação usam o código fixo `tool_rejected`.
+
+`PreviewResult.model_diagnostics` alimenta o teste de versão e seu histórico em
+`ai_agent_runs.tool_calls`. `proposals` permanece separado: propostas de mutação
+não representam todas as ferramentas consultadas. O teto de etapas sem candidato
+e sem veto registrado é `step_limit_without_response`, falha da prévia. Um veto
+já registrado continua sendo bloqueio. O teto sem resposta permite um único
+aviso neutro (`step-limit-recovery.ts`), somente em turno que pode falar e que
+ainda não tentou enviar. O aviso passa pelo mesmo `guardServiceTools` e
+`send_message`, com autorização e cadeia before-send atuais. Ele não usa texto
+livre do modelo nem uma nova geração conversacional. Classificadores auxiliares
+configurados na cadeia de envio continuam sujeitos ao orçamento existente.
+Na prévia, `fallback_response` distingue esse aviso de uma resposta concluída:
+o status continua sendo falha. Recusa ou falha de entrega do aviso abre um item
+`other` deduplicado por conversa e título na Central; falha exclusiva desse
+aviso encerra o turno antes do checkpoint/roteiro e não reinicia a geração.
+O checkpoint anterior e o ledger são preservados. Erros de envios anteriores
+do modelo continuam seguindo a política existente de retry.
+
+O breaker recebe o catálogo explícito de leituras e o predicado `motivoDoVazio`
+da própria definição MCP. Resultado vazio declarado conta como tentativa sem
+sucesso para conter consultas repetidas, sem inferir falha de um campo arbitrário
+e sem alterar o payload devolvido pela capacidade. Entrada: SDK → ferramenta →
+breaker. Saída no teto: recuperação limitada → envio guardado ou Central → Inbox.
+
+Destino: **núcleo**; observabilidade do mesmo motor, independente de extensões.
+Entrada: SDK → seam → turno. Saída: logs estruturados e Testar agente → histórico
+do teste. Porta: Agentes → Editar → Testar. Configuração: o teto existente da
+versão do agente. Retorno humano: corrigir o fluxo/ferramenta indicado e executar
+um novo teste autorizado; diagnóstico não é aprendizado automático. Limitação:
+não se conhece a ferramenta do incidente histórico sem uma nova execução com
+essa instrumentação; o diagnóstico não reconstitui dados nunca registrados.

@@ -20,8 +20,9 @@ import type { NextResponse } from "next/server";
 
 import { fail, type ApiError } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK, type ActiveOrg, type AuthUser, type Role } from "@/lib/auth/types";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 
 export type RoleCheck =
@@ -55,11 +56,17 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
   if (!user) {
     return { ok: false, response: fail("unauthenticated", "Auth required.", 401, { requestId }) };
   }
+  const t = (texto: string) => traduzir(texto, user.idioma);
 
+  if (user.support && user.support.status !== "active") {
+    return { ok: false, response: fail("forbidden", "O acompanhamento terminou. Saia para continuar.", 403, { requestId }) };
+  }
   let org: ActiveOrg | null;
   if (organizationId) {
     const membership = user.organizations.find((o) => o.organization_id === organizationId);
-    org = membership
+    org = user.support?.organization_id === organizationId
+      ? { orgId: organizationId, name: user.support.name, role: user.support.access_mode === "full" ? "admin" : "viewer" }
+      : membership
       ? {
           orgId: membership.organization_id,
           name: membership.organization_name,
@@ -74,11 +81,11 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
   if (!org) {
     return {
       ok: false,
-      response: fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId }),
+      response: fail("forbidden_tenant", t("Sem organização ativa."), 403, { requestId }),
     };
   }
 
-  if (allowPlatformAdmin && user.is_platform_admin) {
+  if (allowPlatformAdmin && user.is_platform_admin && !user.support) {
     return { ok: true, user, org };
   }
 
@@ -92,6 +99,41 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
   }
 
   const rank = effectiveRole ? (ROLE_RANK[effectiveRole as Role] ?? 0) : 0;
+
+  // MFA como política de SESSÃO, não só de cadastro.
+  //
+  // O gate de MFA vivia em `app/app/layout.tsx`, e layout não roda em rota de
+  // API: uma sessão `aal1` de admin com TOTP cadastrado chamava direto as 33
+  // rotas gateadas por `requireRole("admin")` — criar token de API (plaintext
+  // mostrado uma vez), convidar membro, LGPD anonymize, publicar agente,
+  // credenciais. Pior, o layout perguntava a coisa errada: `isMfaEnrolled()` é
+  // "tem fator", não "provou o fator agora".
+  //
+  // Fica DEPOIS do rank e ANTES do retorno de sucesso, de propósito: quem não
+  // tem papel suficiente continua levando 403 por falta de papel, sem que a
+  // resposta revele o estado de MFA de quem nem chegaria lá.
+  if (rank >= ROLE_RANK[min] && (await mfaEmDivida())) {
+    void audit({
+      action: "authz.denied",
+      actorUserId: user.id,
+      organizationId: org.orgId,
+      resourceType: resource ?? null,
+      requestId,
+      metadata: { reason: "mfa_required", effective_role: effectiveRole ?? null },
+    });
+    return {
+      ok: false,
+      response: fail(
+        "mfa_required",
+        t(
+          "Esta sessão precisa da verificação em duas etapas. Entre novamente com o código do aplicativo.",
+        ),
+        403,
+        { requestId },
+      ),
+    };
+  }
+
   if (rank < ROLE_RANK[min]) {
     // Fire-and-forget: falha de audit alerta, não bloqueia o 403.
     void audit({

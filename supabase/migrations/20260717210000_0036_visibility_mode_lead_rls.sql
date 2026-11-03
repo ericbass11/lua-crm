@@ -1,4 +1,4 @@
--- 0036_visibility_mode_lead_rls — G4-03: escopo de visualização/escrita por
+-- 0167_visibility_mode_lead_rls — G4-03: escopo de visualização/escrita por
 -- atendente no kanban/leads (eixo 5, spec 13 §4 linha 220). Espelha a G4-01
 -- (conversations, migration 0035) para crm_leads: o "dono" do lead é
 -- crm_leads.owner_user_id (NÃO assigned_to — isso é conversa). REUSE do mesmo

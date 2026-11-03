@@ -3,7 +3,7 @@
  *
  * Usado pelo envio ativo (POST /api/v1/conversations), que recebe um número
  * digitado à mão pelo operador e precisa convertê-lo na identidade canônica
- * `+<E164>` antes de resolver o contato/conversa via as RPCs de ingestão WAHA
+ * `+<E164>` antes de resolver o contato/conversa pelas RPCs de ingestão do canal
  * (que esperam `phone` E.164 e `chat_id` no formato `<digits>@c.us`).
  *
  * Escopo deliberadamente pequeno (Brasil-first, sem libphonenumber): o produto
@@ -16,7 +16,7 @@ const DEFAULT_COUNTRY_CODE = "55"; // Brasil
 export interface E164Result {
   /** Número normalizado no formato "+55...". */
   e164: string;
-  /** chatId WAHA correspondente ("<digits>@c.us"). */
+  /** Identificador de chat correspondente no canal atual. */
   chatId: string;
 }
 

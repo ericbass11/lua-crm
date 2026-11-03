@@ -8,9 +8,21 @@
  */
 import { z } from "zod";
 
+import { ehHexValido } from "@/lib/branding/rampa";
+import { IDIOMAS } from "@/lib/i18n/idiomas";
+import { MOEDAS_SERVIDAS } from "@/lib/money";
+
 import { conversationTagSchema } from "./messaging";
 
-const LOCALES = ["pt-BR", "en-US"] as const;
+/**
+ * Os idiomas que a interface REALMENTE serve.
+ *
+ * `en-US` saiu: esteve na lista desde sempre e nunca teve uma linha de
+ * tradução — escolhê-lo não mudava nada. Espanhol entrou quando passou a mudar.
+ * A fonte é `lib/i18n/idiomas`, para a validação e o dicionário não divergirem:
+ * um idioma aceito aqui e desconhecido lá cairia no padrão em silêncio.
+ */
+const LOCALES = IDIOMAS;
 
 /**
  * G6-02: organizations.settings.ai_dispatch_mode (edge-contract do Vendaval).
@@ -37,9 +49,20 @@ export const canonicalConversationTagsSchema = z
 export type CanonicalConversationTags = z.infer<typeof canonicalConversationTagsSchema>;
 export type Locale = (typeof LOCALES)[number];
 
+/**
+ * "Sigo minha empresa" — a ausência de preferência, com um valor para ela.
+ *
+ * Sem isto, quem abrisse o perfil por qualquer motivo (trocar o fuso, o nome)
+ * sairia de lá com uma preferência de idioma que nunca escolheu: o seletor
+ * mostraria o idioma em vigor e o salvar o gravaria como decisão pessoal. A
+ * partir daí, trocar o idioma da empresa não alcançaria mais essa pessoa — e
+ * ninguém entenderia por quê.
+ */
+export const SEM_PREFERENCIA_DE_IDIOMA = "auto";
+
 export const profileSchema = z.object({
   full_name: z.string().min(1).max(120).nullable().optional(),
-  locale: z.enum(LOCALES),
+  locale: z.enum([...LOCALES, SEM_PREFERENCIA_DE_IDIOMA]),
   timezone: z.string().min(1).max(64),
   avatar_url: z
     .string()
@@ -51,6 +74,13 @@ export const profileSchema = z.object({
 });
 export type ProfileInput = z.infer<typeof profileSchema>;
 
+/**
+ * As moedas servidas vêm de `lib/money`, pelo mesmo motivo que os idiomas vêm
+ * de `lib/i18n/idiomas`: com duas listas, uma moeda aceita aqui e ausente do
+ * seletor vira um valor que ninguém consegue mais escolher de volta.
+ */
+const MOEDAS = MOEDAS_SERVIDAS;
+
 export const tenantSchema = z.object({
   display_name: z.string().min(1).max(120),
   legal_name: z.string().min(1).max(200),
@@ -60,8 +90,25 @@ export const tenantSchema = z.object({
     .nullable()
     .optional()
     .or(z.literal("").transform(() => null)),
+  /**
+   * O país da organização (issue #1033): ISO-3166 alpha-2, maiúsculas, `null` =
+   * Brasil. É a MESMA régua do CHECK `organizations_country_check` da migration
+   * 0277 — a validação de aplicação e a do banco não podem divergir, ou a tela
+   * aceita o que o banco recusa (e o erro chega como 500 em vez de formulário).
+   * Aqui NÃO se valida se o país tem perfil revisado: quem oferece a lista é
+   * `paisesOferecidos()` (`lib/legal/perfil-do-pais.ts`), e o valor que chega é
+   * conferido contra ela um degrau antes de gravar — país sem lei revisada não
+   * entra nem por API.
+   */
+  country: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .nullable()
+    .optional()
+    .or(z.literal("").transform(() => null)),
   timezone: z.string().min(1).max(64),
   locale: z.enum(LOCALES),
+  currency: z.enum(MOEDAS),
   media_retention_days: z.coerce.number().int().min(30).max(3650),
   dpo_email: z
     .string()
@@ -77,7 +124,6 @@ export const tenantSchema = z.object({
     .nullable()
     .optional()
     .or(z.literal("").transform(() => null)),
-  lost_reasons_extra: z.array(z.string().min(1).max(80)).max(50).default([]),
 });
 export type TenantInput = z.infer<typeof tenantSchema>;
 
@@ -100,7 +146,7 @@ export const notificationPrefsSchema = z.object({
 });
 export type NotificationPrefsInput = z.infer<typeof notificationPrefsSchema>;
 
-const customFieldSchema = z.object({
+export const customFieldSchema = z.object({
   key: z
     .string()
     .min(1)
@@ -124,6 +170,7 @@ const customFieldSchema = z.object({
     .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
     .optional(),
 });
+export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
 export const pipelineConfigPatchSchema = z.object({
   vocabulary: z
@@ -144,3 +191,135 @@ export const createPipelineSchema = z.object({
   description: z.string().trim().max(280).optional(),
 });
 export type CreatePipelineInput = z.infer<typeof createPipelineSchema>;
+
+/**
+ * A marca da INSTALAÇÃO (`platform_branding`) — o que a server action aceita.
+ *
+ * `.nullable()` em cada campo, e não `.optional()`: aqui `null` é um valor com
+ * significado ("apague este campo, quero o padrão do produto"), e ausência
+ * significaria "não mexa". Colapsar os dois faria a tela não ter como limpar o
+ * logo depois de configurá-lo.
+ *
+ * `accent_hex` valida com `ehHexValido` — o validador do domínio, o MESMO que
+ * `lib/branding/schema.ts` usa — e a action normaliza antes de gravar. Um regex
+ * novo escrito aqui divergiria do CHECK do banco (`^#[0-9a-f]{6}$`) e o operador
+ * receberia um `23514` cru na tela em vez de "essa cor não é válida".
+ */
+export const platformBrandingSchema = z.object({
+  app_name: z.string().trim().min(1).max(120).nullable(),
+  logo_url: z.string().trim().url().max(2048).nullable(),
+  accent_hex: z
+    .string()
+    .trim()
+    .refine(ehHexValido, { message: "Use uma cor no formato #rrggbb" })
+    .nullable(),
+  show_powered_by: z.boolean(),
+});
+export type PlatformBrandingInput = z.infer<typeof platformBrandingSchema>;
+
+/**
+ * A marca da ORGANIZAÇÃO (`organizations.settings.branding`) — o cliente final
+ * do revendedor, e o que a Server Action `updateMarcaDaOrganizacao` aceita.
+ *
+ * `.nullable()` pelo mesmo motivo do schema de cima: aqui `null` é um valor com
+ * significado ("apague este campo, quero o que vem da instalação") e ausência
+ * significaria "não mexa". Colapsar os dois deixaria o admin sem como voltar
+ * atrás depois de escolher uma cor.
+ *
+ * SEM `logo_url`: upload é a fase seguinte (bucket, policies, limite de tamanho,
+ * delete-on-replace). Um campo aqui hoje seria contrato oferecido e não
+ * implementado — a precedência por campo garante que o logo da instalação
+ * continua valendo enquanto isso.
+ *
+ * `accent_hex` valida com `ehHexValido` — o MESMO validador do domínio que
+ * `lib/branding/schema.ts` usa — e a action normaliza antes de gravar. Um regex
+ * novo escrito aqui divergiria da regex da função SQL (`^#[0-9a-f]{6}$`) e o
+ * admin receberia um `22023` cru na tela em vez de "essa cor não é válida".
+ */
+export const marcaDaOrganizacaoSchema = z.object({
+  app_name: z.string().trim().min(1).max(120).nullable(),
+  accent_hex: z
+    .string()
+    .trim()
+    .refine(ehHexValido, { message: "Use uma cor no formato #rrggbb" })
+    .nullable(),
+});
+export type MarcaDaOrganizacaoInput = z.infer<typeof marcaDaOrganizacaoSchema>;
+
+/** Prazos por organização. Leitura legada degrada; escrita usa schema estrito. */
+export const agendaSettingsWriteSchema = z.strictObject({
+  confirmation_delay_minutes: z.number().int().min(1).max(10080),
+  unknown_protection_minutes: z.number().int().min(1).max(10080),
+  /**
+   * Quanto tempo um pedido não confirmado segura o horário.
+   *
+   * ⚠️ `.default()` e não obrigatório: este schema é `strictObject`, e torná-lo
+   * exigido faria TODO PATCH já escrito (que manda só os dois campos de cima)
+   * passar a falhar — o tipo de mudança que a doutrina de packaging proíbe,
+   * porque quebra quem já instalou sem nenhum aviso.
+   *
+   * 24h é o default porque quem confere a fila uma vez por dia não pode perder
+   * pedido. O mínimo é 15 minutos: abaixo disso a expiração corre com quem está
+   * decidindo naquele instante.
+   */
+  pending_expires_after_minutes: z.number().int().min(15).max(10080).default(1440),
+}).refine(v => v.unknown_protection_minutes >= v.confirmation_delay_minutes, {message:"O prazo de proteção deve ser maior que o prazo de confirmação."});
+export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmation_delay_minutes:10,unknown_protection_minutes:1440,pending_expires_after_minutes:1440});
+
+/**
+ * `organizations.settings.crm` — regras de CRM que cada organização liga para si.
+ *
+ * `cliente_pela_agenda`: quem tem horário marcado vira cliente (migration 0262).
+ * Nasce DESLIGADA em toda organização, e só um administrador a liga, por
+ * `fn_definir_cliente_pela_agenda` (nunca por UPDATE em `organizations`).
+ *
+ * ⚠️ SÓ O BOOLEANO `true` LIGA — e é a mesma régua do banco, que compara
+ * `settings->'crm'->'cliente_pela_agenda' = 'true'::jsonb` em
+ * `fn_marcar_contato_como_cliente`. Ausente, `false`, a string `"true"` ou
+ * qualquer lixo é desligado aqui E lá. Se os dois idiomas divergissem, a tela
+ * mostraria o selo de uma regra que o trigger não aplica.
+ */
+export const crmSettingsSchema = z
+  .object({ cliente_pela_agenda: z.boolean().catch(false) })
+  .catch({ cliente_pela_agenda: false });
+
+/** A regra "cliente pela agenda" está ligada nesta organização? Nunca lança. */
+export function clientePelaAgendaLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).cliente_pela_agenda === true;
+}
+
+/**
+ * A OPÇÃO "ATENDENTES PODEM MEXER NA AGENDA DOS COLEGAS" (migration 0343,
+ * issue #978) — a agenda como opção POR ORGANIZAÇÃO, LIGADA POR PADRÃO.
+ *
+ * Com ela DESLIGADA, o Atendente só mexe no compromisso de que é dono; Gerente
+ * e Administrador seguem mexendo em tudo. Ligada, tudo é como sempre foi.
+ *
+ * ⚠️ A RÉGUA É "SÓ O `false` EXPLÍCITO DESLIGA", e é a MESMA do banco, que lê
+ * `(settings->'colegas_podem_mexer_na_agenda') is distinct from 'false'::jsonb`
+ * em `fn_colegas_podem_mexer_na_agenda`. Ausente — toda organização que já
+ * existia antes desta migration —, `true`, a string `"true"` ou qualquer lixo
+ * contam como LIGADO aqui e lá. É o que faz "padrão ligado" ser literalmente
+ * "quem já instalou não vê mudança nenhuma". Se as duas réguas divergissem, a
+ * tela mostraria desligada uma regra que o banco aplica — ou o contrário.
+ *
+ * ⚠️ NÃO mora em `settings.agenda`, e isso é decisão, não acaso:
+ * `fn_agenda_settings` SUBSTITUI o objeto `settings.agenda` inteiro e recusa
+ * chave que não sejam as duas que ele conhece, então a chave seria recusada por
+ * ele e apagada na primeira vez que um Gerente salvasse os prazos. Chave
+ * própria de topo, no mesmo espírito do `settings.crm` da migration 0262.
+ *
+ * Nunca lança: a tela mostra a regra que o banco aplica, e um jsonb torto não
+ * pode derrubar Configurações.
+ */
+export function colegasPodemMexerNaAgendaLigado(settings: unknown): boolean {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return raiz?.colegas_podem_mexer_na_agenda !== false;
+}

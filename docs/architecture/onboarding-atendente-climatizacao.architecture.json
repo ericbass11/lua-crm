@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Onboarding do atendente de climatização",
+    "subtitle": "Da ciência da conexão ao inbound ativo, com revisão e ensaio humano",
+    "output": "onboarding-atendente-climatizacao.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "dono", "label": "Dono da empresa" },
+    { "id": "app", "label": "Aplicativo" },
+    { "id": "persistencia", "label": "Persistência" },
+    { "id": "canal", "label": "Canal" }
+  ],
+  "mainPath": [
+    "ciencia",
+    "conexao",
+    "entrevista",
+    "revisao",
+    "rascunho",
+    "sandbox",
+    "ativacao",
+    "inbound"
+  ],
+  "nodes": [
+    {
+      "id": "ciencia",
+      "lane": "dono",
+      "col": 1,
+      "type": "frontend",
+      "label": "Aceite versionado da conexão não oficial"
+    },
+    {
+      "id": "conexao",
+      "lane": "canal",
+      "col": 2,
+      "type": "service",
+      "label": "QR Code e sessão por dispositivo vinculado"
+    },
+    {
+      "id": "entrevista",
+      "lane": "app",
+      "col": 3,
+      "type": "frontend",
+      "label": "Uma pergunta por vez; sem completar lacunas"
+    },
+    {
+      "id": "estado",
+      "lane": "persistencia",
+      "col": 3,
+      "type": "database",
+      "label": "onboarding_state / AgentSpec v1"
+    },
+    {
+      "id": "revisao",
+      "lane": "dono",
+      "col": 4,
+      "type": "frontend",
+      "label": "Resumo editável e aprovação explícita"
+    },
+    {
+      "id": "rascunho",
+      "lane": "app",
+      "col": 5,
+      "type": "service",
+      "label": "Instruções, memória e versão em rascunho"
+    },
+    {
+      "id": "sandbox",
+      "lane": "dono",
+      "col": 6,
+      "type": "frontend",
+      "label": "Ensaios sem envio ao WhatsApp"
+    },
+    {
+      "id": "ativacao",
+      "lane": "dono",
+      "col": 7,
+      "type": "frontend",
+      "label": "Ativação exclusiva do owner"
+    },
+    {
+      "id": "politica",
+      "lane": "app",
+      "col": 8,
+      "type": "service",
+      "label": "managed_mvp_inbound no sendMessageHandler"
+    },
+    {
+      "id": "inbound",
+      "lane": "canal",
+      "col": 9,
+      "type": "service",
+      "label": "Somente resposta vinculada a mensagem recebida"
+    },
+    {
+      "id": "inbox",
+      "lane": "dono",
+      "col": 9,
+      "type": "frontend",
+      "label": "Inbox, handoff e continuidade humana"
+    },
+    {
+      "id": "auditoria",
+      "lane": "persistencia",
+      "col": 7,
+      "type": "database",
+      "label": "Aceite, respostas, aprovação e publicação auditados"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "ciencia", "to": "conexao", "label": "aceite antes do QR" },
+    { "id": "e2", "from": "conexao", "to": "entrevista", "label": "sessão conectada" },
+    {
+      "id": "e3",
+      "from": "entrevista",
+      "to": "estado",
+      "label": "persiste somente resposta explícita"
+    },
+    { "id": "e4", "from": "estado", "to": "entrevista", "label": "retoma após recarregar" },
+    { "id": "e5", "from": "entrevista", "to": "revisao", "label": "spec completa" },
+    { "id": "e6", "from": "revisao", "to": "estado", "label": "corrige ou aprova" },
+    { "id": "e7", "from": "revisao", "to": "rascunho", "label": "preparo determinístico" },
+    { "id": "e8", "from": "rascunho", "to": "sandbox", "label": "versão ainda inativa" },
+    { "id": "e9", "from": "sandbox", "to": "revisao", "label": "falha volta para ajuste" },
+    { "id": "e10", "from": "sandbox", "to": "ativacao", "label": "ensaio concluído" },
+    { "id": "e11", "from": "ativacao", "to": "politica", "label": "publica com perfil inbound" },
+    { "id": "e12", "from": "politica", "to": "inbound", "label": "comprova mensagem recebida" },
+    { "id": "e13", "from": "inbound", "to": "inbox", "label": "resposta e conversa visíveis" },
+    { "id": "e14", "from": "inbox", "to": "politica", "label": "continuidade humana permitida" },
+    { "id": "e15", "from": "ciencia", "to": "auditoria", "label": "versão e autor" },
+    { "id": "e16", "from": "revisao", "to": "auditoria", "label": "aprovação" },
+    { "id": "e17", "from": "ativacao", "to": "auditoria", "label": "publicação" },
+    { "id": "e18", "from": "auditoria", "to": "inbox", "label": "operação rastreável" }
+  ]
+}

@@ -5,40 +5,59 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash } from "@/lib/ui/icons";
-import {
-  waitConfigSchema,
-  conditionConfigSchema,
-  aiClassifyConfigSchema,
-  actionConfigSchema,
-  endConfigSchema,
-  type FlowNode,
-} from "@/lib/followup/graph-schema";
+import type { FlowGraph, FlowNode } from "@/lib/followup/graph-schema";
+import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import type { RFNode, RFNodeData } from "@/lib/followup/graph-mappers";
-import { NODE_VISUALS } from "./nodes/nodeVisuals";
+import { Trash } from "@/lib/ui/icons";
+import { useT } from "@/hooks/i18n/useT";
 
-type ConfigOf<T extends FlowNode["type"]> = Extract<FlowNode, { type: T }>["config"];
+import { ActionForm } from "./forms/ActionForm";
+import { ClassifyForm } from "./forms/ClassifyForm";
+import { CollectForm } from "./forms/CollectForm";
+import { ConditionForm } from "./forms/ConditionForm";
+import { EndForm } from "./forms/EndForm";
+import { MatchReplyForm } from "./forms/MatchReplyForm";
+import { RepeatForm } from "./forms/RepeatForm";
+import { SkillForm } from "./forms/SkillForm";
+import { WaitForm } from "./forms/WaitForm";
+import type { ConfigOf } from "./forms/shared";
+import { NODE_VISUALS } from "./nodes/nodeVisuals";
 
 interface Props {
   node: RFNode;
   onChange: (patch: Partial<RFNodeData>) => void;
+  onDelete: () => void;
+  /** Ramos deste nó que já têm aresta — quem sabe isso é o canvas, que é dono do grafo. */
+  ramosLigados?: string[];
+  /** Superfície do fluxo — o roteiro de atendimento tem Início e Fim próprios. */
+  surface?: FollowupFlowSurface;
+  /** O fluxo aberto: o Fim do roteiro não oferece encadear nele mesmo. */
+  flowId?: string;
+  /** Configurações do GRAFO, editadas no Início do roteiro. */
+  settings?: FlowGraph["settings"];
+  onSettingsChange?: (settings: FlowGraph["settings"]) => void;
 }
 
 /**
- * Zod-driven config form, one variant per node type. Each field commits to
- * the live React Flow node (`onChange`) only when the candidate config
- * passes its schema — otherwise the field shows an inline error and the
- * canvas keeps the last valid config (never a half-written value upstream).
+ * Casca do formulário de configuração: cabeçalho, rótulo do nó e o formulário
+ * do tipo. Cada tipo mora em `forms/` — um arquivo por formulário, para que
+ * duas pessoas mexendo em nós diferentes não disputem o mesmo arquivo.
+ *
+ * A regra que os formulários seguem: o campo só grava no nó vivo (`onChange`)
+ * quando o candidato passa no schema — senão mostra erro inline e o canvas
+ * mantém a última config válida (nunca um valor pela metade rio acima).
  */
-export function NodeConfigPanel({ node, onChange }: Props) {
+export function NodeConfigPanel({
+  node,
+  onChange,
+  onDelete,
+  ramosLigados,
+  surface = "followup",
+  flowId,
+  settings,
+  onSettingsChange,
+}: Props) {
+  const t = useT();
   const type = node.type as FlowNode["type"];
   const visual = NODE_VISUALS[type];
   const Icon = visual.icon;
@@ -48,7 +67,7 @@ export function NodeConfigPanel({ node, onChange }: Props) {
   const commitLabel = (value: string) => {
     setLabel(value);
     if (value.trim().length < 1 || value.length > 60) {
-      setLabelError("Rótulo precisa ter 1 a 60 caracteres.");
+      setLabelError(t("Rótulo precisa ter 1 a 60 caracteres."));
       return;
     }
     setLabelError(null);
@@ -62,15 +81,15 @@ export function NodeConfigPanel({ node, onChange }: Props) {
           <span className={`flex h-6 w-6 items-center justify-center rounded-full ${visual.chipClassName}`}>
             <Icon size={14} aria-hidden />
           </span>
-          {visual.paletteLabel}
+          {t(visual.paletteLabel)}
         </h2>
         <p className="text-sm text-text-muted">
-          Alterações aplicam no rascunho ao digitar — salve na barra de publicação.
+          {t("Alterações aplicam no rascunho ao digitar — salve na barra de publicação.")}
         </p>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="node-label">Rótulo</Label>
+        <Label htmlFor="node-label">{t("Rótulo")}</Label>
         <Input
           id="node-label"
           value={label}
@@ -81,11 +100,15 @@ export function NodeConfigPanel({ node, onChange }: Props) {
       </div>
 
       <div className="space-y-4 border-t border-border pt-4">
-        {type === "trigger" && (
+        {type === "trigger" && surface !== "atendimento" && (
           <p className="text-sm text-text-muted">
-            Início do fluxo — sem configuração adicional. O disparo (manual, mudança de
-            etapa, silêncio ou fim de conversa) é definido nas configurações do fluxo.
+            {t(
+              "Início do fluxo — sem configuração adicional. O disparo (manual, mudança de etapa, silêncio ou fim de conversa) é definido nas configurações do fluxo.",
+            )}
           </p>
+        )}
+        {type === "trigger" && surface === "atendimento" && (
+          <ConfiguracoesDoRoteiro settings={settings} onSettingsChange={onSettingsChange} />
         )}
         {type === "wait" && (
           <WaitForm config={node.data.config as ConfigOf<"wait">} onChange={(config) => onChange({ config })} />
@@ -94,6 +117,7 @@ export function NodeConfigPanel({ node, onChange }: Props) {
           <ConditionForm
             config={node.data.config as ConfigOf<"condition">}
             onChange={(config) => onChange({ config })}
+            ramosLigados={ramosLigados}
           />
         )}
         {type === "ai_classify" && (
@@ -102,551 +126,138 @@ export function NodeConfigPanel({ node, onChange }: Props) {
             onChange={(config) => onChange({ config })}
           />
         )}
+        {type === "match_reply" && (
+          <MatchReplyForm
+            config={node.data.config as ConfigOf<"match_reply">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {type === "repeat" && (
+          <RepeatForm
+            config={node.data.config as ConfigOf<"repeat">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {type === "collect" && (
+          <CollectForm config={node.data.config as ConfigOf<"collect">} onChange={(config) => onChange({ config })} />
+        )}
+        {type === "skill" && (
+          <SkillForm config={node.data.config as ConfigOf<"skill">} onChange={(config) => onChange({ config })} />
+        )}
         {type === "action" && (
           <ActionForm config={node.data.config as ConfigOf<"action">} onChange={(config) => onChange({ config })} />
         )}
         {type === "end" && (
-          <EndForm config={node.data.config as ConfigOf<"end">} onChange={(config) => onChange({ config })} />
+          <EndForm
+            config={node.data.config as ConfigOf<"end">}
+            onChange={(config) => onChange({ config })}
+            surface={surface}
+            {...(flowId !== undefined ? { flowId } : {})}
+          />
         )}
       </div>
-    </div>
-  );
-}
 
-// ─── wait ────────────────────────────────────────────────────────────────
-
-function msToMin(ms: number): number {
-  return Math.round(ms / 60_000);
-}
-function minToMs(min: number): number {
-  return Math.round(min * 60_000);
-}
-
-function WaitForm({
-  config,
-  onChange,
-}: {
-  config: ConfigOf<"wait">;
-  onChange: (c: ConfigOf<"wait">) => void;
-}) {
-  const [mode, setMode] = useState<"fixed" | "smart">(config.mode);
-  const [durationMin, setDurationMin] = useState(
-    config.mode === "fixed" ? msToMin(config.duration_ms) : 10,
-  );
-  const [minMin, setMinMin] = useState(config.mode === "smart" ? msToMin(config.min_ms) : 5);
-  const [maxMin, setMaxMin] = useState(config.mode === "smart" ? msToMin(config.max_ms) : 60);
-  const [guidance, setGuidance] = useState(config.mode === "smart" ? (config.guidance ?? "") : "");
-  const [error, setError] = useState<string | null>(null);
-
-  const commit = (next: {
-    mode: "fixed" | "smart";
-    durationMin: number;
-    minMin: number;
-    maxMin: number;
-    guidance: string;
-  }) => {
-    const candidate =
-      next.mode === "fixed"
-        ? { mode: "fixed" as const, duration_ms: minToMs(next.durationMin) }
-        : {
-            mode: "smart" as const,
-            min_ms: minToMs(next.minMin),
-            max_ms: minToMs(next.maxMin),
-            ...(next.guidance.trim() ? { guidance: next.guidance } : {}),
-          };
-    const parsed = waitConfigSchema.safeParse(candidate);
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Configuração inválida.");
-      return;
-    }
-    setError(null);
-    onChange(parsed.data);
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="space-y-2">
-        <Label htmlFor="wait-mode">Modo</Label>
-        <Select
-          value={mode}
-          onValueChange={(v) => {
-            const next = v as "fixed" | "smart";
-            setMode(next);
-            commit({ mode: next, durationMin, minMin, maxMin, guidance });
-          }}
+      <div className="mt-auto border-t border-border pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full text-destructive"
+          data-testid="delete-node"
+          onClick={onDelete}
         >
-          <SelectTrigger id="wait-mode">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="fixed">Fixo</SelectItem>
-            <SelectItem value="smart">Adaptativo (min–max)</SelectItem>
-          </SelectContent>
-        </Select>
+          <Trash size={14} aria-hidden className="mr-1" />
+          {t("Excluir nó")}
+        </Button>
       </div>
-
-      {mode === "fixed" ? (
-        <div className="space-y-2">
-          <Label htmlFor="wait-duration">Duração (minutos)</Label>
-          <Input
-            id="wait-duration"
-            type="number"
-            min={5}
-            value={durationMin}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              setDurationMin(v);
-              commit({ mode, durationMin: v, minMin, maxMin, guidance });
-            }}
-          />
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="wait-min">Mínimo (min)</Label>
-              <Input
-                id="wait-min"
-                type="number"
-                min={5}
-                value={minMin}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setMinMin(v);
-                  commit({ mode, durationMin, minMin: v, maxMin, guidance });
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="wait-max">Máximo (min)</Label>
-              <Input
-                id="wait-max"
-                type="number"
-                min={5}
-                value={maxMin}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setMaxMin(v);
-                  commit({ mode, durationMin, minMin, maxMin: v, guidance });
-                }}
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="wait-guidance">Orientação (opcional)</Label>
-            <Textarea
-              id="wait-guidance"
-              maxLength={500}
-              value={guidance}
-              onChange={(e) => {
-                setGuidance(e.target.value);
-                commit({ mode, durationMin, minMin, maxMin, guidance: e.target.value });
-              }}
-            />
-          </div>
-        </>
-      )}
-      {error && <p className="text-xs text-error-fg">{error}</p>}
     </div>
   );
 }
 
-// ─── condition ───────────────────────────────────────────────────────────
-
-const CONDITION_FIELDS = ["lead_stage", "tag", "steps_taken", "last_outcome"] as const;
-const CONDITION_OPS = ["eq", "neq", "gte", "lte", "contains"] as const;
-
-function ConditionForm({
-  config,
-  onChange,
+/**
+ * O Início do ROTEIRO de atendimento: como ele começa e quanto ele insiste.
+ * Porte do painel do autor (#1130) com o prazo do PR 2 (`expira_em_horas`).
+ * Grava no nível do grafo (`settings`), não num nó.
+ */
+function ConfiguracoesDoRoteiro({
+  settings,
+  onSettingsChange,
 }: {
-  config: ConfigOf<"condition">;
-  onChange: (c: ConfigOf<"condition">) => void;
+  settings?: FlowGraph["settings"];
+  onSettingsChange?: (settings: FlowGraph["settings"]) => void;
 }) {
-  const [combinator, setCombinator] = useState(config.combinator);
-  const [checks, setChecks] = useState(config.checks);
-  const [error, setError] = useState<string | null>(null);
-
-  const commit = (nextCombinator: "and" | "or", nextChecks: typeof checks) => {
-    const parsed = conditionConfigSchema.safeParse({ combinator: nextCombinator, checks: nextChecks });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Configuração inválida.");
-      return;
-    }
-    setError(null);
-    onChange(parsed.data);
+  const t = useT();
+  const atual = { max_tentativas_pergunta: settings?.max_tentativas_pergunta ?? 3, ...settings };
+  const [gatilhos, setGatilhos] = useState((settings?.gatilhos ?? []).join(", "));
+  const gravar = (patch: Partial<NonNullable<FlowGraph["settings"]>>) => onSettingsChange?.({ ...atual, ...patch });
+  const inteiro = (valor: string, min: number, max: number): number | null => {
+    const n = Number(valor);
+    return Number.isInteger(n) && n >= min && n <= max ? n : null;
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4" data-testid="configuracoes-do-roteiro">
+      <p className="text-sm text-text-muted">
+        {t(
+          "O roteiro começa quando a mensagem do cliente tem uma palavra-gatilho, ou quando um roteador de intenção o aponta.",
+        )}
+      </p>
       <div className="space-y-2">
-        <Label htmlFor="cond-combinator">Combinador</Label>
-        <Select
-          value={combinator}
-          onValueChange={(v) => {
-            const next = v as "and" | "or";
-            setCombinator(next);
-            commit(next, checks);
-          }}
-        >
-          <SelectTrigger id="cond-combinator">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="and">E (todas)</SelectItem>
-            <SelectItem value="or">OU (qualquer uma)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-3">
-        {checks.map((check, idx) => (
-          <div key={idx} className="space-y-2 rounded-sm border border-border p-2" data-testid={`condition-check-${idx}`}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-text-muted">Condição {idx + 1}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="Remover condição"
-                disabled={checks.length <= 1}
-                onClick={() => {
-                  const next = checks.filter((_, i) => i !== idx);
-                  setChecks(next);
-                  commit(combinator, next);
-                }}
-              >
-                <Trash size={14} aria-hidden />
-              </Button>
-            </div>
-            <Select
-              value={check.field}
-              onValueChange={(v) => {
-                const next = checks.map((c, i) => (i === idx ? { ...c, field: v as (typeof CONDITION_FIELDS)[number] } : c));
-                setChecks(next);
-                commit(combinator, next);
-              }}
-            >
-              <SelectTrigger aria-label="Campo">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CONDITION_FIELDS.map((f) => (
-                  <SelectItem key={f} value={f}>
-                    {f}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={check.op}
-              onValueChange={(v) => {
-                const next = checks.map((c, i) => (i === idx ? { ...c, op: v as (typeof CONDITION_OPS)[number] } : c));
-                setChecks(next);
-                commit(combinator, next);
-              }}
-            >
-              <SelectTrigger aria-label="Operador">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CONDITION_OPS.map((op) => (
-                  <SelectItem key={op} value={op}>
-                    {op}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              aria-label="Valor"
-              placeholder="Valor"
-              value={String(check.value)}
-              onChange={(e) => {
-                const next = checks.map((c, i) => (i === idx ? { ...c, value: e.target.value } : c));
-                setChecks(next);
-                commit(combinator, next);
-              }}
-            />
-          </div>
-        ))}
-      </div>
-
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={checks.length >= 10}
-        onClick={() => {
-          const next = [...checks, { field: "steps_taken" as const, op: "gte" as const, value: 0 }];
-          setChecks(next);
-          commit(combinator, next);
-        }}
-      >
-        <Plus size={14} aria-hidden className="mr-1" /> Condição
-      </Button>
-      {error && <p className="text-xs text-error-fg">{error}</p>}
-    </div>
-  );
-}
-
-// ─── ai_classify ─────────────────────────────────────────────────────────
-
-function ClassifyForm({
-  config,
-  onChange,
-}: {
-  config: ConfigOf<"ai_classify">;
-  onChange: (c: ConfigOf<"ai_classify">) => void;
-}) {
-  const [classesText, setClassesText] = useState(config.classes.join(", "));
-  const [graceMin, setGraceMin] = useState(msToMin(config.grace_timeout_ms));
-  const [target, setTarget] = useState(config.target);
-  const [hint, setHint] = useState(config.hint ?? "");
-  const [error, setError] = useState<string | null>(null);
-
-  const commit = (next: { classesText: string; graceMin: number; target: "last_reply" | "summary"; hint: string }) => {
-    const classes = next.classesText
-      .split(",")
-      .map((c) => c.trim())
-      .filter((c) => c.length > 0);
-    const candidate = {
-      classes,
-      grace_timeout_ms: minToMs(next.graceMin),
-      target: next.target,
-      ...(next.hint.trim() ? { hint: next.hint } : {}),
-    };
-    const parsed = aiClassifyConfigSchema.safeParse(candidate);
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Configuração inválida.");
-      return;
-    }
-    setError(null);
-    onChange(parsed.data);
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="space-y-2">
-        <Label htmlFor="classify-classes">Classes (separadas por vírgula)</Label>
+        <Label htmlFor="roteiro-gatilhos">{t("Palavras-gatilho (separe por vírgula)")}</Label>
         <Input
-          id="classify-classes"
-          value={classesText}
+          id="roteiro-gatilhos"
+          value={gatilhos}
           onChange={(e) => {
-            setClassesText(e.target.value);
-            commit({ classesText: e.target.value, graceMin, target, hint });
+            setGatilhos(e.target.value);
+            const lista = e.target.value
+              .split(",")
+              .map((g) => g.trim())
+              .filter((g) => g.length > 0)
+              .slice(0, 30);
+            const { gatilhos: _anterior, ...resto } = atual;
+            onSettingsChange?.(lista.length > 0 ? { ...resto, gatilhos: lista } : resto);
           }}
-          placeholder="hot, cold, no_reply"
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="classify-grace">Grace (minutos, mín. 15)</Label>
+        <Label htmlFor="roteiro-tentativas">{t("Máximo de tentativas por pergunta")}</Label>
         <Input
-          id="classify-grace"
+          id="roteiro-tentativas"
           type="number"
-          min={15}
-          value={graceMin}
+          min={1}
+          max={10}
+          defaultValue={atual.max_tentativas_pergunta}
           onChange={(e) => {
-            const v = Number(e.target.value);
-            setGraceMin(v);
-            commit({ classesText, graceMin: v, target, hint });
+            const n = inteiro(e.target.value, 1, 10);
+            if (n !== null) gravar({ max_tentativas_pergunta: n });
           }}
         />
+        <p className="text-xs text-text-muted">
+          {t("Depois de tantas vezes sem resposta, a pergunta é encerrada como não respondida e deixa de ser feita.")}
+        </p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="classify-target">Alvo</Label>
-        <Select
-          value={target}
-          onValueChange={(v) => {
-            const next = v as "last_reply" | "summary";
-            setTarget(next);
-            commit({ classesText, graceMin, target: next, hint });
-          }}
-        >
-          <SelectTrigger id="classify-target">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="last_reply">Última resposta</SelectItem>
-            <SelectItem value="summary">Resumo</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="classify-hint">Instrução (opcional)</Label>
-        <Textarea
-          id="classify-hint"
-          maxLength={500}
-          value={hint}
+        <Label htmlFor="roteiro-prazo">{t("Encerrar o roteiro depois de quantas horas sem resposta")}</Label>
+        <Input
+          id="roteiro-prazo"
+          type="number"
+          min={1}
+          max={720}
+          placeholder="72"
+          defaultValue={settings?.expira_em_horas ?? ""}
           onChange={(e) => {
-            setHint(e.target.value);
-            commit({ classesText, graceMin, target, hint: e.target.value });
+            if (e.target.value.trim() === "") {
+              const { expira_em_horas: _anterior, ...resto } = atual;
+              onSettingsChange?.(resto);
+              return;
+            }
+            const n = inteiro(e.target.value, 1, 720);
+            if (n !== null) gravar({ expira_em_horas: n });
           }}
         />
+        <p className="text-xs text-text-muted">{t("Em branco, o roteiro encerra depois de 72 horas sem resposta.")}</p>
       </div>
-      {error && <p className="text-xs text-error-fg">{error}</p>}
     </div>
   );
 }
 
-// ─── action ──────────────────────────────────────────────────────────────
-
-function ActionForm({
-  config,
-  onChange,
-}: {
-  config: ConfigOf<"action">;
-  onChange: (c: ConfigOf<"action">) => void;
-}) {
-  const [mode, setMode] = useState(config.mode);
-  const [promptHint, setPromptHint] = useState(config.mode === "ai_message" ? config.prompt_hint : "");
-  const [fallbackTemplateId, setFallbackTemplateId] = useState(
-    config.mode === "ai_message" ? (config.fallback_template_id ?? "") : "",
-  );
-  const [templateId, setTemplateId] = useState(config.mode === "template" ? config.template_id : "");
-  const [error, setError] = useState<string | null>(null);
-
-  const commit = (next: {
-    mode: "ai_message" | "template";
-    promptHint: string;
-    fallbackTemplateId: string;
-    templateId: string;
-  }) => {
-    const candidate =
-      next.mode === "ai_message"
-        ? {
-            mode: "ai_message" as const,
-            prompt_hint: next.promptHint,
-            ...(next.fallbackTemplateId.trim() ? { fallback_template_id: next.fallbackTemplateId } : {}),
-          }
-        : { mode: "template" as const, template_id: next.templateId };
-    const parsed = actionConfigSchema.safeParse(candidate);
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Configuração inválida.");
-      return;
-    }
-    setError(null);
-    onChange(parsed.data);
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="space-y-2">
-        <Label htmlFor="action-mode">Modo</Label>
-        <Select
-          value={mode}
-          onValueChange={(v) => {
-            const next = v as "ai_message" | "template";
-            setMode(next);
-            commit({ mode: next, promptHint, fallbackTemplateId, templateId });
-          }}
-        >
-          <SelectTrigger id="action-mode">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ai_message">Mensagem gerada por IA</SelectItem>
-            <SelectItem value="template">Template fixo</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {mode === "ai_message" ? (
-        <>
-          <div className="space-y-2">
-            <Label htmlFor="action-prompt-hint">Instrução para a IA</Label>
-            <Textarea
-              id="action-prompt-hint"
-              maxLength={1000}
-              value={promptHint}
-              onChange={(e) => {
-                setPromptHint(e.target.value);
-                commit({ mode, promptHint: e.target.value, fallbackTemplateId, templateId });
-              }}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="action-fallback">Template de fallback (UUID, opcional)</Label>
-            <Input
-              id="action-fallback"
-              value={fallbackTemplateId}
-              onChange={(e) => {
-                setFallbackTemplateId(e.target.value);
-                commit({ mode, promptHint, fallbackTemplateId: e.target.value, templateId });
-              }}
-            />
-          </div>
-        </>
-      ) : (
-        <div className="space-y-2">
-          <Label htmlFor="action-template-id">Template (UUID)</Label>
-          <Input
-            id="action-template-id"
-            value={templateId}
-            onChange={(e) => {
-              setTemplateId(e.target.value);
-              commit({ mode, promptHint, fallbackTemplateId, templateId: e.target.value });
-            }}
-          />
-        </div>
-      )}
-      {error && <p className="text-xs text-error-fg">{error}</p>}
-    </div>
-  );
-}
-
-// ─── end ─────────────────────────────────────────────────────────────────
-
-function EndForm({ config, onChange }: { config: ConfigOf<"end">; onChange: (c: ConfigOf<"end">) => void }) {
-  const [outcome, setOutcome] = useState(config.outcome);
-  const [note, setNote] = useState(config.note ?? "");
-  const [error, setError] = useState<string | null>(null);
-
-  const commit = (next: { outcome: "converted" | "exhausted" | "custom"; note: string }) => {
-    const candidate = { outcome: next.outcome, ...(next.note.trim() ? { note: next.note } : {}) };
-    const parsed = endConfigSchema.safeParse(candidate);
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Configuração inválida.");
-      return;
-    }
-    setError(null);
-    onChange(parsed.data);
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="space-y-2">
-        <Label htmlFor="end-outcome">Resultado</Label>
-        <Select
-          value={outcome}
-          onValueChange={(v) => {
-            const next = v as "converted" | "exhausted" | "custom";
-            setOutcome(next);
-            commit({ outcome: next, note });
-          }}
-        >
-          <SelectTrigger id="end-outcome">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="converted">Convertido</SelectItem>
-            <SelectItem value="exhausted">Esgotado</SelectItem>
-            <SelectItem value="custom">Personalizado</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="end-note">Nota (opcional)</Label>
-        <Textarea
-          id="end-note"
-          maxLength={200}
-          value={note}
-          onChange={(e) => {
-            setNote(e.target.value);
-            commit({ outcome, note: e.target.value });
-          }}
-        />
-      </div>
-      {error && <p className="text-xs text-error-fg">{error}</p>}
-    </div>
-  );
-}
