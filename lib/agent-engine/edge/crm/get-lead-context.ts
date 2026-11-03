@@ -328,9 +328,18 @@ export function corpoDaMensagem(m: CorpoDaMensagemRow): string {
   // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
   // vem ENQUADRADO (frameMediaBody) — sem isso o agente caía no reflexo
   // "não consigo ver mídia" mesmo tendo o conteúdo. Sem derivado, marcador [tipo].
-  return derived
-    ? frameMediaBody(m.type, m.body, derived)
-    : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
+  if (derived) return frameMediaBody(m.type, m.body, derived);
+  if (m.body !== null) return m.body;
+  if (hasMedia) return `[${m.type}]`;
+  // Mídia SEM arquivo: o WAHA entregou `hasMedia` sem `media.url` (download
+  // falhou do lado dele). Sem URL a esteira de mídia nem começa, e a linha
+  // valia '' — a abertura dizia "não há texto utilizável" e o agente não sabia
+  // que veio uma foto. Medido na VPS em 27/10 e 30/10/2026. Diz o que veio e
+  // que não deu para ler, sem inventar conteúdo.
+  const noun = MEDIA_NOUN[m.type];
+  return noun
+    ? `[o cliente enviou ${noun}, mas o arquivo não chegou ao sistema e o conteúdo não pôde ser lido]`
+    : '';
 }
 
 /**
