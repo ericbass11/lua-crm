@@ -102,6 +102,7 @@ import {
   isLeadInHandoff,
   performHumanHandoff,
 } from './human-handoff';
+import { conversaEmCanalSemHumano } from '@/lib/escalacao/canal-sem-humano';
 import {
   maybeCompact,
   renderCompactedSummary,
@@ -722,6 +723,22 @@ export async function comHandoffSeOrcamentoAcabar<T>(
     return await chamada();
   } catch (err) {
     if (!(err instanceof LlmBudgetExceededError)) throw err;
+    // Canal só da IA: sem fila humana, a passagem calaria a conversa para
+    // sempre — subir o teto ou virar o mês não a devolveria. Sem aviso de
+    // "uma pessoa vai assumir" (seria mentira) e sem passagem: o turno acaba
+    // como acabaria, e a próxima mensagem já encontra o orçamento novo.
+    let semHumano = false;
+    try {
+      semHumano = await conversaEmCanalSemHumano(ctx.pool, ctx.tenantId, ctx.conversationId);
+    } catch (erroDoCanal) {
+      ctx.log.warn('canal só da IA não pôde ser lido — a passagem por orçamento segue', {
+        error: (erroDoCanal instanceof Error ? erroDoCanal.message : String(erroDoCanal)).slice(0, 160),
+      });
+    }
+    if (semHumano) {
+      ctx.log.warn('turno interrompido pelo teto de gasto — canal só da IA, sem passagem a humano');
+      throw err;
+    }
     const doCheckpoint = await ctx.briefingDoCheckpoint();
     // AVISA antes de silenciar — ver a nota de ORDEM no gatilho determinístico:
     // `performHumanHandoff` arma a trava que o gate de envio lê, então a única
@@ -1887,6 +1904,21 @@ async function executarTurnoDoAgente(
   // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`).
   const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
 
+  // CANAL SÓ DA IA (`channel_sessions.metadata.ai_sem_humano`): ninguém atende a
+  // fila deste número. Os desvios para humano do turno — pedido explícito,
+  // opt-out ambíguo, teto de etapas, ferramenta do modelo — não passam a
+  // conversa: a IA segue atendendo. Erro de leitura → comportamento de sempre.
+  let semHumano = false;
+  if (!preview) {
+    try {
+      semHumano = await conversaEmCanalSemHumano(pool, tenantId, input.conversationId);
+    } catch (err) {
+      runLog.warn('canal só da IA não pôde ser lido — desvios para humano seguem ativos', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+      });
+    }
+  }
+
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
@@ -2309,6 +2341,7 @@ async function executarTurnoDoAgente(
   const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
   if (
     !preview &&
+    !semHumano &&
     inboundsPendentes.some(
       (texto) =>
         detectHumanHandoffRequest(texto) ||
@@ -2351,7 +2384,10 @@ async function executarTurnoDoAgente(
   // (bot_silenced_until='infinity', que SOBREVIVE à leitura do CRM que sobrescreve o cache
   // is_opted_out) e escala à inbox para o humano confirmar o opt-out real (is_blocked) no
   // CRM. Cancela os follow-ups agendados de tabela. Nada disso reverte (regra dura nº 2).
-  if (!preview && inboundsPendentes.some((texto) => detectAmbiguousOptOut(texto))) {
+  // Canal só da IA: sem ninguém para "conferir" o opt-out, silenciar aqui seria
+  // calar a IA para sempre. O opt-out INEQUÍVOCO continua valendo — a ingestão
+  // grava `is_blocked` (lib/opt-out/deteccao.ts) e o stopGate veta todo envio.
+  if (!preview && !semHumano && inboundsPendentes.some((texto) => detectAmbiguousOptOut(texto))) {
     // O aviso daqui NÃO fala em atendente — quem pediu para parar não quer ouvir
     // sobre atendimento (`textoDoAviso`, motivo `suspeita_de_opt_out`). Ele
     // CONFIRMA a parada, que é o padrão de mensageria para um opt-out, e diz que
@@ -3615,7 +3651,7 @@ async function executarTurnoDoAgente(
 
   // Fase 2B: a tela pode DESLIGAR a tool de handoff do modelo (a detecção
   // determinística de pedido de humano continua ativa — guardrail nunca sai).
-  if (agentConfig !== null && !agentConfig.handoffToolEnabled) {
+  if ((agentConfig !== null && !agentConfig.handoffToolEnabled) || semHumano) {
     delete rawTools.request_human_handoff;
   }
 
@@ -4135,7 +4171,9 @@ async function executarTurnoDoAgente(
         // — mesma ordem do pedido explícito de atendente. Nunca na prévia (sem
         // efeito) nem para quem pediu para parar (a passagem não é desculpa para
         // falar com ele).
-        ...(!preview && !optedOutThisTurn ? {
+        // Canal só da IA: sem `escalate`, a recuperação fica no aviso curto ao
+        // cliente e no alerta à equipe — a conversa segue com a IA.
+        ...(!preview && !optedOutThisTurn && !semHumano ? {
           escalate: async () => {
             const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
               ...avisoDaEscalacao().base,

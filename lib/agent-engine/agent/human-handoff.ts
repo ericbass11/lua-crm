@@ -27,6 +27,7 @@ import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { z } from 'zod';
 import type pg from 'pg';
 
+import { conversaEmCanalSemHumano } from '@/lib/escalacao/canal-sem-humano';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import {
   montarBriefingDaPassagem,
@@ -175,7 +176,28 @@ export async function performHumanHandoff(
     avisoAoLead?: DesfechoDoAviso;
     log: Logger;
   },
-): Promise<void> {
+): Promise<'feita' | 'canal_sem_humano'> {
+  // (0) CANAL SÓ DA IA: ninguém atende a fila deste número, e a passagem calaria
+  // a IA para sempre. Recusa aqui, no ponto único, para que nenhum chamador —
+  // o de hoje ou o de amanhã — a faça. Os chamadores do turno já desviam antes
+  // (sem aviso de "uma pessoa vai assumir"); esta é a defesa em profundidade.
+  let semHumano = false;
+  try {
+    semHumano = await conversaEmCanalSemHumano(db, ids.tenantId, ids.conversationId);
+  } catch (err) {
+    opts.log.warn('canal só da IA não pôde ser lido — a passagem segue', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+    });
+  }
+  if (semHumano) {
+    // Código canônico, nunca `opts.reason` — ver a nota de PII no fim da função.
+    opts.log.warn('passagem a humano recusada — canal só da IA', {
+      motivo_codigo: opts.passagem?.motivoCodigo ?? 'nao_declarado',
+      origem: opts.passagem?.origem ?? 'nao_declarada',
+    });
+    return 'canal_sem_humano';
+  }
+
   // (a) FONTE DA VERDADE: force_human no contato — irrevogável pelo agente (regra dura 2).
   await guardServiceEffect();
   await db.query(`update contacts set force_human = true where organization_id = $1 and id = $2`, [
@@ -311,6 +333,7 @@ export async function performHumanHandoff(
     motivo_codigo: opts.passagem?.motivoCodigo ?? 'nao_declarado',
     origem: opts.passagem?.origem ?? 'nao_declarada',
   });
+  return 'feita';
 }
 
 /**
@@ -421,7 +444,7 @@ const PAYLOAD_TEACHING =
 
 export type RequestHumanHandoffResult =
   | { ok: true; status: 'handoff_solicitado'; message: string }
-  | { ok: false; error: { code: 'invalid_payload'; message: string } };
+  | { ok: false; error: { code: 'invalid_payload' | 'canal_sem_humano'; message: string } };
 
 /**
  * Wrapper da tool request_human_handoff exposta ao modelo. Valida o payload e delega a
@@ -481,13 +504,26 @@ export async function applyRequestHumanHandoff(
     motivo: { codigo: 'requested_human', texto: porQue },
   });
 
-  await performHumanHandoff(db, ids, {
+  const desfecho = await performHumanHandoff(db, ids, {
     reason: porQue ?? 'requested_human',
     conversationSummary: briefing.body,
     passagem: { origem: 'ferramenta_do_modelo', motivoCodigo: 'requested_human', briefing },
     ...(opts.avisoAoLead !== undefined ? { avisoAoLead: opts.avisoAoLead } : {}),
     log: opts.log,
   });
+  // O turno já tira a ferramenta num canal só da IA; se ela chegar aqui mesmo
+  // assim, o modelo aprende a seguir atendendo em vez de prometer uma pessoa.
+  if (desfecho === 'canal_sem_humano') {
+    return {
+      ok: false,
+      error: {
+        code: 'canal_sem_humano',
+        message:
+          'Este número não tem atendimento humano: ninguém vai assumir a conversa. ' +
+          'Não diga que uma pessoa vai atender — continue respondendo você mesmo.',
+      },
+    };
+  }
 
   // ACH-03: a expectativa vai JUNTO com a confirmação. Antes, a mensagem afirmava
   // que "um atendente vai assumir" sem que ninguém tivesse olhado se havia

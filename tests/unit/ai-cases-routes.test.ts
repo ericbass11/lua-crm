@@ -567,6 +567,30 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
     expect(handoffOrder).toBeLessThan(escalateOrder);
   });
 
+  it("escalate num canal só da IA: 409 antes de qualquer efeito — sem aviso, sem passagem, caso intacto", async () => {
+    session("agent");
+    const pool = makePoolStub(caseRowFixture());
+    const consultaOriginal = pool.query;
+    pool.query = vi.fn(async (sql: string) =>
+      sql.includes("channel_metadata")
+        ? { rows: [{ channel_metadata: { ai_sem_humano: true } }] }
+        : consultaOriginal(sql),
+    ) as typeof pool.query;
+    vi.mocked(getRequestPool).mockReturnValue(pool as unknown as ReturnType<typeof getRequestPool>);
+    const { escalateCase } = await import("@/lib/agent-engine/agent/human-cases");
+    const { performHumanHandoff } = await import("@/lib/agent-engine/agent/human-handoff");
+
+    const { POST } = await import("@/app/api/v1/ai/cases/[id]/reply/route");
+    const res = await POST(replyReq({ action: "escalate", body: "precisa de humano" }), {
+      params: Promise.resolve({ id: CASE_ID }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(vi.mocked(performHumanHandoff)).not.toHaveBeenCalled();
+    expect(vi.mocked(escalateCase)).not.toHaveBeenCalled();
+    expect(pool.__client.query, "o caso foi transicionado num canal só da IA").not.toHaveBeenCalled();
+  });
+
   it("escalate de caso antigo registra resposta e aviso, sem handoff no atendimento novo", async () => {
     session("agent");
     const pool = makePoolStub(

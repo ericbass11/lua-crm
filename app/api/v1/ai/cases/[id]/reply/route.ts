@@ -36,6 +36,7 @@ import {
 } from "@/lib/agent-engine/agent/human-cases";
 import { performHumanHandoff } from "@/lib/agent-engine/agent/human-handoff";
 import { avisarLeadDoCrm } from "@/lib/ai/handoff/aviso-ao-lead";
+import { conversaEmCanalSemHumano } from "@/lib/escalacao/canal-sem-humano";
 import {
   checkpointDoBanco,
   montarBriefingDaPassagem,
@@ -140,6 +141,17 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   const { conversation_id: conversationId, contact_id: contactId } = caseRow;
 
   if (action === "escalate") {
+    // Canal só da IA: escalar é dizer ao cliente que uma pessoa vai assumir, num
+    // número onde ninguém assume — e `performHumanHandoff` recusaria a passagem
+    // DEPOIS de o aviso ter saído. Recusa aqui, antes de qualquer efeito.
+    if (await conversaEmCanalSemHumano(pool, org.orgId, conversationId)) {
+      return fail(
+        "invalid_state",
+        t("Este número é atendido só pela IA: não há atendimento humano para escalar. Responda o caso para a IA continuar."),
+        409,
+        { requestId },
+      );
+    }
     const boundary = parseServiceBoundary(caseRow.context_snapshot?.service_boundary);
     try {
       if (boundary && (boundary.organization_id !== org.orgId || boundary.contact_id !== contactId || boundary.conversation_id !== conversationId)) throw new StaleServiceBoundaryError();
