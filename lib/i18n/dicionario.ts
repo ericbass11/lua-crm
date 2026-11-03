@@ -8412,6 +8412,7 @@ export const DICIONARIO: Traducoes = {
   "Esta atualização já terminou.": { es: "Esta actualización ya terminó." },
   "Este canal não gerencia definições.": { es: "Este canal no gestiona definiciones." },
   "Este caso já foi respondido por outra pessoa.": { es: "Este caso ya fue respondido por otra persona." },
+  "Este número é atendido só pela IA: não há atendimento humano para escalar. Responda o caso para a IA continuar.": { es: "Este número es atendido solo por la IA: no hay atención humana a la que escalar. Responde el caso para que la IA continúe." },
   "Este número já tem um roteador ativo.": { es: "Este número ya tiene un router activo." },
   "Este retorno já aconteceu ou já foi cancelado.": { es: "Este seguimiento ya ocurrió o se canceló." },
   "Faça login.": { es: "Inicia sesión." },

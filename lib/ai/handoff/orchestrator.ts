@@ -34,6 +34,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { moverLeadParaEtapaDeHandoff } from "@/lib/leads/handoff-stage-move";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { conversaEmCanalSemHumanoViaSupabase } from "@/lib/escalacao/canal-sem-humano";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 
 import { notifyHandoff } from "@/lib/notify/handoff";
@@ -242,6 +243,25 @@ export async function triggerHandoff(
         detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
       });
       return { triggered: false, reason: "elegibilidade_indeterminada" };
+    }
+
+    // CANAL SÓ DA IA — ninguém atende a fila deste número, e a passagem calaria
+    // a IA para sempre (ver `lib/escalacao/canal-sem-humano.ts`). Antes do aviso:
+    // dizer "uma pessoa vai assumir" seria mentira. Erro de leitura → segue como
+    // sempre, o comportamento de todo outro canal.
+    try {
+      if (await conversaEmCanalSemHumanoViaSupabase(admin, input.organizationId, input.conversationId)) {
+        logger.warn("[handoff] recusado — canal só da IA", {
+          conversation_id: input.conversationId,
+          reason: input.reason,
+        });
+        return { triggered: false, reason: "canal_sem_humano" };
+      }
+    } catch (err) {
+      logger.warn("[handoff] canal só da IA não pôde ser lido — a passagem segue", {
+        conversation_id: input.conversationId,
+        detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
+      });
     }
 
     const nowIso = new Date().toISOString();
