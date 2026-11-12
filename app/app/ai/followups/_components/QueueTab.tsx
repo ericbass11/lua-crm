@@ -1,7 +1,9 @@
 "use client";
+
+import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { format, formatDistanceToNowStrict } from "date-fns";
-import { ptBR } from "date-fns/locale";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -32,9 +34,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Clock, MagnifyingGlass, Trash } from "@/lib/ui/icons";
+import { useT } from "@/hooks/i18n/useT";
+import { rotuloDoStatus, tomDoStatus } from "@/lib/followup/eventos-legiveis";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 import {
   useCancelFollowupEnrollment,
+  useCancelFollowupPromise,
   useFollowupQueue,
   type FollowupEnrollmentStatus,
   type FollowupQueueRow,
@@ -44,52 +50,62 @@ interface Props {
   canWrite: boolean;
 }
 
-const STATUS_OPTIONS: { value: FollowupEnrollmentStatus; label: string }[] = [
-  { value: "active", label: "Ativo" },
-  { value: "waiting_reply", label: "Aguardando resposta" },
-  { value: "paused_handoff", label: "Pausado (handoff)" },
-  { value: "completed", label: "Concluído" },
-  { value: "cancelled", label: "Cancelado" },
-  { value: "dead", label: "Morto" },
+/**
+ * Os status filtráveis, na ordem em que fazem sentido para quem opera: primeiro
+ * o que está andando, depois o que parou, depois o que terminou. O RÓTULO vem de
+ * `rotuloDoStatus` — a tabela morava aqui, e a segunda tela que mostrasse status
+ * (o dossiê) nasceria com a segunda cópia.
+ */
+const STATUS_OPTIONS: FollowupEnrollmentStatus[] = [
+  "active",
+  "waiting_reply",
+  "dormente",
+  "paused_manual",
+  "paused_handoff",
+  // O roteiro de atendimento em andamento (0394). Só aparece como opção com o
+  // módulo ligado — desligado, a fila fica como era.
+  "coletando",
+  "completed",
+  "cancelled",
+  "dead",
 ];
 
-const STATUS_LABEL: Record<string, string> = {
-  active: "Ativo",
-  waiting_reply: "Aguardando resposta",
-  paused_handoff: "Pausado",
-  completed: "Concluído",
-  cancelled: "Cancelado",
-  dead: "Morto",
-  agendada: "Agendada",
-  "concluída": "Concluída",
-};
+// Aqui "vivo" INCLUI o dormente, e é o oposto de LIVE_STATUSES da reatividade:
+// quem espera a data do retorno tem de aparecer na fila. Um acompanhamento que
+// some da tela por 28 dias é uma ilha — ninguém sabe que ele existe nem o
+// cancela quando a cliente já voltou por outro caminho.
+const LIVE_ENROLLMENT_STATUSES = new Set(["active", "waiting_reply", "dormente", "paused_handoff", "paused_manual", "coletando"]);
 
-const STATUS_VARIANT: Record<string, "neutral" | "success" | "warning" | "error" | "info"> = {
-  active: "success",
-  waiting_reply: "info",
-  paused_handoff: "warning",
-  completed: "neutral",
-  cancelled: "neutral",
-  dead: "error",
-  agendada: "info",
-  "concluída": "neutral",
-};
-
-const LIVE_ENROLLMENT_STATUSES = new Set(["active", "waiting_reply", "paused_handoff"]);
+/**
+ * O que ainda dá para desmarcar.
+ *
+ * A fila mostrava promessa e enrollment lado a lado e só oferecia o botão para o
+ * segundo: o agente prometia voltar, a pessoa via na tela e não tinha o que
+ * fazer. As duas famílias são canceláveis agora, por rotas diferentes — o
+ * significado do cancelamento não é o mesmo, e um comando único atingiria a
+ * linha errada em silêncio.
+ */
+function podeCancelar(row: FollowupQueueRow): boolean {
+  return row.source === "enrollment"
+    ? LIVE_ENROLLMENT_STATUSES.has(row.status)
+    : row.status === "agendada";
+}
 
 function QueueStatusBadge({ status }: { status: string }) {
+  const t = useT();
   return (
-    <Badge variant={STATUS_VARIANT[status] ?? "neutral"} aria-label={`status: ${STATUS_LABEL[status] ?? status}`}>
-      {STATUS_LABEL[status] ?? status}
+    <Badge variant={tomDoStatus(status)} aria-label={`${t("status")}: ${rotuloDoStatus(status, t)}`}>
+      {rotuloDoStatus(status, t)}
     </Badge>
   );
 }
 
 function NextFireCell({ iso }: { iso: string | null }) {
+  const localeDaData = useLocaleDeData();
   if (!iso) return <span className="text-text-muted">—</span>;
   const d = new Date(iso);
-  const relative = formatDistanceToNowStrict(d, { addSuffix: true, locale: ptBR });
-  const absolute = format(d, "dd/MM/yyyy HH:mm", { locale: ptBR });
+  const relative = formatDistanceToNowStrict(d, { addSuffix: true, locale: localeDaData });
+  const absolute = format(d, "dd/MM/yyyy HH:mm", { locale: localeDaData });
   return (
     <div title={absolute} className="flex flex-col">
       <span className="text-sm">{relative}</span>
@@ -99,11 +115,12 @@ function NextFireCell({ iso }: { iso: string | null }) {
 }
 
 export function QueueTab({ canWrite }: Props) {
+  const t = useT();
   const [status, setStatus] = useState<FollowupEnrollmentStatus | "all">("all");
   const [pointerId, setPointerId] = useState<string>("all");
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
-  const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
+  const [pendingCancel, setPendingCancel] = useState<FollowupQueueRow | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setQ(searchInput.trim()), 250);
@@ -111,6 +128,8 @@ export function QueueTab({ canWrite }: Props) {
   }, [searchInput]);
 
   const { data: flows } = useFollowupFlows();
+  const { activeOrg } = useAuth();
+  const roteirosLigados = activeOrg?.modulos_ligados?.includes("fluxos_atendimento") === true;
   const filters = useMemo(
     () => ({
       status: status === "all" ? undefined : status,
@@ -120,14 +139,15 @@ export function QueueTab({ canWrite }: Props) {
     [status, pointerId, q],
   );
   const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useFollowupQueue(filters);
-  const cancelMutation = useCancelFollowupEnrollment();
+  const cancelEnrollment = useCancelFollowupEnrollment();
+  const cancelPromise = useCancelFollowupPromise();
 
   const rows: FollowupQueueRow[] = data?.pages.flatMap((p) => p.data) ?? [];
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
+        <div className="relative w-full sm:w-56">
           <MagnifyingGlass
             size={14}
             className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted"
@@ -136,32 +156,32 @@ export function QueueTab({ canWrite }: Props) {
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Buscar contato…"
-            className="h-9 w-56 pl-8 text-sm"
-            aria-label="Buscar contato"
+            placeholder={t("Buscar contato…")}
+            className="h-9 w-full pl-8 text-sm"
+            aria-label={t("Buscar contato")}
           />
         </div>
 
         <Select value={status} onValueChange={(v) => setStatus(v as FollowupEnrollmentStatus | "all")}>
-          <SelectTrigger className="h-9 w-48 text-sm" aria-label="Filtrar por status">
-            <SelectValue placeholder="Todos os status" />
+          <SelectTrigger className="h-9 w-48 text-sm" aria-label={t("Filtrar por status")}>
+            <SelectValue placeholder={t("Todos os status")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos os status</SelectItem>
-            {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
+            <SelectItem value="all">{t("Todos os status")}</SelectItem>
+            {STATUS_OPTIONS.filter((s) => s !== "coletando" || roteirosLigados).map((s) => (
+              <SelectItem key={s} value={s}>
+                {rotuloDoStatus(s, t)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
         <Select value={pointerId} onValueChange={setPointerId}>
-          <SelectTrigger className="h-9 w-48 text-sm" aria-label="Filtrar por fluxo">
-            <SelectValue placeholder="Todos os fluxos" />
+          <SelectTrigger className="h-9 w-48 text-sm" aria-label={t("Filtrar por fluxo")}>
+            <SelectValue placeholder={t("Todos os fluxos")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos os fluxos</SelectItem>
+            <SelectItem value="all">{t("Todos os fluxos")}</SelectItem>
             {(flows ?? []).map((f) => (
               <SelectItem key={f.id} value={f.id}>
                 {f.name}
@@ -174,9 +194,9 @@ export function QueueTab({ canWrite }: Props) {
       {!isLoading && rows.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-md border border-border py-16 text-center">
           <Clock size={36} className="text-text-muted" aria-hidden />
-          <h2 className="font-medium">Nenhum item na fila</h2>
+          <h2 className="font-medium">{t("Nenhum item na fila")}</h2>
           <p className="max-w-sm text-sm text-text-muted">
-            Enrollments ativos e promessas de retorno agendadas pela IA aparecem aqui.
+            {t("Enrollments ativos e promessas de retorno agendadas pela IA aparecem aqui.")}
           </p>
         </div>
       ) : (
@@ -184,25 +204,43 @@ export function QueueTab({ canWrite }: Props) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Contato</TableHead>
-                <TableHead>Fluxo / Promessa</TableHead>
-                <TableHead>Nó atual / Motivo</TableHead>
-                <TableHead>Próximo disparo</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{t("Contato")}</TableHead>
+                <TableHead>{t("Fluxo / Promessa")}</TableHead>
+                <TableHead>{t("Nó atual / Motivo")}</TableHead>
+                <TableHead>{t("Próximo disparo")}</TableHead>
+                <TableHead>{t("Status")}</TableHead>
                 {canWrite && <TableHead className="w-[100px]" />}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => {
-                const canCancel = canWrite && row.source === "enrollment" && LIVE_ENROLLMENT_STATUSES.has(row.status);
+                const canCancel = canWrite && podeCancelar(row);
                 return (
                   <TableRow key={`${row.source}:${row.id}`} data-testid="queue-row">
-                    <TableCell className="font-medium">{row.contact.name}</TableCell>
+                    <TableCell className="font-medium">
+                      {/*
+                        A porta do dossiê. Só enrollment tem história para contar:
+                        a promessa (`cron_jobs`) é uma linha só — um horário e um
+                        motivo — e um link que abrisse uma tela vazia ensinaria
+                        que o dossiê às vezes não funciona.
+                      */}
+                      {row.source === "enrollment" ? (
+                        <Link
+                          href={`/app/ai/followups/enrollments/${row.id}`}
+                          className="underline-offset-2 hover:underline"
+                          data-testid="queue-abrir-dossie"
+                        >
+                          {row.contact.name}
+                        </Link>
+                      ) : (
+                        row.contact.name
+                      )}
+                    </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span>{row.flow_name ?? <span className="text-text-muted">Promessa</span>}</span>
+                        <span>{row.flow_name ?? <span className="text-text-muted">{t("Promessa")}</span>}</span>
                         {row.agent_name && (
-                          <span className="text-xs text-text-muted">agente {row.agent_name}</span>
+                          <span className="text-xs text-text-muted">{t("agente")} {row.agent_name}</span>
                         )}
                       </div>
                     </TableCell>
@@ -221,10 +259,13 @@ export function QueueTab({ canWrite }: Props) {
                           <Button
                             variant="ghost"
                             size="sm"
-                            aria-label="Cancelar follow-up"
-                            onClick={() => setPendingCancelId(row.id)}
+                            data-testid="cancelar-item-da-fila"
+                            aria-label={
+                              row.source === "promise" ? t("Cancelar retorno") : t("Cancelar follow-up")
+                            }
+                            onClick={() => setPendingCancel(row)}
                           >
-                            <Trash size={14} aria-hidden className="mr-1 text-error" /> Cancelar
+                            <Trash size={14} aria-hidden className="mr-1 text-error" /> {t("Cancelar")}
                           </Button>
                         )}
                       </TableCell>
@@ -240,29 +281,36 @@ export function QueueTab({ canWrite }: Props) {
       {hasNextPage && (
         <div className="flex justify-center">
           <Button variant="outline" size="sm" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
-            {isFetchingNextPage ? "Carregando..." : "Carregar mais"}
+            {isFetchingNextPage ? t("Carregando...") : t("Carregar mais")}
           </Button>
         </div>
       )}
 
-      <AlertDialog open={pendingCancelId !== null} onOpenChange={(open) => !open && setPendingCancelId(null)}>
+      <AlertDialog open={pendingCancel !== null} onOpenChange={(open) => !open && setPendingCancel(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancelar este follow-up?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {pendingCancel?.source === "promise"
+                ? t("Cancelar este retorno?")
+                : t("Cancelar este follow-up?")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              O lead não receberá mais mensagens deste fluxo. Essa ação não pode ser desfeita.
+              {pendingCancel?.source === "promise"
+                ? t("O agente não voltará a falar com esta pessoa no horário combinado, e vai saber que você desmarcou.")
+                : t("O lead não receberá mais mensagens deste fluxo. Essa ação não pode ser desfeita.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogCancel>{t("Voltar")}</AlertDialogCancel>
             <AlertDialogAction
               className={buttonVariants({ variant: "destructive" })}
               onClick={() => {
-                if (pendingCancelId) cancelMutation.mutate(pendingCancelId);
-                setPendingCancelId(null);
+                if (pendingCancel?.source === "promise") cancelPromise.mutate(pendingCancel.id);
+                else if (pendingCancel) cancelEnrollment.mutate(pendingCancel.id);
+                setPendingCancel(null);
               }}
             >
-              Cancelar follow-up
+              {pendingCancel?.source === "promise" ? t("Cancelar retorno") : t("Cancelar follow-up")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

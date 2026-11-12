@@ -5,7 +5,7 @@ escopo: transversal
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Eric Souza (DevOps/SRE)
+owner: Rafael Melgaço (DevOps/SRE)
 referencias:
   - docs/prd/00-prd-master.md
   - docs/prd/01-prd-platform-base.md
@@ -21,6 +21,19 @@ referencias:
 
 > Documento transversal que rege topologia de produção, ambiente local, secrets, CI/CD, observability, alertas, runbooks, performance targets, disaster recovery e custo. Toda decisão arquitetural conflitante com este documento exige justificativa explícita no PRD/Spec de origem.
 
+> **Nota de 2026-09-17.** A topologia de infraestrutura descrita abaixo é a da fase em que o CRM
+> era hospedado num PaaS. O produto é self-host: `app`, `worker` e `scheduler` sobem como
+> contêineres na infraestrutura de quem instala (`docker-compose.prod.yml`), e o que o merge na
+> `main` dispara neste repositório é a publicação das imagens
+> (`.github/workflows/publish-image.yml`), não um deploy de aplicação. O que vale hoje para
+> produção está em [`docs/runbooks/deploy.md`](../runbooks/deploy.md) e na seção "Packaging e
+> distribuição" do [`CLAUDE.md`](../../CLAUDE.md), com a lei completa em
+> [`docs/doctrine/packaging.md`](../doctrine/packaging.md). Leia como registro daquela fase toda
+> seção de infraestrutura abaixo que não disser, no próprio texto, o que vale hoje — várias já
+> foram trazidas para o presente e dizem isso onde estão. Uma ressalva é de escolha, não de
+> hospedagem: o provedor de modelos do §5.4 (Vercel AI Gateway) segue na Stack canônica do
+> [`CLAUDE.md`](../../CLAUDE.md) — ele serve a IA, não hospeda o CRM.
+
 ---
 
 ## 1. Visão Geral
@@ -33,21 +46,28 @@ referencias:
 - **Mean time to recovery (MTTR) ≤ 30 min** pros 6 incidentes mais frequentes documentados em runbooks.
 
 ### 1.2 Princípios não-negociáveis
-1. **Stateless app.** Nada de estado em filesystem do Vercel. Toda persistência vai pra Supabase, Storage, Upstash ou volume Docker do WAHA.
+1. **Stateless app.** Nada de estado no filesystem do app. Toda persistência vai pra Supabase, Storage, Upstash ou volume Docker do WAHA.
 2. **Trigger NUNCA faz HTTP.** Workers consomem `event_log` via Realtime/cron — herdado da referência.
 3. **Service role bypassa RLS — filtro manual obrigatório.** Em todo handler que usa admin client, `organization_id` é resolvido a partir de cookie/JWT/path token, NUNCA do body.
 4. **Encryption-at-rest separada por contexto.** Chaves distintas pra CPF, OAuth tokens Nuvemshop, e WAHA BYO API keys.
 5. **Backups verificados.** Restore drill trimestral em ambiente de staging; backup que não foi restaurado é teoria.
 6. **Logs estruturados em JSON.** Nada de `console.log("erro: " + e)`.
-7. **Deploy = git push.** Sem `vercel deploy` manual em produção. Tudo passa por main.
+7. **Nada de deploy manual.** Produção só recebe o que passou pela `main`.
 
 ### 1.3 Estados e ambientes
-| Ambiente | Branch | Domínio | Supabase | WAHA | Sentry env |
-|---|---|---|---|---|---|
-| Production | `main` | `app.lua-crm.example` + `admin.lua-crm.example` | projeto Pro `lua-crm-prod` | `waha.lua-crm.example` (Hostgator) | `production` |
-| Staging | `staging` | `staging.lua-crm.example` | projeto Free `lua-crm-staging` | `waha-staging.lua-crm.example` (Hostgator mesmo VPS, container separado) | `staging` |
-| Preview | qualquer PR | `*.vercel.app` | projeto Free `lua-crm-preview` (compartilhado) | mock/staging | `preview` |
-| Local dev | local | `localhost:3000` | `supabase start` (Docker) | `localhost:3000` (compose) | `development` |
+
+A tabela original amarrava branch, domínio e deploy de preview por PR à hospedagem num PaaS (ver a nota do topo). **Não há ambiente compartilhado de staging nem deploy de preview por PR neste repositório:** um PR é validado pelos checks do CI e pelo ambiente local.
+
+| Ambiente | Onde roda | WAHA | Sentry env |
+|---|---|---|---|
+| Produção | instalação em VPS (`install.sh` / `update.sh`; imagens publicadas pelo CI) | serviço `waha` do compose da instalação | `production` |
+| Local dev | `localhost:3000`; `supabase start` (Docker) | `localhost:3030` (serviço `waha` do `docker-compose.yml`, que publica `3030:3000`) | `development` |
+
+Para saber quais checks a `main` exige, pergunte à fonte em vez de a uma lista escrita:
+
+```bash
+gh api repos/<owner>/<repo>/branches/main/protection --jq '.required_status_checks.contexts|join(", ")'
+```
 
 ---
 
@@ -55,13 +75,15 @@ referencias:
 
 ### 2.1 Componentes
 
+> **Onde isto roda hoje:** o Next.js (frontend, Route Handlers `/api/v1/*` e os webhook receivers) roda no serviço `app`; os workers, no serviço `worker`; os crons, no serviço `scheduler` — os três do `docker-compose.prod.yml`, na infraestrutura de quem instala. O bloco abaixo é o registro da fase hospedada.
+
 #### Vercel (Next.js app + API + crons)
 - **Plano:** Pro ($20/mês/seat).
 - **Região:** `gru1` (São Paulo) prioritária; fallback `iad1`. Edge functions só onde latência precisa <50ms (rate-limit middleware).
 - **Hospeda:**
   - Next.js 14+ App Router (frontend `/`, super-admin `/admin`)
   - Route Handlers `/api/v1/*`
-  - 7 Vercel Crons (lista exaustiva em §5.3)
+  - Vercel Crons (ver §5.3)
   - Webhook receivers WAHA (`/api/webhooks/waha/[sessionId]`) e Nuvemshop (`/api/webhooks/nuvemshop/[event]`)
 - **Não hospeda:** workers de longa duração (>60s no Pro com Fluid Compute), processamento síncrono de mídia >25MB, base vetorial (vai pro Postgres com pgvector).
 
@@ -69,7 +91,7 @@ referencias:
 - **Plano:** Pro ($25/mês) + add-ons conforme necessidade (compute upgrade `Small → Medium` quando p95 DB >100ms; PITR addon $100/mês opcional).
 - **Região:** `sa-east-1` (São Paulo). Mesmo provider da Vercel `gru1` minimiza RTT (~5ms).
 - **Componentes ativos:**
-  - Postgres 15 (`lua-crm-prod`)
+  - Postgres 15 (`deskcomm-prod`)
   - Supabase Auth (email/password + OAuth Google opcional + MFA TOTP)
   - Supabase Realtime (postgres_changes habilitado nas tabelas listadas em §4.5)
   - Supabase Storage (buckets `whatsapp-media` privado, `lgpd-exports` privado)
@@ -105,7 +127,7 @@ referencias:
 
 #### Sentry (errors + performance)
 - **Plano:** Team ($26/mês) — 50k errors/mês + 100k performance units. Suficiente pro MVP.
-- **Project:** `lua-crm-app` (Next.js) + `lua-crm-mcp` (MCP server fase 2).
+- **Project:** `deskcomm-app` (Next.js) + `deskcomm-mcp` (MCP server fase 2).
 - **Features ativas:** Errors, Performance (tracing), Session Replay desligado no MVP (custo + LGPD), Profiling desligado.
 - **PII scrubbing** ativado server-side + `beforeSend` custom (§9.1).
 
@@ -188,8 +210,8 @@ Linux/WSL: equivalentes via `apt` ou Docker oficial. Windows nativo não é supo
 
 ### 3.2 Clone + install + .env.local
 ```bash
-git clone git@github.com:ericbass11/lua-crm.git
-cd lua-crm
+git clone git@github.com:deskcomm/deskcommcrm.git
+cd deskcommcrm
 pnpm install                  # instala root + workspaces (app, mcp futuro)
 cp .env.example .env.local    # template versionado; .env.local é gitignored
 ```
@@ -263,7 +285,7 @@ enroll_enabled = true
 verify_enabled = true
 ```
 
-Migrations ficam em `supabase/migrations/YYYYMMDDHHMMSS_*.sql`. Seed em `supabase/seed.sql` cria 1 organization, 1 user `dev@lua-crm.local`, 1 pipeline default.
+Migrations ficam em `supabase/migrations/YYYYMMDDHHMMSS_*.sql`. Seed em `supabase/seed.sql` cria 1 organization, 1 user `dev@deskcomm.local`, 1 pipeline default.
 
 ### 3.4 WAHA via docker-compose
 
@@ -272,7 +294,7 @@ Migrations ficam em `supabase/migrations/YYYYMMDDHHMMSS_*.sql`. Seed em `supabas
 services:
   waha:
     image: devlikeapro/waha-plus:latest
-    container_name: lua-crm-waha-dev
+    container_name: deskcomm-waha-dev
     restart: unless-stopped
     ports:
       - "3001:3000"
@@ -317,7 +339,7 @@ docker compose down -v               # apaga volumes (logout total das sessões)
 WAHA precisa enviar webhook pra URL pública mesmo em dev. Solução padrão:
 ```bash
 ngrok config add-authtoken <token>
-ngrok http 3000 --domain=lua-crm-dev.ngrok.dev   # plano pago dá domínio fixo
+ngrok http 3000 --domain=deskcomm-dev.ngrok.dev   # plano pago dá domínio fixo
 ```
 
 Domínio fixo é importante porque mudar URL de webhook a cada `ngrok` reconecta = reconfigurar todas sessões WAHA. Sem domínio fixo, usar script `scripts/dev/update-waha-webhook.sh` que pega URL atual e atualiza WAHA via API.
@@ -366,10 +388,9 @@ create extension if not exists btree_gin      with schema extensions;  -- tags i
 Configuração via Supabase Dashboard ou `supabase/config.toml`:
 ```toml
 [auth]
-site_url = "https://app.lua-crm.example"
+site_url = "https://<dominio-da-sua-instalacao>"
 additional_redirect_urls = [
-  "https://app.lua-crm.example/auth/callback",
-  "https://admin.lua-crm.example/auth/callback",
+  "https://<dominio-da-sua-instalacao>/auth/callback",
 ]
 jwt_expiry = 3600                          # 1h, refresh token rotation ativa
 refresh_token_rotation_enabled = true
@@ -445,7 +466,13 @@ Channels broadcast (não postgres_changes, mas eventos custom): `agent-presence:
 
 ## 5. Configuração do Vercel
 
-### 5.1 vercel.ts (recomendado sobre vercel.json)
+### 5.1 vercel.ts — apagado em 2026-09-17 (registro da fase hospedada)
+
+> **Apagado em 2026-09-17.** O `vercel.ts` desta subseção saiu da raiz do repositório, e com
+> ele a trava que obrigava toda rota de cron nova a ser cadastrada nele: o produto é self-host e
+> quem bate as rotas é o `crond` do serviço `scheduler` (`docker/scheduler/entrypoint.sh`, a fonte
+> única do §5.3). O bloco abaixo fica como registro da fase em que um PaaS hospedava o CRM —
+> não recrie o arquivo a partir dele.
 
 `vercel.ts` na raiz do projeto (Next.js 15+ suporta config tipada):
 ```typescript
@@ -506,27 +533,30 @@ export default config;
 
 Estratégia:
 - **Production:** vars setadas no Dashboard Vercel scope `Production` apenas. Encryption keys reais. Tokens Nuvemshop reais.
-- **Preview:** vars setadas em scope `Preview` apontando pra projeto Supabase `lua-crm-preview` compartilhado, WAHA mock ou staging, AI Gateway com `MOCK_AI=true` por default.
+- **Preview:** vars setadas em scope `Preview` apontando pra projeto Supabase `deskcomm-preview` compartilhado, WAHA mock ou staging, AI Gateway com `MOCK_AI=true` por default.
 - **Development (Vercel CLI):** `vercel env pull .env.local` puxa vars Preview pra rodar local com infra remota quando precisar.
 
 Vars NUNCA commitadas: tudo prefixado `*_KEY`, `*_SECRET`, `*_TOKEN`, `DATABASE_URL`, `*_DSN`. Pre-commit gitleaks bloqueia (§7.5).
 
-### 5.3 Vercel Cron schedules (lista exaustiva)
+### 5.3 Crons — a lista vigente não mora neste documento
 
-| # | Path | Schedule (UTC) | Descrição | Owner PRD | Timeout |
-|---|---|---|---|---|---|
-| 1 | `/api/cron/recover-stuck-messages` | `*/5 * * * *` | Mensagens em `status='sending'` há >5min viram `failed` + alerta | 03 | 60s |
-| 2 | `/api/cron/sync-waha-sessions` | `*/2 * * * *` | Pull `GET /api/sessions` do WAHA e atualiza `channel_sessions.status` | 03 | 60s |
-| 3 | `/api/cron/process-pending-webhooks` | `*/1 * * * *` | Processa webhooks deduplicados com `status='pending'` (Nuvemshop + WAHA) | 03/06 | 60s |
-| 4 | `/api/cron/lgpd-sla-warning` | `0 9 * * *` | Alerta em `data_request` ainda não respondidas em D+5 | 06 | 60s |
-| 5 | `/api/cron/event-log-cleanup` | `0 3 * * *` | Move events >90d pra `event_log_archive`, depois pra S3 cold storage | 01 | 300s |
-| 6 | `/api/cron/nuvemshop-sync-incremental` | `*/15 * * * *` | Pull diff de orders/products desde último checkpoint | 06 | 300s |
-| 7 | `/api/cron/audit-log-archive` | `0 4 * * 0` | Semanal: comprime audit log antigo +18m e move pra S3 | 01 | 300s |
+A fonte é uma: `docker/scheduler/entrypoint.sh` — o crontab do serviço `scheduler` do compose, que é quem bate as rotas no self-host. `tests/unit/cron-routes-scheduled.test.ts` confere essa lista contra o diretório `app/api/v1/cron/` nas duas direções: reprova rota de cron sem agendamento e agendamento apontando para rota que não existe. Para ver a lista de hoje:
+
+```bash
+grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sort -u
+```
+
+Toda rota de cron aceita `Authorization: Bearer <segredo>`, conferido contra `INTERNAL_CRON_SECRET` e
+`INTERNAL_SECRET` — qualquer um dos dois que esteja preenchido serve. Parte delas usa o helper
+`autorizaCron()` (`lib/auth/cron-auth.ts`), que também aceita `x-cron-secret`; para ver quais,
+`grep -rl autorizaCron app/api/v1/cron/`. Em produção, se houver `CRON_SECRET` no ambiente, `lib/env.ts` o copia para
+`INTERNAL_CRON_SECRET` — **não** para `INTERNAL_SECRET`, que nunca é sobrescrito; é nas duas primeiras
+que se depura um 403 de cron.
 
 Cada cron handler:
-1. Valida header `Authorization: Bearer ${CRON_SECRET}` (Vercel injeta automático).
+1. Valida o header acima antes de qualquer trabalho — quem passa pelo `autorizaCron()` falha fechado quando nenhum segredo está configurado.
 2. Loga `event_log` row `cron.{name}.started` no início e `cron.{name}.completed` no fim, com `metadata.duration_ms` e `metadata.rows_processed`.
-3. Se falha: Sentry capture + `cron.{name}.failed` no event_log + retorno 500 (Vercel marca como failed, dashboard alerta).
+3. Se falha: Sentry capture + `cron.{name}.failed` no event_log + retorno 500.
 
 ### 5.4 AI Gateway integration
 
@@ -568,12 +598,12 @@ Não usado no MVP. Rate limit fica no Upstash, feature flags ficam em `tenant_se
 
 ### 6.1 docker-compose.yml completo (produção VPS)
 
-`/srv/lua-crm/docker-compose.yml`:
+`/srv/deskcomm/docker-compose.yml`:
 ```yaml
 services:
   waha:
     image: devlikeapro/waha-plus:latest
-    container_name: lua-crm-waha
+    container_name: deskcomm-waha
     restart: always
     networks:
       - waha-net
@@ -587,7 +617,7 @@ services:
       WAHA_DASHBOARD_ENABLED: "false"     # desabilita em prod
       WAHA_SWAGGER_ENABLED: "false"
       WHATSAPP_DEFAULT_ENGINE: NOWEB
-      WHATSAPP_HOOK_URL: https://app.lua-crm.example/api/webhooks/waha
+      WHATSAPP_HOOK_URL: https://<dominio-da-sua-instalacao>/api/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message.any,session.status,message.ack,call.received,group.v2.join,group.v2.leave"
       WHATSAPP_HOOK_HMAC_ALGORITHM: SHA512
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_WEBHOOK_HMAC_KEY}
@@ -622,7 +652,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: lua-crm-nginx
+    container_name: deskcomm-nginx
     restart: always
     networks:
       - waha-net
@@ -640,7 +670,7 @@ services:
 
   certbot:
     image: certbot/certbot:latest
-    container_name: lua-crm-certbot
+    container_name: deskcomm-certbot
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
@@ -687,7 +717,7 @@ SUPABASE_S3_REGION=sa-east-1
 - **`/srv/waha/media/`** → cache local antes de upload pro S3. Pode ser perdido sem impacto (WAHA refaz fetch).
 - **Owner:** `root:root`, modo `0700`. WAHA roda como UID 1000 dentro do container; map de UID via Docker user namespace (opcional, complica permissões — começar sem).
 
-Backup script `/srv/lua-crm/scripts/backup-sessions.sh`:
+Backup script `/srv/deskcomm/scripts/backup-sessions.sh`:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -695,12 +725,12 @@ TS=$(date +%Y%m%d_%H%M%S)
 BACKUP_DIR=/srv/waha/backups
 mkdir -p "$BACKUP_DIR"
 # Pause WAHA briefly pra consistência
-docker compose -f /srv/lua-crm/docker-compose.yml stop waha
+docker compose -f /srv/deskcomm/docker-compose.yml stop waha
 tar czf "$BACKUP_DIR/sessions-$TS.tar.gz" -C /srv/waha sessions
-docker compose -f /srv/lua-crm/docker-compose.yml start waha
+docker compose -f /srv/deskcomm/docker-compose.yml start waha
 # Upload pro Wasabi/R2
 aws s3 cp "$BACKUP_DIR/sessions-$TS.tar.gz" \
-  "s3://lua-crm-backups/waha-sessions/sessions-$TS.tar.gz" \
+  "s3://deskcomm-backups/waha-sessions/sessions-$TS.tar.gz" \
   --endpoint-url=https://s3.wasabisys.com
 # Limpar locais >7d
 find "$BACKUP_DIR" -name 'sessions-*.tar.gz' -mtime +7 -delete
@@ -720,7 +750,7 @@ upstream waha_upstream {
 # HTTP → HTTPS redirect + ACME challenge
 server {
     listen 80;
-    server_name waha.lua-crm.example;
+    server_name waha.deskcomm.com.br;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -732,10 +762,10 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name waha.lua-crm.example;
+    server_name waha.deskcomm.com.br;
 
-    ssl_certificate     /etc/letsencrypt/live/waha.lua-crm.example/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/waha.lua-crm.example/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/waha.deskcomm.com.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/waha.deskcomm.com.br/privkey.pem;
     include             /etc/nginx/snippets/ssl-hardening.conf;
 
     # Apenas Vercel egress IPs + IPs do dev team
@@ -779,7 +809,7 @@ Bootstrap inicial certbot (1ª vez, fora do compose):
 ```bash
 docker run --rm -v /etc/letsencrypt:/etc/letsencrypt -v /var/www/certbot:/var/www/certbot \
   -p 80:80 certbot/certbot certonly --standalone \
-  -d waha.lua-crm.example --email ops@lua-crm.example --agree-tos --no-eff-email
+  -d waha.deskcomm.com.br --email ops@deskcomm.com.br --agree-tos --no-eff-email
 ```
 
 ### 6.4 Firewall
@@ -886,20 +916,25 @@ repos:
 
 ## 8. CI/CD
 
-### 8.1 Vercel Git integration
-- GitHub repo conectado ao project Vercel via OAuth.
-- Trigger: push em `main` → deploy `Production`. Push em qualquer outra branch → `Preview`.
-- Deploy protection: branch `main` requer (a) PR aprovado, (b) checks verdes, (c) 1 reviewer mínimo.
+### 8.1 Integração com o GitHub
+- **Não há projeto de PaaS ligado a este repositório:** push e PR não disparam deploy de aplicação.
+- O que o merge na `main` dispara é `.github/workflows/publish-image.yml`, que constrói e publica as imagens `app`, `worker` e `scheduler` no GHCR; cada instalação puxa a imagem no próprio servidor.
+- Deploy protection: a `main` exige PR com checks verdes. Para ver quais são obrigatórios hoje:
+
+```bash
+gh api repos/<owner>/<repo>/branches/main/protection --jq '.required_status_checks.contexts'
+```
 
 ### 8.2 Preview deployments
-- 1 deploy por commit. URL `lua-crm-app-git-{branch}-{team}.vercel.app`.
-- Cada Preview cria uma branch Supabase (`supabase branch create --name preview-{pr}`) automaticamente via GitHub Action.
-- Comentário automático no PR com URL Preview + link Sentry environment.
 
-### 8.3 Rolling releases
-Vercel Pro com Skew Protection ativado garante que clients antigos não chamem API nova quebrada durante deploy. Toggle no Dashboard: **Settings → Deployment → Skew Protection** (max age 12h).
+Não existem neste repositório: não há URL de preview por commit, nem branch Supabase por PR, nem comentário automático com o link. Um PR é validado pelos checks do CI e pelo ambiente local — a receita de ambiente fresco está no [`CLAUDE.md`](../../CLAUDE.md), na doutrina de QA Visual. (Um fork que ligue o próprio projeto de hospedagem volta a ter preview; isso é configuração dele, não deste repositório.)
 
-Para rollback: `vercel rollback <previous-deployment-url>` ou via UI. Banco de dados não rollbacka — toda migration é forward-compatible (regra de ouro: nunca DROP COLUMN no mesmo PR que adiciona uso novo; espalhar em 2 PRs com 1 release no meio).
+### 8.3 Atualização e rollback
+
+Atualizar troca o contêiner do app. **Não há proteção de skew no self-host:** nada neste repositório
+força o cliente a recarregar quando a imagem muda, então uma aba já aberta segue com o bundle antigo
+até o próximo carregamento — bundle antigo chamando API nova continua sendo um risco de release aqui,
+não uma hipótese coberta pela plataforma. O rollback é de **imagem**, não de deploy — voltar `APP_IMAGE` (e `WORKER_IMAGE`/`SCHEDULER_IMAGE`) para a versão anterior no `.env` e subir de novo; é o que o `agent.sh` do kit faz sozinho quando a versão nova não sobe, reescrevendo o `.env` para a volta não ser desfeita no `up -d` seguinte. Banco de dados não rollbacka — toda migration é forward-compatible (regra de ouro: nunca DROP COLUMN no mesmo PR que adiciona uso novo; espalhar em 2 PRs com 1 release no meio).
 
 ### 8.4 Migrations runner (Supabase CLI no CI)
 
@@ -1021,7 +1056,7 @@ export const log = pino({
     censor: "[REDACTED]",
   },
   base: {
-    service: "lua-crm-app",
+    service: "deskcomm-app",
     env: process.env.VERCEL_ENV,
     region: process.env.VERCEL_REGION,
     commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7),
@@ -1041,7 +1076,7 @@ Sample event:
 ```json
 {
   "level":"info","time":"2026-04-28T14:32:11.234Z",
-  "service":"lua-crm-app","env":"production","commit":"a1b2c3d",
+  "service":"deskcomm-app","env":"production","commit":"a1b2c3d",
   "event":"waha.message.received",
   "tenant_id":"3f1e...","conversation_id":"...", "external_id":"...",
   "duration_ms":42,
@@ -1088,7 +1123,7 @@ Lista canônica de métricas:
 
 ### 9.4 Dashboards essenciais
 
-**Sentry Dashboard "LUA CRM Ops":**
+**Sentry Dashboard "DeskcommCRM Ops":**
 - Errors per hour by environment
 - p50/p95/p99 latência por endpoint top-20
 - Top issues últimos 7d
@@ -1159,13 +1194,13 @@ UptimeRobot externo (free tier) pinga `/api/v1/health` a cada 1min. Falha 2 cons
 
 | # | Sinal | Threshold | Canal | Severidade | Owner |
 |---|---|---|---|---|---|
-| A1 | Sentry novo issue (unhandled exception em prod) | 1ª ocorrência | Slack #lua-crm-alerts | warn | dev on-call |
+| A1 | Sentry novo issue (unhandled exception em prod) | 1ª ocorrência | Slack #deskcomm-alerts | warn | dev on-call |
 | A2 | Sentry issue volume spike | >50 events/h | Slack + PagerDuty | crit | dev on-call |
-| A3 | WAHA session FAILED | qualquer | Slack #lua-crm-ops + email tenant | crit | DevOps |
-| A4 | WAHA session STARTING >5min | sustentado | Slack #lua-crm-ops | warn | DevOps |
-| A5 | LGPD `data_request` SLA D+5 | cron diário | Slack #lua-crm-lgpd + email DPO | warn | LGPD owner |
+| A3 | WAHA session FAILED | qualquer | Slack #deskcomm-ops + email tenant | crit | DevOps |
+| A4 | WAHA session STARTING >5min | sustentado | Slack #deskcomm-ops | warn | DevOps |
+| A5 | LGPD `data_request` SLA D+5 | cron diário | Slack #deskcomm-lgpd + email DPO | warn | LGPD owner |
 | A6 | LGPD `data_request` SLA D+6 | cron diário | PagerDuty | crit | LGPD owner |
-| A7 | Rate limit Nuvemshop estourado | >5 429s/min | Slack #lua-crm-ops | warn | dev on-call |
+| A7 | Rate limit Nuvemshop estourado | >5 429s/min | Slack #deskcomm-ops | warn | dev on-call |
 | A8 | Audit log lag (event_log unconsumed) >5min | gauge | Slack | crit | dev on-call |
 | A9 | API p95 >300ms (rolling 15min) | sustentado 30min | Slack | warn | dev on-call |
 | A10 | API p99 >2s | sustentado 15min | Slack + PagerDuty | crit | dev on-call |
@@ -1186,20 +1221,20 @@ Configuração: Sentry → Slack via integração nativa. Slack → PagerDuty vi
 
 ## 11. Runbooks
 
-> Convenção: cada runbook tem **Sintoma → Diagnóstico → Ação → Verificação → Pós-mortem**. Salvos também em `/srv/lua-crm/runbooks/` no VPS pra acesso offline.
+> Convenção: cada runbook tem **Sintoma → Diagnóstico → Ação → Verificação → Pós-mortem**. Salvos também em `/srv/deskcomm/runbooks/` no VPS pra acesso offline.
 
 ### 11.1 Número WAHA banido — fluxo de troca
 
 **Sintoma.** Alerta A19 disparado. Sessão `FAILED`, logs WAHA com erro `phone_banned` ou `not_authorized`.
 
 **Diagnóstico.**
-1. Confirmar via WAHA dashboard interno (port-forward ssh) ou `docker exec lua-crm-waha curl localhost:3000/api/sessions`.
+1. Confirmar via WAHA dashboard interno (port-forward ssh) ou `docker exec deskcomm-waha curl localhost:3000/api/sessions`.
 2. Validar que não é falso positivo (network glitch). Tentar reconectar via UI: se falha imediata após QR scan, é ban.
 3. Pesquisar logs últimos 7d: enviou >500 msgs/dia? campanha não-warmed? muitas STOP recebidas?
 
 **Ação.**
 1. **Imediata (<10min):** marcar `channel_sessions.status='banned'` + `is_active=false`. Trigger UI: tenant vê banner "Número fora de operação".
-2. **Comunicação:** email ao admin do tenant + Slack #lua-crm-ops com root-cause hypothesis.
+2. **Comunicação:** email ao admin do tenant + Slack #deskcomm-ops com root-cause hypothesis.
 3. **Substituição:** ativar número backup pré-aquecido (todo tenant deve ter 2º número em warm-up contínuo). UI tenant: "Conectar número de backup" → re-QR no novo.
 4. **Migration de conversas:** novas mensagens vão pro novo número; histórico permanece linkado a session antiga (read-only).
 
@@ -1216,9 +1251,9 @@ Configuração: Sentry → Slack via integração nativa. Slack → PagerDuty vi
 
 **Diagnóstico.**
 ```bash
-ssh ops@waha.lua-crm.example
-docker logs lua-crm-waha --tail 200 | grep -i "session-{id}"
-docker exec lua-crm-waha ls /app/.sessions/{sessionId}
+ssh ops@waha.deskcomm.com.br
+docker logs deskcomm-waha --tail 200 | grep -i "session-{id}"
+docker exec deskcomm-waha ls /app/.sessions/{sessionId}
 ```
 Geralmente: arquivo `creds.json` ou diretório `.sessions/{sessionId}` corrompido (timeout durante init).
 
@@ -1352,7 +1387,7 @@ Feature flag `READ_ONLY_MODE` em Edge Config. Quando ativada:
 Trigger: manual via super-admin. Auto-trigger desligado (risco de flap).
 
 ### 13.3 Fallback strategies adicionais
-- **WAHA banimento generalizado da conta LUA CRM (modelo BPO):** plano de migração pra API oficial Meta documentado no PRD-03 (Fase 2.5).
+- **WAHA banimento generalizado da conta DeskcommCRM (modelo BPO):** plano de migração pra API oficial Meta documentado no PRD-03 (Fase 2.5).
 - **Nuvemshop deprecação de webhook:** adapter pattern + assinar feed de release notes; testes de contrato no CI dão alerta.
 
 ---

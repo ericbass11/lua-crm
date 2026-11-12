@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { listSelectableChannels } from "@/lib/channels/selectable";
 import { createClient } from "@/lib/supabase/server";
 
 import { MysteryClient, type CampaignItem, type ProspectItem, type ShopperSessionItem } from "./_client";
@@ -30,13 +31,8 @@ export default async function MysteryPage() {
   }
 
   const supabase = await createClient();
-  const [{ data: sessions }, { data: campaigns }] = await Promise.all([
-    supabase
-      .from("channel_sessions")
-      .select("id, display_name, phone_number, status")
-      .eq("organization_id", activeOrg.orgId)
-      .eq("purpose", "mystery_shopper")
-      .order("created_at", { ascending: true }),
+  const [sessions, { data: campaigns }] = await Promise.all([
+    listSelectableChannels(supabase, activeOrg.orgId, { purpose: "mystery_shopper" }),
     supabase
       .from("mystery_shopper_campaigns")
       .select("id, target_number, target_name, recipient_number, status, outcome, started_at, ended_at, message_count, report_storage_path, transcript_storage_path, stage, city, state, metrics, insight")
@@ -45,9 +41,9 @@ export default async function MysteryPage() {
       .limit(200),
   ]);
 
-  const shopperSessions: ShopperSessionItem[] = (sessions ?? []).map((s) => ({
+  const shopperSessions: ShopperSessionItem[] = sessions.map((s) => ({
     id: s.id,
-    label: s.display_name || s.phone_number || "Número do oculto",
+    label: s.display_name,
     status: s.status,
   }));
 

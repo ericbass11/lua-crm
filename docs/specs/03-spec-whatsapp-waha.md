@@ -5,7 +5,7 @@ depends_on: 01-spec-platform-base.md, 02-spec-customer-360.md
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Eric Souza
+owner: Rafael Melgaço
 referencia_arquitetural: docs/research/reference-synthesis.md
 related_rules: T-07, W-01, W-02, W-03, W-04, W-05, W-06, W-07, W-08, W-09, W-10, W-11, W-12, AT-07
 ---
@@ -85,7 +85,7 @@ version: "3.9"
 services:
   waha:
     image: devlikeapro/waha-plus@sha256:<DIGEST_PINNED_NA_PROD>
-    container_name: lua-crm-waha
+    container_name: deskcomm-waha
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"   # bind localhost; Nginx faz TLS termination
@@ -152,10 +152,10 @@ volumes:
 
 ### 2.2 Variáveis de ambiente
 
-A `WAHA_API_KEY` do servidor é o **hash SHA512 hex (lowercase) do plaintext**. O backend LUA CRM guarda **só** o plaintext em Vercel Encrypted Env Var; nunca a hash duplicada. Geração:
+A `WAHA_API_KEY` do servidor é o **hash SHA512 hex (lowercase) do plaintext**. O backend DeskcommCRM guarda **só** o plaintext no `.env` da instalação (modo 0600, como o `install.sh` o grava); nunca a hash duplicada. Geração:
 
 ```bash
-# Gerar plaintext seguro (nunca commitar; armazenar em 1Password/Vercel)
+# Gerar plaintext seguro (nunca commitar; guardar num gerenciador de senhas)
 PLAINTEXT=$(openssl rand -hex 32)
 echo "Plaintext (env do app): $PLAINTEXT"
 
@@ -167,19 +167,19 @@ echo -n "$PLAINTEXT" | sha512sum | awk '{print $1}'
 `.env.production.example` (não commitar valores reais):
 
 ```dotenv
-# === WAHA server (no host do WAHA, NÃO no Vercel) ===
+# === WAHA server (no host do WAHA, NÃO no `.env` do app) ===
 WAHA_API_KEY_SHA512=<sha512 hex do plaintext>
-WAHA_DASHBOARD_USERNAME=admin_lua-crm
+WAHA_DASHBOARD_USERNAME=admin_deskcomm
 WAHA_DASHBOARD_PASSWORD=<senha forte gerada>
 WAHA_S3_REGION=auto
-WAHA_S3_BUCKET=lua-crm-waha-media
+WAHA_S3_BUCKET=deskcomm-waha-media
 WAHA_S3_ACCESS_KEY_ID=<r2/s3 access key>
 WAHA_S3_SECRET_ACCESS_KEY=<r2/s3 secret>
 
-# === Backend Vercel (Encrypted Env) ===
+# === Backend DeskcommCRM (`.env` da instalação) ===
 WAHA_API_KEY=<plaintext — só aqui>
-WAHA_BASE_URL=https://waha.lua-crm.internal
-WAHA_WEBHOOK_PUBLIC_BASE_URL=https://api.lua-crm.example
+WAHA_BASE_URL=https://waha.deskcomm.internal
+WAHA_WEBHOOK_PUBLIC_BASE_URL=https://api.deskcomm.com
 INTERNAL_CRON_SECRET=<openssl rand -hex 32>
 SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
@@ -226,15 +226,16 @@ upstream waha_backend {
 
 server {
   listen 443 ssl http2;
-  server_name waha.lua-crm.internal;
+  server_name waha.deskcomm.internal;
 
-  ssl_certificate     /etc/letsencrypt/live/waha.lua-crm.internal/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/waha.lua-crm.internal/privkey.pem;
+  ssl_certificate     /etc/letsencrypt/live/waha.deskcomm.internal/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/waha.deskcomm.internal/privkey.pem;
 
   client_max_body_size 64M;     # mídia até 50MB + overhead
 
-  # Allowlist do Vercel (egress IPs) — atualizar via cron
-  include /etc/nginx/conf.d/vercel-egress-allowlist.conf;
+  # Allowlist de egress: só o servidor onde o CRM roda chama este WAHA
+  # (receita viva em docs/runbooks/waha-hostgator.md)
+  include /etc/nginx/conf.d/crm-egress-allowlist.conf;
   deny all;
 
   location / {
@@ -593,7 +594,9 @@ create policy "messages_agent_insert_own_conversation"
 | `conversations` | `(organization_id, last_message_at desc nulls last)` | Inbox listing |
 | `conversations` | `(organization_id, last_inbound_at desc) where status='open' and assigned_to is null` | Fila de não-atribuídas |
 | `channel_sessions` | `(last_health_check_at) where status='WORKING'` | Cron `sync-sessions` |
-| `webhook_events_log` | `(status, received_at) where status in ('received','error')` | Cron `process-pending-webhooks` |
+| `webhook_events_log` | `(status, received_at) where status in ('received','error')` | Cron `webhook-replay` (o `process-pending-webhooks` desta spec) |
+
+> ⚠️ **`error` deixou de significar só "falhou, tente de novo" (issue #290).** Desde que a recusa de contrato passou a ser arquivada, uma linha `error` pode ser um corpo que **nunca** vai passar: o formato do fio mudou. O cron que reprocessa existe com outro nome — `app/api/v1/cron/webhook-replay` — e distingue os casos pelo começo do `error_message`: só relê linhas `transitoria:` (banco indisponível na ingestão, gravadas por `lib/waha/desfecho-do-webhook.ts`); `contrato_violado:` e `handler:` nunca voltam para a fila.
 
 ---
 
@@ -696,7 +699,7 @@ export class WahaClient {
       body: JSON.stringify({
         name: input.name,
         config: {
-          metadata: { source: "lua-crm" },
+          metadata: { source: "deskcomm" },
           webhooks: [{
             url: input.webhookUrl,
             events: [
@@ -1053,7 +1056,9 @@ export async function POST(
       error_message: err instanceof Error ? err.message : String(err),
       attempts: 1,
     }).eq("id", logRow!.id);
-    // 200 mesmo em erro: cron `process-pending-webhooks` re-processa
+    // ⚠️ Esboço original. O código real (`lib/waha/desfecho-do-webhook.ts`)
+    // devolve 503 + Retry-After quando a falha é TRANSITÓRIA (o WAHA reentrega),
+    // e 200 só quando tentar de novo não adianta. O cron é `webhook-replay`.
   }
 
   return new Response(null, { status: 200 });
@@ -1679,21 +1684,16 @@ Pra distinguir múltiplos celulares vinculados, fora do escopo MVP (WAHA não ex
 
 ---
 
-## 10. Crons (Vercel Cron)
+## 10. Crons
 
-`vercel.json`:
+A cadência vigente não mora neste documento: ela vive em `docker/scheduler/entrypoint.sh` — o crontab do serviço `scheduler` do compose, que é quem bate as rotas no self-host e é a única lista de agendamento sob gate. `tests/unit/cron-routes-scheduled.test.ts` confere essa lista contra o diretório `app/api/v1/cron/` nas duas direções: reprova rota de cron sem agendamento e agendamento apontando para rota que não existe. Para ver a lista de hoje:
 
-```json
-{
-  "crons": [
-    { "path": "/api/cron/wa/sync-sessions",            "schedule": "* * * * *" },
-    { "path": "/api/cron/wa/recover-stuck-messages",   "schedule": "* * * * *" },
-    { "path": "/api/cron/wa/process-pending-webhooks", "schedule": "* * * * *" }
-  ]
-}
+```bash
+grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sort -u
 ```
 
-Auth via header `Authorization: Bearer ${INTERNAL_CRON_SECRET}` + `x-vercel-cron: 1`.
+O que esse comando devolve são os crons em vigor. **As subseções abaixo são planejamento, e nem toda
+rota nomeada nelas existe** — confira cada nome contra `ls app/api/v1/cron`. Toda rota de cron aceita `Authorization: Bearer <segredo>`, conferido contra `INTERNAL_CRON_SECRET` e `INTERNAL_SECRET`; parte delas usa o helper `autorizaCron()` (`lib/auth/cron-auth.ts`), que também aceita `x-cron-secret` — para ver quais, `grep -rl autorizaCron app/api/v1/cron/`.
 
 ### 10.1 `sync-sessions`
 
@@ -1779,6 +1779,8 @@ export async function GET(req: NextRequest) {
 
 ### 10.3 `process-pending-webhooks`
 
+> **Implementado como `app/api/v1/cron/webhook-replay`**, e diferente deste esboço em três pontos: relê só `status='error'` com `error_message` começando por `transitoria:` (nunca `received`, que é o evento ainda em voo, nem recusa de contrato); desiste em 20 tentativas (não 3), porque a rodada é por minuto e o banco pode ficar fora por um reinício inteiro; e ao desistir abre aviso `event_dead` na Central com o título `MENSAGEM_QUE_NAO_ENTROU` (`lib/event-log/aviso-de-evento-morto.ts`). O esboço abaixo fica como registro do desenho.
+
 ```ts
 export async function GET(req: NextRequest) {
   if (!isCronAuthed(req)) return new Response(null, { status: 401 });
@@ -1847,7 +1849,7 @@ useEffect(() => {
 
 `sync-sessions` (§10.1) emite alerta `session_starting_too_long` em >5min; runbook:
 
-1. Verificar logs WAHA (`docker logs lua-crm-waha --tail 500`).
+1. Verificar logs WAHA (`docker logs deskcomm-waha --tail 500`).
 2. Se volume `/app/.sessions` corrompido: backup + `docker volume rm` + re-criar sessão (re-scan obrigatório).
 3. Documentar no incident log; super-admin notifica tenant.
 
@@ -1930,7 +1932,7 @@ UI sempre ordena por `sent_at desc` (não `created_at`). Re-render reativo via S
 - 1 service Docker rodando o `docker-compose` simplificado (apenas `waha`).
 - Variáveis de ambiente coladas do `.env.production`.
 - Volume persistente provisionado (Railway Volumes) montado em `/app/.sessions` — **crítico** marcar como persistente.
-- Domínio gerado pela Railway (`waha-lua-crm.up.railway.app`); usado em `WAHA_BASE_URL` (Vercel).
+- Domínio gerado pela Railway (`waha-deskcomm.up.railway.app`); usado em `WAHA_BASE_URL` (Vercel).
 - Custo: $5-10/mês.
 
 ### 13.2 Produção — VPS Hostgator (Turing)
@@ -1945,8 +1947,8 @@ UI sempre ordena por `sent_at desc` (não `created_at`). Re-render reativo via S
   ```bash
   apt-get update && apt-get install -y docker.io docker-compose-plugin nginx certbot python3-certbot-nginx ufw fail2ban restic
   ufw allow 22/tcp && ufw allow 443/tcp && ufw enable
-  certbot --nginx -d waha.lua-crm.internal
-  cd /opt/lua-crm-waha && docker compose up -d
+  certbot --nginx -d waha.deskcomm.internal
+  cd /opt/deskcomm-waha && docker compose up -d
   ```
 - Nginx config: vide §2.4.
 - Backup `restic` diário pra Backblaze B2 (volumes `/var/lib/docker/volumes/waha_sessions`).
@@ -2051,4 +2053,22 @@ select indexname from pg_indexes where schemaname = 'public'
 
 ## Confirmação
 
-Spec 03 escrita em `~/lua-crm/docs/specs/03-spec-whatsapp-waha.md`. Contém: schema SQL completo das 5 tabelas (channel_sessions + warmup, conversations, messages, webhook_events_log) com RLS e indexes; wrapper TypeScript do WAHA com classes de erro; handlers completos de criação de sessão, webhook receiver com HMAC-SHA512 timing-safe, send pipeline com optimistic UI e pg_boss; rate limiter Redis (1msg/1.2s + jitter), spinning de copy DSL, daily limit, janela horária, detector STOP, warm-up; 3 crons; 7 edge cases tratados; hospedagem Railway → Hostgator; 14 testes de integração mapeados; 9 migrations ordenadas. Todas as regras W-01 a W-12, T-07 e AT-07 estão materializadas em código. Pronto pra crítica e Epics.
+Spec 03 escrita em `/Users/rafaelmelgaco/DeskcommCRM/docs/specs/03-spec-whatsapp-waha.md`. Contém: schema SQL completo das 5 tabelas (channel_sessions + warmup, conversations, messages, webhook_events_log) com RLS e indexes; wrapper TypeScript do WAHA com classes de erro; handlers completos de criação de sessão, webhook receiver com HMAC-SHA512 timing-safe, send pipeline com optimistic UI e pg_boss; rate limiter Redis (1msg/1.2s + jitter), spinning de copy DSL, daily limit, janela horária, detector STOP, warm-up; 3 crons; 7 edge cases tratados; hospedagem Railway → Hostgator; 14 testes de integração mapeados; 9 migrations ordenadas. Todas as regras W-01 a W-12, T-07 e AT-07 estão materializadas em código. Pronto pra crítica e Epics.
+
+## Conexão por código de pareamento (extensão da sessão existente)
+
+CONFIRMADO no código: `PairingOptions` é compartilhado por Conexões e onboarding.
+`POST /api/v1/channel-sessions/{id}/pairing-code` recebe `{phone_number}` e exige
+admin, prova MFA quando aplicável e suporte com permissão de escrita. O canal é
+resolvido por ID + organização autenticada. Arquivados e canais sem sessão são
+recusados. A camada `lib/channels/pairing-code.ts` consulta o estado remoto e só
+chama `POST /api/{session}/auth/request-code` em `SCAN_QR_CODE`; nunca faz logout
+ou restart. Usa credencial de servidor, timeout, validação da resposta e no-store.
+
+Proteção escolhida: uma tentativa por canal em janela de 30 segundos, com o
+contador Redis existente (fallback por processo). Telefone e código não são
+gravados nem incluídos na auditoria. `channel.pairing_code_requested` aparece
+na auditoria administrativa. O polling já existente confirma `WORKING`; erro
+oferece nova tentativa ou QR. Pareamento real exige a confirmação no celular.
+
+Fonte do contrato: https://waha.devlike.pro/docs/how-to/sessions/#get-pairing-code

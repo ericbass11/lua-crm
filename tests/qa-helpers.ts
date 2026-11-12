@@ -64,7 +64,7 @@ export async function loginAs(
   await page.goto(`${BASE}/login`);
   await page.locator("#email").fill(cred.email);
   await page.locator("#password").fill(cred.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   // Espera por URL, não por visibilidade: correr `waitForURL` contra
   // `isVisible()` avalia o campo de OTP enquanto a página de MFA ainda monta, e
@@ -94,7 +94,8 @@ export async function loginAs(
 
 /** Navega até o board de demonstração — só por clique, como um usuário. */
 export async function gotoBoard(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Kanban", exact: true }).click();
+  // "Kanban" saiu da interface — o item virou "Funis" (a mesma URL).
+  await page.getByRole("link", { name: "Funis", exact: true }).click();
   await page.waitForURL(/\/app\/kanban/, { timeout: 20_000 });
   await page.getByText(/CRM Vivo — Clínica/i).first().click();
   await page.waitForURL(/\/app\/pipelines\//, { timeout: 20_000 });

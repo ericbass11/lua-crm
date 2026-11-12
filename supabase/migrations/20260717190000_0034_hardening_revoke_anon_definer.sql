@@ -1,4 +1,4 @@
--- 0034_hardening_revoke_anon_definer
+-- 0165_hardening_revoke_anon_definer
 -- G4-00 (gov-loop): defesa em profundidade (INB-07) — nega EXECUTE a `anon` em
 -- 6 funções SECURITY DEFINER de ESCRITA. Duas origens de grant a anon (por isso
 -- dois padrões de fechamento):

@@ -26,14 +26,20 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { situacaoDoRetorno } from "@/lib/followup/retorno";
 import { createClient } from "@/lib/supabase/server";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
 const ENROLLMENT_STATUSES = [
   "active",
   "waiting_reply",
+  "dormente",
   "paused_handoff",
+  "paused_manual",
+  "coletando",
   "completed",
   "cancelled",
   "dead",
@@ -67,7 +73,7 @@ interface ContactRow {
 
 function resolveContactName(c: ContactRow | null): string {
   if (!c) return "Contato removido";
-  return c.display_name?.trim() || c.name?.trim() || c.phone_number || "Contato sem nome";
+  return rotuloDoContato(c);
 }
 
 function embedded<T>(v: T | T[] | null): T | null {
@@ -130,23 +136,24 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "followup_queue" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const sp = req.nextUrl.searchParams;
   const status = sp.get("status");
   if (status !== null && !ENROLLMENT_STATUSES.includes(status as (typeof ENROLLMENT_STATUSES)[number])) {
-    return fail("invalid_request", "status inválido.", 400, { requestId });
+    return fail("invalid_request", t("status inválido."), 400, { requestId });
   }
   const pointerId = sp.get("pointer_id");
   const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (pointerId !== null && !UUID_RX.test(pointerId)) {
-    return fail("invalid_request", "pointer_id inválido.", 400, { requestId });
+    return fail("invalid_request", t("pointer_id inválido."), 400, { requestId });
   }
   const q = sp.get("q")?.trim() || null;
   const cursorRaw = sp.get("cursor");
   const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
   if (cursorRaw && !cursor) {
-    return fail("invalid_request", "cursor inválido.", 400, { requestId });
+    return fail("invalid_request", t("cursor inválido."), 400, { requestId });
   }
   const limitParam = Number(sp.get("limit") ?? "20");
   const limit = Number.isFinite(limitParam) ? Math.min(100, Math.max(1, Math.trunc(limitParam))) : 20;
@@ -206,7 +213,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   // --- fonte 2: promessas (cron_jobs kind='at' + job_kind='followup_turn') ---
   let promiseQuery = supabase
     .from("cron_jobs")
-    .select("id, contact_id, next_run_at, enabled, payload, contacts:contact_id(id, name, display_name, phone_number)")
+    .select(
+      "id, contact_id, next_run_at, enabled, cancelled_at, payload, contacts:contact_id(id, name, display_name, phone_number)",
+    )
     .eq("organization_id", activeOrg.orgId)
     .eq("kind", "at")
     .eq("job_kind", "followup_turn")
@@ -245,7 +254,15 @@ export async function GET(req: NextRequest): Promise<Response> {
       agent_name: null,
       node_or_reason: payload.reason ?? "—",
       next_fire_at: j.next_run_at,
-      status: j.enabled ? "agendada" : "concluída",
+      // `enabled=false` significava DUAS coisas — disparou ou alguém desmarcou —
+      // e a fila chamava as duas de "concluída". Com o cancelamento pela tela
+      // (0102), isso viraria uma mentira frequente: a pessoa clicaria em cancelar
+      // e leria "concluída", como se o cliente tivesse recebido a mensagem.
+      status: situacaoDoRetorno({ enabled: j.enabled, cancelled_at: j.cancelled_at }) === "cancelado"
+        ? "cancelada"
+        : j.enabled
+          ? "agendada"
+          : "concluída",
       detail: payload.promise ?? null,
     };
   });

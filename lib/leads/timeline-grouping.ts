@@ -34,6 +34,16 @@ const NUNCA_COLAPSA = new Set([
   "reactivation_accepted",
   "reactivation_dismissed",
   "reactivation_expired",
+  // As quatro intervenções no follow-up (0145) entram pelo MESMO critério, e não
+  // por analogia: elas só nascem de alguém clicando — o motor não pausa, não
+  // adia e não pula. E a janela de 60s as pegaria todas juntas, porque quem
+  // intervém costuma fazer duas coisas seguidas (pausa e adia). Escondidas atrás
+  // de um "+", o próximo atendente abriria o card e não veria que uma pessoa
+  // segurou o fluxo — que é a única razão de a linha existir.
+  "followup_paused",
+  "followup_resumed",
+  "followup_snoozed",
+  "followup_step_skipped",
 ]);
 
 /** Janela do agrupamento. O contrato fala em "mesmo minuto". */
@@ -88,18 +98,21 @@ function instante(item: TimelineItemView): number {
 export function agrupaTimeline(
   itens: TimelineItemView[],
   chegouAoVivo: Set<string> = new Set(),
+  // O idioma atravessa até `diaDe`, que é quem imprime "24 de jul.". Default
+  // para o padrão do produto: chamador que ainda não passa continua como antes.
+  idioma: string = "pt-BR",
 ): BlocoDaTimeline[] {
   const fino = agrupaFino(itens, chegouAoVivo);
-  return fino.length <= LIMITE_DE_BLOCOS ? fino : agrupaPorDia(itens, chegouAoVivo);
+  return fino.length <= LIMITE_DE_BLOCOS ? fino : agrupaPorDia(itens, chegouAoVivo, idioma);
 }
 
 /** O dia do item no fuso de quem lê — "24 de jul." é o que a pessoa reconhece. */
-function diaDe(item: TimelineItemView): { chave: string; rotulo: string } {
+function diaDe(item: TimelineItemView, idioma: string): { chave: string; rotulo: string } {
   const d = new Date(item.performed_at);
   const chave = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   let rotulo: string;
   try {
-    rotulo = new Intl.DateTimeFormat("pt-BR", {
+    rotulo = new Intl.DateTimeFormat(idioma, {
       weekday: "long",
       day: "2-digit",
       month: "short",
@@ -132,7 +145,11 @@ function diaDe(item: TimelineItemView): { chave: string; rotulo: string } {
 function agrupaPorDia(
   itens: TimelineItemView[],
   chegouAoVivo: Set<string>,
+  idioma: string,
 ): BlocoDaTimeline[] {
+  // `idioma` por PARÂMETRO, não por hook: este módulo é puro e roda também
+  // fora de componente. Hook aqui quebraria em runtime, e o teste que monta
+  // a função direto passaria verde.
   // ⚠️ POR CHAVE, NÃO POR VIZINHANÇA. A primeira versão só juntava dias
   // CONSECUTIVOS, o que funciona enquanto a lista chega ordenada — e ela chega,
   // a rota ordena por `performed_at`. Mas a dependência era invisível: bastava
@@ -151,7 +168,7 @@ function agrupaPorDia(
       blocos.push({ tipo: "item", item, aoVivo });
       continue;
     }
-    const { chave, rotulo } = diaDe(item);
+    const { chave, rotulo } = diaDe(item, idioma);
     const existente = porDia.get(chave);
     if (existente) {
       existente.itens.push(item);
