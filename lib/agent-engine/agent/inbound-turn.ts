@@ -1387,34 +1387,197 @@ async function insertCheckpoint(
 }
 
 /**
- * Extrai e valida o JSON do fechamento. Tolerante a cerca de código e prosa em
- * volta (pega do primeiro '{' ao último '}'); inválido → erro SEM o texto do
- * modelo na mensagem (pode carregar PII da conversa) — o job re-tenta.
+ * Erro de FORMATO do fechamento: o modelo respondeu, mas sem um checkpoint
+ * aproveitável. É o único erro que justifica pedir o JSON de novo na mesma
+ * conversa — erro de transporte re-chama igual, orçamento nunca re-chama.
  */
-export function parseCheckpointText(text: string): CheckpointContent {
+export class CheckpointSemJsonError extends Error {
+  override name = 'CheckpointSemJsonError';
+}
+
+/**
+ * Candidatos a objeto JSON no texto, do MAIS PROVÁVEL ao menos provável.
+ *
+ * O primeiro é o recorte de sempre (do primeiro '{' ao último '}') — cobre o
+ * caso feliz, a cerca ```json e a prosa em volta. Os seguintes são os objetos
+ * de nível superior com chaves balanceadas, do ÚLTIMO para o primeiro: é o que
+ * salva "Resumo {do turno}: {...json...}" e o modelo que escreve um rascunho e
+ * depois a versão final. A varredura respeita strings, então '}' dentro de um
+ * resumo não fecha o objeto antes da hora.
+ */
+function candidatosDeJson(text: string): string[] {
+  const out: string[] = [];
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
-  if (start === -1 || end <= start) {
-    throw new Error('fechamento do turno sem JSON de checkpoint — run re-tentado pela fila');
+  if (start !== -1 && end > start) out.push(text.slice(start, end + 1));
+  const balanceados: string[] = [];
+  let depth = 0;
+  let inicio = -1;
+  let emString = false;
+  let escape = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (emString) {
+      if (escape) escape = false;
+      else if (ch === '\\') escape = true;
+      else if (ch === '"') emString = false;
+      continue;
+    }
+    if (ch === '"' && depth > 0) emString = true;
+    else if (ch === '{') {
+      if (depth === 0) inicio = i;
+      depth += 1;
+    } else if (ch === '}' && depth > 0) {
+      depth -= 1;
+      if (depth === 0) balanceados.push(text.slice(inicio, i + 1));
+    }
   }
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text.slice(start, end + 1));
-  } catch {
-    throw new Error(
-      'JSON de checkpoint inválido no fechamento do turno — run re-tentado pela fila',
-    );
+  for (const c of balanceados.reverse()) if (!out.includes(c)) out.push(c);
+  return out;
+}
+
+/**
+ * Extrai e valida o JSON do fechamento. Tolerante a cerca de código, prosa em
+ * volta e mais de um objeto no texto (ver `candidatosDeJson`); sem nenhum
+ * candidato válido → `CheckpointSemJsonError` SEM o texto do modelo na mensagem
+ * (pode carregar PII da conversa). Quem decide entre pedir de novo, degradar ou
+ * deixar a fila re-tentar é `obterCheckpointDoFechamento`.
+ *
+ * O erro relatado é o do candidato PRINCIPAL (o recorte de sempre): é ele que
+ * diz o que o modelo tentou entregar.
+ */
+export function parseCheckpointText(text: string): CheckpointContent {
+  const candidatos = candidatosDeJson(text);
+  if (candidatos.length === 0) {
+    throw new CheckpointSemJsonError('fechamento do turno sem JSON de checkpoint');
   }
-  const parsed = checkpointContentSchema.safeParse(raw);
-  if (!parsed.success) {
+  let primeiroErro: CheckpointSemJsonError | null = null;
+  for (const candidato of candidatos) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(candidato);
+    } catch {
+      primeiroErro ??= new CheckpointSemJsonError(
+        'JSON de checkpoint inválido no fechamento do turno',
+      );
+      continue;
+    }
+    const parsed = checkpointContentSchema.safeParse(raw);
+    if (parsed.success) return parsed.data;
     const issues = parsed.error.issues
       .map((i) => `${i.path.join('.') || '(raiz)'}: ${i.code}`)
       .join('; ');
-    throw new Error(
-      `checkpoint do fechamento com shape inválido (${issues}) — run re-tentado pela fila`,
+    primeiroErro ??= new CheckpointSemJsonError(
+      `checkpoint do fechamento com shape inválido (${issues})`,
     );
   }
-  return parsed.data;
+  throw primeiroErro ?? new CheckpointSemJsonError('fechamento do turno sem JSON de checkpoint');
+}
+
+/**
+ * Pedido da 2ª tentativa, na MESMA conversa do fechamento. Curto e sem
+ * repetir o formato: a instrução completa está logo acima na conversa.
+ */
+export const CHECKPOINT_RETRY_INSTRUCTION =
+  'Sua última resposta não trouxe o JSON pedido. Responda de novo SOMENTE com o ' +
+  'objeto JSON do fechamento, começando em { e terminando em }, sem texto antes ' +
+  'ou depois e sem bloco de código.';
+
+/** O que o fechamento devolve: o checkpoint do modelo ou o degradado. */
+export type ResultadoDoFechamento =
+  | { kind: 'modelo'; content: CheckpointContent; tentativas: 1 | 2 }
+  | { kind: 'degradado'; content: CheckpointContent; motivo: string };
+
+/**
+ * O fechamento do turno, robusto à saída do modelo.
+ *
+ * ## Por que existe (11/11/2026)
+ *
+ * Com `gpt-6-luna`, 7 de 48 turnos de teste caíram em "fechamento do turno sem
+ * JSON de checkpoint". O fechamento roda DEPOIS do `send_message`: o erro
+ * devolvia o job à fila com a mensagem já entregue, e o retry re-rodava o turno
+ * inteiro — modelo de novo, ferramentas de novo, e qualquer envio além dos que
+ * o ledger já conhecia (`seq` novo) saía como mensagem NOVA para o cliente.
+ *
+ * ## A regra
+ *
+ * 1. Uma tentativa a mais SÓ do fechamento, nunca do turno. Erro de formato
+ *    pede o JSON de novo na mesma conversa (com a resposta ruim como turno do
+ *    assistente); erro de transporte re-chama igual.
+ * 2. Esgotadas as duas, o que decide é se o turno JÁ FALOU com o lead:
+ *    - falou → devolve um checkpoint DEGRADADO (o anterior levado adiante, sem
+ *      `next_action` e sem declaração), que o turno grava e termina. O
+ *      checkpoint continua sendo gravado em todo turno; o que se perde é só o
+ *      resumo DESTE turno.
+ *    - não falou → o erro sobe e a fila re-tenta, como sempre: sem envio, o
+ *      retry não tem o que duplicar.
+ * 3. `isFatal` (orçamento estourado) sobe SEMPRE, sem tentar de novo: quem trata
+ *    é o handoff por orçamento de `runAgentTurn`, e re-chamar seria gastar
+ *    justamente o que acabou.
+ *
+ * `next_action` vai nulo no degradado de propósito: o do turno anterior
+ * descreve o que fazer depois da resposta ANTERIOR, e no próximo turno ele
+ * abriria o prompt mandando repetir o que este turno já fez (issue #510).
+ * `declaracao` fica `undefined` — "o modelo não declarou", que é a verdade.
+ */
+export async function obterCheckpointDoFechamento(opts: {
+  /** Uma chamada de fechamento. Devolve o texto do modelo. */
+  chamar: (messages: ModelMessage[]) => Promise<string>;
+  /** A conversa do fechamento, já terminando em `CHECKPOINT_INSTRUCTION`. */
+  messages: ModelMessage[];
+  /** O turno já tentou enviar algo ao lead (`seq > 0`). */
+  jaFalouComOLead: boolean;
+  /** O checkpoint durável anterior, levado adiante no degradado. */
+  anterior: Pick<CheckpointContent, 'commitments' | 'objections' | 'rolling_summary'> | null;
+  isFatal: (err: unknown) => boolean;
+  log: Pick<Logger, 'warn' | 'error'>;
+}): Promise<ResultadoDoFechamento> {
+  const motivoDe = (err: unknown) =>
+    (err instanceof Error ? err.message : String(err)).slice(0, 160);
+  let ultimoErro: unknown;
+  let mensagens = opts.messages;
+  for (const tentativa of [1, 2] as const) {
+    let texto: string | undefined;
+    try {
+      texto = await opts.chamar(mensagens);
+      return { kind: 'modelo', content: parseCheckpointText(texto), tentativas: tentativa };
+    } catch (err) {
+      if (opts.isFatal(err)) throw err;
+      ultimoErro = err;
+      opts.log.warn('fechamento do turno sem checkpoint aproveitável', {
+        tentativa,
+        motivo: motivoDe(err),
+        // Tamanho, nunca o texto: ele carrega a conversa do lead.
+        tamanho_da_resposta: texto?.length ?? null,
+      });
+      mensagens =
+        err instanceof CheckpointSemJsonError && texto !== undefined
+          ? [
+              ...opts.messages,
+              ...(texto.trim() === '' ? [] : [{ role: 'assistant' as const, content: texto }]),
+              { role: 'user' as const, content: CHECKPOINT_RETRY_INSTRUCTION },
+            ]
+          : opts.messages;
+    }
+  }
+  const motivo = motivoDe(ultimoErro);
+  if (!opts.jaFalouComOLead) {
+    throw new Error(`${motivo} — run re-tentado pela fila`);
+  }
+  opts.log.error(
+    'checkpoint DEGRADADO: o modelo não fechou o turno em 2 tentativas e a resposta já saiu — o turno NÃO é re-tentado',
+    { motivo },
+  );
+  return {
+    kind: 'degradado',
+    motivo,
+    content: {
+      commitments: [...(opts.anterior?.commitments ?? [])],
+      objections: [...(opts.anterior?.objections ?? [])],
+      next_action: null,
+      rolling_summary: opts.anterior?.rolling_summary ?? '',
+    },
+  };
 }
 
 /**
@@ -4378,40 +4541,63 @@ async function executarTurnoDoAgente(
       avisarSemCandidato(preview);
       return;
     }
-    const closing = await runModelCall(
-      pool,
-      deps.llmCfg,
-      {
-        tenantId,
-        leadId: leadId || null,
-        jobId: job?.id,
-        purpose: 'checkpoint',
-        ...(agentConfig !== null
-          ? {
-              model: agentConfig.model,
-              llmOverride: {
-                provider: agentConfig.provider,
-                credentialId: agentConfig.credentialId,
-              },
-            }
-          : {}),
-        system,
-        messages: [
-          // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
-          // fez seu trabalho na 1ª chamada e não precisa ir de novo.
-          ...openingTextOnly,
-          ...responseMessages,
-          { role: 'user', content: CHECKPOINT_INSTRUCTION },
-        ],
+    // Fechamento robusto (11/11/2026): 1 tentativa a mais SÓ desta chamada e, se o
+    // turno já falou com o lead, checkpoint degradado em vez de erro — o erro
+    // devolvia o job à fila com a resposta entregue e o retry re-rodava o turno
+    // inteiro. A regra mora em `obterCheckpointDoFechamento`.
+    // A chamada que PRODUZIU o checkpoint aceito (a última) — lastro da atividade.
+    let callIdDoFechamento: string | undefined;
+    const fechamento = await obterCheckpointDoFechamento({
+      chamar: async (messages) => {
+        const closing = await runModelCall(
+          pool,
+          deps.llmCfg,
+          {
+            tenantId,
+            leadId: leadId || null,
+            jobId: job?.id,
+            purpose: 'checkpoint',
+            ...(agentConfig !== null
+              ? {
+                  model: agentConfig.model,
+                  llmOverride: {
+                    provider: agentConfig.provider,
+                    credentialId: agentConfig.credentialId,
+                  },
+                }
+              : {}),
+            system,
+            messages,
+            // Modo JSON do provedor: tirou as respostas vazias do gpt-6-luna
+            // (ver `respostaEmJson`). A tentativa extra e o degradado continuam
+            // como rede para o provedor que ignora o modo.
+            respostaEmJson: true,
+          },
+          { registry: deps.registry, log: runLog },
+        );
+        callIdDoFechamento = closing.callId ?? undefined;
+        return closing.result.text.replace(
+          /https:\/\/meet\.google\.com\/[a-zA-Z0-9-]+/g,
+          '[link da reunião disponível na Agenda]',
+        );
       },
-      { registry: deps.registry, log: runLog },
-    );
-    const content = parseCheckpointText(
-      closing.result.text.replace(
-        /https:\/\/meet\.google\.com\/[a-zA-Z0-9-]+/g,
-        '[link da reunião disponível na Agenda]',
-      ),
-    );
+      messages: [
+        // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
+        // fez seu trabalho na 1ª chamada e não precisa ir de novo.
+        ...openingTextOnly,
+        ...responseMessages,
+        { role: 'user', content: CHECKPOINT_INSTRUCTION },
+      ],
+      // `seq` sobe ANTES de cada envio físico (inclusive o da pergunta do
+      // roteiro): > 0 é "pode já ter saído", e é isso que torna o retry perigoso.
+      jaFalouComOLead: seq > 0,
+      anterior: previous,
+      isFatal: (err) => err instanceof LlmBudgetExceededError,
+      log: runLog,
+    });
+    const content = fechamento.content;
+    // Degradado não tem autor: o conteúdo é o checkpoint anterior levado adiante.
+    const closingCallId = fechamento.kind === 'modelo' ? callIdDoFechamento : undefined;
 
     if (preview) {
       preview.result.checkpoint = content;
@@ -4531,7 +4717,7 @@ async function executarTurnoDoAgente(
           // O lastro é a chamada de modelo que PRODUZIU este checkpoint
           // (llm_calls.id). Sem ele a linha entraria como 'system' e perderia a
           // autoria justamente no evento mais "de IA" que existe.
-          ...(closing.callId ? { evidence: { llm_call_ids: [closing.callId] } } : {}),
+          ...(closingCallId ? { evidence: { llm_call_ids: [closingCallId] } } : {}),
           ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
           reason: mudanca.reason,
           payload: {
