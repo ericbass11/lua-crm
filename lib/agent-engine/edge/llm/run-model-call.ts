@@ -16,7 +16,7 @@ import { guardServiceTools } from "@/lib/atendimento/fronteira-server";
  * cacheWriteTokens}. Validado no ai@7 via scripts/smoke-llm.sh (modelo real) —
  * upgrade de major re-valida esses paths pelo mesmo gate (regra dura 16).
  */
-import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
+import { generateText, Output, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
 import type pg from 'pg';
 import { z } from 'zod';
 
@@ -226,6 +226,22 @@ export interface RunModelCallInput {
   pararQuando?: () => boolean;
   /** Teto por chamada auxiliar; nunca aumenta o limite configurado pela organização. */
   maxOutputTokens?: number;
+  /**
+   * Pede ao provedor o modo JSON (`response_format: json_object` na OpenAI e na
+   * OpenRouter; `text.format` na Responses API) e devolve o texto CRU, sem
+   * validar no SDK.
+   *
+   * Sem validar por dois motivos: o `Output.json()` do SDK lança
+   * `NoObjectGeneratedError` quando o texto não é JSON puro, e isso transformaria
+   * em falha (com linha de erro em `llm_calls`) a resposta de um provedor que
+   * ignora o modo e cerca o JSON com ```json — que o parser de quem chama aceita.
+   * Provedor sem modo JSON (Anthropic sem schema) recebe um aviso do SDK e
+   * responde como antes.
+   *
+   * Medido em 12/11/2026 (gpt-6-luna, mesmo pedido de fechamento repetido 8×):
+   * sem o modo, 3 respostas vazias e 1 em prosa em 16; com ele, 16 JSON em 16.
+   */
+  respostaEmJson?: boolean;
   /** Explicit bounded transport retries; omitted retains the SDK default. */
   maxRetries?: number;
   /** Cancelamento propagado pelo chamador; a falha continua registrada em llm_calls. */
@@ -513,6 +529,15 @@ async function registrarRecusaDeEnderecoSemChave(d: {
   return erro;
 }
 
+/**
+ * `Output.text()` com o pedido de modo JSON — ver `RunModelCallInput.respostaEmJson`.
+ * Montado na chamada, nunca no carregamento do módulo: um `vi.mock('ai')` sem
+ * `Output` (há vários na suíte) quebraria o import de todo consumidor do seam.
+ */
+function saidaTextoEmModoJson() {
+  return { ...Output.text(), responseFormat: Promise.resolve({ type: 'json' as const }) };
+}
+
 export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
   if (input.maxRetries !== undefined && (!Number.isInteger(input.maxRetries) || input.maxRetries < 0 || input.maxRetries > 2))
     throw new RangeError('llm_invalid_max_retries');
@@ -678,6 +703,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       system: prefix.system,
       messages: input.messages,
       abortSignal: input.abortSignal,
+      ...(input.respostaEmJson ? { output: saidaTextoEmModoJson() } : {}),
       ...(input.maxRetries === undefined ? {} : { maxRetries: input.maxRetries }),
       tools: guardServiceTools(prefix.tools),
       repairToolCall: options => repairKnowledgeToolCall(options, diagnostic => {
